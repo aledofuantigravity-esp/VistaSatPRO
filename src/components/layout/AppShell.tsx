@@ -68,13 +68,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const isCoord = profile.role === 'admin' || profile.role === 'coordinator';
+  const isAdmin = profile.role === 'admin';
 
   const desktopLinks = [
     { href: '/dashboard', label: 'Panel General', icon: Home, show: true },
     { href: '/tasks', label: isCoord ? 'Todos los Partes' : 'Mis Tareas', icon: ClipboardList, show: true },
     { href: '/tasks/new', label: 'Nuevo Parte', icon: PlusCircle, show: true },
     { href: '/customers', label: 'Clientes', icon: Building2, show: true },
-    { href: '/users', label: 'Equipo y Roles', icon: Users, show: isCoord },
+    { href: '/users', label: 'Equipo y Roles', icon: Users, show: isAdmin },
     { href: '/reports', label: 'Informes', icon: BarChart3, show: isCoord },
     { href: '/notifications', label: 'Notificaciones', icon: Bell, badge: unreadCount, show: true },
     { href: '/profile', label: 'Mi Perfil', icon: User, show: true },

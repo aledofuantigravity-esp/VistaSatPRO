@@ -323,7 +323,13 @@ CREATE POLICY "profiles_select" ON public.profiles
 
 CREATE POLICY "profiles_update_self" ON public.profiles
   FOR UPDATE USING (auth.uid() = id OR public.current_user_role() = 'admin')
-  WITH CHECK (auth.uid() = id OR public.current_user_role() = 'admin');
+  WITH CHECK (
+    public.current_user_role() = 'admin'
+    OR (
+      auth.uid() = id
+      AND role = public.current_user_role()
+    )
+  );
 
 -- CUSTOMERS
 CREATE POLICY "customers_select_auth" ON public.customers

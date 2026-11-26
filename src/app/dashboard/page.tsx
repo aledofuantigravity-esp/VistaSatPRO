@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Clock,
   PlusCircle,
+  Users,
   Wrench,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -155,7 +156,14 @@ export default function DashboardPage() {
         </div>
 
         {isCoord ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {profile.role === 'admin' && (
+              <Link href="/users">
+                <Button variant="secondary" size="sm">
+                  <Users size={16} /> Usuarios
+                </Button>
+              </Link>
+            )}
             <Link href="/reports">
               <Button variant="secondary" size="sm">
                 <BarChart3 size={16} /> Informes

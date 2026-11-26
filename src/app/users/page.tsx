@@ -1,7 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Shield, UserCheck, UserX, Users as UsersIcon, Wrench, X } from 'lucide-react';
+import {
+  Pencil,
+  Plus,
+  Shield,
+  UserCheck,
+  UserX,
+  Users as UsersIcon,
+  Wrench,
+  X,
+} from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,14 +36,15 @@ function UsersContent() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [editingUser, setEditingUser] = useState<Profile | null>(null);
 
-  // Formulario nuevo usuario (Decisión 3: email + contraseña inicial manual)
+  // Formulario creación / edición
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('technician');
-  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const profileId = profile?.id;
@@ -61,45 +71,74 @@ function UsersContent() {
 
   if (!profile) return null;
 
-  if (profile.role === 'technician') {
+  // Solo el Administrador puede crear y editar usuarios/roles
+  if (profile.role !== 'admin') {
     return (
       <div className="p-6 text-center">
         <Shield size={40} className="text-danger mx-auto mb-2" />
-        <h1 className="text-lg font-bold text-charcoal">Acceso restringido</h1>
+        <h1 className="text-lg font-bold text-charcoal">Acceso exclusivo de Administrador</h1>
         <p className="text-sm text-mid-grey mt-1">
-          Solo administradores y coordinadores pueden gestionar cuentas del equipo.
+          Únicamente el usuario Administrador puede crear, editar o cambiar roles de usuarios.
         </p>
       </div>
     );
   }
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const openCreateModal = () => {
+    setEditingUser(null);
+    setFullName('');
+    setEmail('');
+    setPhone('');
+    setPassword('');
+    setRole('technician');
+    setFormError(null);
+    setShowCreate(true);
+  };
+
+  const openEditModal = (u: Profile) => {
+    setEditingUser(u);
+    setFullName(u.full_name);
+    setEmail(u.email);
+    setPhone(u.phone || '');
+    setPassword('');
+    setRole(u.role);
+    setFormError(null);
+    setShowCreate(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    if (password.length < 6) {
+
+    if (!editingUser && password.length < 6) {
       setFormError('La contraseña inicial debe tener al menos 6 caracteres.');
       return;
     }
-    setCreating(true);
+
+    setSaving(true);
     try {
-      await createUserAccount({
-        email,
-        password,
-        full_name: fullName,
-        phone,
-        role,
-      });
+      if (editingUser) {
+        await updateProfile(editingUser.id, {
+          full_name: fullName.trim(),
+          phone: phone.trim() || null,
+          role: editingUser.id === profile.id ? editingUser.role : role,
+        });
+      } else {
+        await createUserAccount({
+          email,
+          password,
+          full_name: fullName,
+          phone,
+          role,
+        });
+      }
       setShowCreate(false);
-      setFullName('');
-      setEmail('');
-      setPhone('');
-      setPassword('');
-      setRole('technician');
+      setEditingUser(null);
       await load();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Error al crear la cuenta');
+      setFormError(err instanceof Error ? err.message : 'Error al guardar el usuario');
     } finally {
-      setCreating(false);
+      setSaving(false);
     }
   };
 
@@ -121,16 +160,15 @@ function UsersContent() {
             <UsersIcon size={22} className="text-navy" /> Equipo y Usuarios
           </h1>
           <p className="text-xs text-mid-grey mt-0.5">
-            Alta manual con email y contraseña inicial · Gestión de roles RBAC
+            Solo Administrador · Alta, edición y asignación de roles RBAC
           </p>
         </div>
 
-        <Button variant="accent" size="sm" onClick={() => setShowCreate(true)}>
+        <Button variant="accent" size="sm" onClick={openCreateModal}>
           <Plus size={16} /> Nuevo Usuario
         </Button>
       </div>
 
-      {/* Lista de usuarios */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -180,35 +218,45 @@ function UsersContent() {
                     Partes activos asignados: <strong>{activeTasks}</strong>
                   </span>
 
-                  {u.id !== profile.id && (
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={u.role}
-                        onChange={(e) => changeRole(u, e.target.value as UserRole)}
-                        className="text-xs bg-bg-input border border-border px-2 py-1.5"
-                      >
-                        <option value="technician">Técnico</option>
-                        <option value="coordinator">Coordinador</option>
-                        <option value="admin">Admin</option>
-                      </select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(u)}
+                      className="px-2.5 py-1.5 text-xs font-bold border border-border hover:bg-off-white inline-flex items-center gap-1 text-navy"
+                    >
+                      <Pencil size={13} /> Editar
+                    </button>
 
-                      <button
-                        type="button"
-                        onClick={() => toggleActive(u)}
-                        className="px-2.5 py-1.5 text-xs font-bold border border-border hover:bg-off-white inline-flex items-center gap-1"
-                      >
-                        {u.is_active ? (
-                          <>
-                            <UserX size={13} className="text-danger" /> Desactivar
-                          </>
-                        ) : (
-                          <>
-                            <UserCheck size={13} className="text-success" /> Activar
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
+                    {u.id !== profile.id && (
+                      <>
+                        <select
+                          value={u.role}
+                          onChange={(e) => changeRole(u, e.target.value as UserRole)}
+                          className="text-xs bg-bg-input border border-border px-2 py-1.5"
+                        >
+                          <option value="technician">Técnico</option>
+                          <option value="coordinator">Coordinador</option>
+                          <option value="admin">Admin</option>
+                        </select>
+
+                        <button
+                          type="button"
+                          onClick={() => toggleActive(u)}
+                          className="px-2.5 py-1.5 text-xs font-bold border border-border hover:bg-off-white inline-flex items-center gap-1"
+                        >
+                          {u.is_active ? (
+                            <>
+                              <UserX size={13} className="text-danger" /> Desactivar
+                            </>
+                          ) : (
+                            <>
+                              <UserCheck size={13} className="text-success" /> Activar
+                            </>
+                          )}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -216,12 +264,13 @@ function UsersContent() {
         </div>
       )}
 
-      {/* Modal crear usuario */}
       {showCreate && (
         <div className="fixed inset-0 z-50 bg-charcoal/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full sm:max-w-md rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden">
             <div className="bg-navy text-white px-5 py-4 flex items-center justify-between">
-              <h2 className="text-base font-bold">Alta de Nuevo Usuario</h2>
+              <h2 className="text-base font-bold">
+                {editingUser ? 'Editar Usuario' : 'Alta de Nuevo Usuario'}
+              </h2>
               <button
                 onClick={() => setShowCreate(false)}
                 className="p-1 text-white/80 hover:text-white"
@@ -230,7 +279,7 @@ function UsersContent() {
               </button>
             </div>
 
-            <form onSubmit={handleCreate} className="p-5 space-y-3.5">
+            <form onSubmit={handleSave} className="p-5 space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
                   Nombre completo *
@@ -252,10 +301,11 @@ function UsersContent() {
                 <input
                   type="email"
                   required
+                  disabled={Boolean(editingUser)}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="miguel@empresa.com"
-                  className="w-full px-3 py-2.5 bg-bg-input border border-border"
+                  className="w-full px-3 py-2.5 bg-bg-input border border-border disabled:opacity-60"
                 />
               </div>
 
@@ -278,8 +328,9 @@ function UsersContent() {
                   </label>
                   <select
                     value={role}
+                    disabled={editingUser?.id === profile.id}
                     onChange={(e) => setRole(e.target.value as UserRole)}
-                    className="w-full px-3 py-2.5 bg-bg-input border border-border"
+                    className="w-full px-3 py-2.5 bg-bg-input border border-border disabled:opacity-60"
                   >
                     <option value="technician">Técnico</option>
                     <option value="coordinator">Coordinador</option>
@@ -288,20 +339,22 @@ function UsersContent() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
-                  Contraseña inicial * (mín. 6 caracteres)
-                </label>
-                <input
-                  type="text"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Clave temporal para entregar al técnico"
-                  className="w-full px-3 py-2.5 bg-bg-input border border-border"
-                />
-              </div>
+              {!editingUser && (
+                <div>
+                  <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
+                    Contraseña inicial * (mín. 6 caracteres)
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Clave temporal para entregar al técnico"
+                    className="w-full px-3 py-2.5 bg-bg-input border border-border"
+                  />
+                </div>
+              )}
 
               {formError && (
                 <p className="text-xs font-semibold text-danger bg-danger/10 p-2.5 border-l-4 border-danger">
@@ -313,8 +366,8 @@ function UsersContent() {
                 <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit" variant="accent" isLoading={creating}>
-                  Crear cuenta
+                <Button type="submit" variant="accent" isLoading={saving}>
+                  {editingUser ? 'Guardar cambios' : 'Crear cuenta'}
                 </Button>
               </div>
             </form>

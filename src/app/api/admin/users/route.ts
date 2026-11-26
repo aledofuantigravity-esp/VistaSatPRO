@@ -33,8 +33,11 @@ export async function POST(request: Request) {
       .eq('id', user.id)
       .single();
 
-    if (!callerProfile || !['admin', 'coordinator'].includes(callerProfile.role)) {
-      return NextResponse.json({ error: 'Sin permisos para crear usuarios' }, { status: 403 });
+    if (!callerProfile || callerProfile.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Solo el Administrador puede crear o editar usuarios' },
+        { status: 403 }
+      );
     }
 
     const body = await request.json();
@@ -67,6 +70,15 @@ export async function POST(request: Request) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
+
+    await supabaseAdmin
+      .from('profiles')
+      .update({
+        full_name,
+        phone: phone || null,
+        role: role || 'technician',
+      })
+      .eq('id', created.user.id);
 
     return NextResponse.json({ ok: true, userId: created.user.id });
   } catch (error) {
