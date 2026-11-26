@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Check, Plus, Shield } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Plus, UserCheck } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
@@ -57,11 +57,16 @@ function NewTaskContent() {
   const [assignedTo, setAssignedTo] = useState('');
   const [estimatedDuration, setEstimatedDuration] = useState('60');
 
+  const isTechnician = profile?.role === 'technician';
+
   const loadRefs = useCallback(async () => {
-    const [custs, profs] = await Promise.all([listCustomers(), listProfiles()]);
+    const [custs, profs] = await Promise.all([
+      listCustomers(),
+      profile?.role === 'technician' ? Promise.resolve([]) : listProfiles(),
+    ]);
     setCustomers(custs.filter((c) => c.is_active));
     setTechnicians(profs.filter((p) => p.role === 'technician' && p.is_active));
-  }, []);
+  }, [profile?.role]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -71,18 +76,6 @@ function NewTaskContent() {
   }, [loadRefs]);
 
   if (!profile) return null;
-
-  if (profile.role === 'technician') {
-    return (
-      <div className="p-6 text-center">
-        <Shield size={40} className="text-danger mx-auto mb-2" />
-        <h1 className="text-lg font-bold text-charcoal">Permiso requerido</h1>
-        <p className="text-sm text-mid-grey mt-1">
-          Solo coordinadores o administradores pueden abrir partes nuevos.
-        </p>
-      </div>
-    );
-  }
 
   const handleSelectCustomer = (id: string) => {
     setCustomerId(id);
@@ -134,7 +127,7 @@ function NewTaskContent() {
           equipment_sn: equipmentSn || undefined,
           problem_desc: problemDesc.trim(),
           priority,
-          assigned_to: assignedTo || null,
+          assigned_to: isTechnician ? profile.id : assignedTo || null,
           estimated_duration: estimatedDuration ? parseInt(estimatedDuration, 10) : null,
         },
         profile
@@ -147,7 +140,9 @@ function NewTaskContent() {
   };
 
   const selectedCustomer = customers.find((c) => c.id === customerId);
-  const selectedTech = technicians.find((t) => t.id === assignedTo);
+  const selectedTech = isTechnician
+    ? profile
+    : technicians.find((t) => t.id === assignedTo);
 
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-5">
@@ -383,23 +378,38 @@ function NewTaskContent() {
 
         {step === 3 && (
           <>
-            <div>
-              <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                Asignar a Técnico (Opcional)
-              </label>
-              <select
-                value={assignedTo}
-                onChange={(e) => setAssignedTo(e.target.value)}
-                className="w-full px-3 py-3 bg-bg-input border border-border"
-              >
-                <option value="">Dejar pendiente sin asignar (aviso al equipo)</option>
-                {technicians.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.full_name} {t.phone ? `· ${t.phone}` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isTechnician ? (
+              <div className="p-4 bg-navy/5 border-l-4 border-navy flex items-start gap-3">
+                <UserCheck size={20} className="text-navy flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold uppercase text-navy">
+                    Asignación automática
+                  </p>
+                  <p className="text-sm text-charcoal mt-0.5">
+                    Este parte se asignará automáticamente a{' '}
+                    <strong>{profile.full_name}</strong> con estado <strong>Asignada</strong>.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                  Asignar a Técnico (Opcional)
+                </label>
+                <select
+                  value={assignedTo}
+                  onChange={(e) => setAssignedTo(e.target.value)}
+                  className="w-full px-3 py-3 bg-bg-input border border-border"
+                >
+                  <option value="">Dejar pendiente sin asignar (aviso al equipo)</option>
+                  {technicians.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.full_name} {t.phone ? `· ${t.phone}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-bold uppercase text-mid-grey mb-1">

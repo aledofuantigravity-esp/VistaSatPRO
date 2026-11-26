@@ -184,17 +184,15 @@ function TasksContent() {
 
         <div className="flex flex-wrap items-center gap-2">
           {isCoord && (
-            <>
-              <Button variant="secondary" size="sm" onClick={exportCSV}>
-                <Download size={15} /> CSV
-              </Button>
-              <Link href="/tasks/new">
-                <Button variant="accent" size="sm">
-                  <Plus size={16} /> Nuevo Parte
-                </Button>
-              </Link>
-            </>
+            <Button variant="secondary" size="sm" onClick={exportCSV}>
+              <Download size={15} /> CSV
+            </Button>
           )}
+          <Link href="/tasks/new">
+            <Button variant="accent" size="sm">
+              <Plus size={16} /> Nuevo Parte
+            </Button>
+          </Link>
         </div>
       </div>
 

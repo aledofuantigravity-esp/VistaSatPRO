@@ -329,9 +329,15 @@ CREATE POLICY "profiles_update_self" ON public.profiles
 CREATE POLICY "customers_select_auth" ON public.customers
   FOR SELECT USING (auth.role() = 'authenticated');
 
-CREATE POLICY "customers_write_coord" ON public.customers
-  FOR ALL USING (public.is_coordinator_or_admin())
+CREATE POLICY "customers_insert_auth" ON public.customers
+  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "customers_update_coord" ON public.customers
+  FOR UPDATE USING (public.is_coordinator_or_admin())
   WITH CHECK (public.is_coordinator_or_admin());
+
+CREATE POLICY "customers_delete_coord" ON public.customers
+  FOR DELETE USING (public.is_coordinator_or_admin());
 
 -- TASKS
 CREATE POLICY "tasks_select_rbac" ON public.tasks
@@ -341,8 +347,16 @@ CREATE POLICY "tasks_select_rbac" ON public.tasks
     OR (assigned_to IS NULL AND status = 'pending')
   );
 
-CREATE POLICY "tasks_insert_coord" ON public.tasks
-  FOR INSERT WITH CHECK (public.is_coordinator_or_admin());
+CREATE POLICY "tasks_insert_rbac" ON public.tasks
+  FOR INSERT WITH CHECK (
+    public.is_coordinator_or_admin()
+    OR (
+      public.current_user_role() = 'technician'
+      AND created_by = auth.uid()
+      AND assigned_to = auth.uid()
+      AND status = 'assigned'
+    )
+  );
 
 CREATE POLICY "tasks_update_rbac" ON public.tasks
   FOR UPDATE USING (

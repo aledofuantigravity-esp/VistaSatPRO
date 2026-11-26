@@ -168,11 +168,18 @@ export default function DashboardPage() {
             </Link>
           </div>
         ) : (
-          <Link href="/tasks">
-            <Button variant="primary" size="sm">
-              Ver mis tareas <ArrowRight size={15} />
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/tasks">
+              <Button variant="primary" size="sm">
+                Ver mis tareas <ArrowRight size={15} />
+              </Button>
+            </Link>
+            <Link href="/tasks/new">
+              <Button variant="accent" size="sm">
+                <PlusCircle size={16} /> Nuevo Parte
+              </Button>
+            </Link>
+          </div>
         )}
       </div>
 

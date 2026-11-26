@@ -231,6 +231,11 @@ export async function POST(request: Request) {
           actorId: string;
         };
 
+        const actor = state.profiles.find((p) => p.id === actorId);
+        // Regla de negocio: si un técnico crea una tarea, siempre se le asigna automáticamente
+        const effectiveAssignedTo =
+          actor?.role === 'technician' ? actorId : payload.assigned_to || null;
+
         const year = new Date().getFullYear();
         const code = `VS-${year}-${String(state.seqCounter).padStart(4, '0')}`;
         state.seqCounter += 1;
@@ -247,9 +252,9 @@ export async function POST(request: Request) {
           equipment_sn: payload.equipment_sn || null,
           problem_desc: payload.problem_desc,
           priority: payload.priority,
-          status: payload.assigned_to ? 'assigned' : 'pending',
-          assigned_to: payload.assigned_to || null,
-          assigned_at: payload.assigned_to ? nowIso : null,
+          status: effectiveAssignedTo ? 'assigned' : 'pending',
+          assigned_to: effectiveAssignedTo,
+          assigned_at: effectiveAssignedTo ? nowIso : null,
           resolution_notes: null,
           materials_used: [],
           client_signature_url: null,

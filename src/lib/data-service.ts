@@ -297,12 +297,16 @@ export async function createTask(
   actor: Profile
 ): Promise<Task> {
   const supabase = getSupabaseBrowserClient();
-  const initialStatus: TaskStatus = input.assigned_to ? 'assigned' : 'pending';
+  // Si quien crea el parte es técnico, siempre se autoasigna a él
+  const effectiveAssignedTo =
+    actor.role === 'technician' ? actor.id : input.assigned_to || null;
+  const initialStatus: TaskStatus = effectiveAssignedTo ? 'assigned' : 'pending';
+  const normalizedInput = { ...input, assigned_to: effectiveAssignedTo };
 
   if (!supabase) {
     const data = await demoPost<{ task: Task }>({
       action: 'create_task',
-      payload: input,
+      payload: normalizedInput,
       actorId: actor.id,
     });
     return data.task;
@@ -311,10 +315,10 @@ export async function createTask(
   const { data, error } = await supabase
     .from('tasks')
     .insert({
-      ...input,
+      ...normalizedInput,
       code: '',
       status: initialStatus,
-      assigned_at: input.assigned_to ? new Date().toISOString() : null,
+      assigned_at: effectiveAssignedTo ? new Date().toISOString() : null,
       created_by: actor.id,
     })
     .select('*, customer:customers(name)')
