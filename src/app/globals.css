@@ -1,137 +1,115 @@
 @import "tailwindcss";
 
-/* ─── Tokens de Diseño VistaSatPRO (Paleta Vistalegre) ─────────────────────── */
-:root {
-  /* Colores de marca */
-  --color-navy:       #002169;   /* Primario corporativo — logo "vistalegre" */
-  --color-navy-dark:  #1F2A44;   /* Overlay oscuro, modo dark */
-  --color-magenta:    #CF095E;   /* Acento — isotipo búho, CTAs, urgente */
-  --color-magenta-dark: #A8004A; /* Hover del magenta */
-  --color-petrol:     #004876;   /* División PROJECTS — estado "Asignada" */
-  --color-plum:       #5E3654;   /* División TECH — estado "En Espera" */
-  --color-burgundy:   #9B4956;   /* División SUPPLIES */
-  --color-coral:      #EA7267;   /* División PRINT — prioridad Media */
+@theme {
+  /* ── Paleta Vistalegre ───────────────────────────────────────────────── */
+  --color-navy:         #002169;
+  --color-navy-dark:    #1F2A44;
+  --color-magenta:      #CF095E;
+  --color-magenta-dark: #A8004A;
+  --color-petrol:       #004876;
+  --color-plum:         #5E3654;
+  --color-burgundy:     #9B4956;
+  --color-coral:        #EA7267;
+  --color-charcoal:     #222222;
+  --color-dark-grey:    #353740;
+  --color-mid-grey:     #666666;
+  --color-light-grey:   #9B9B9B;
+  --color-off-white:    #F8F7F7;
+  --color-border:       #DDDDDD;
+  --color-bg-input:     #F4F4F6;
+  --color-surface:      #FFFFFF;
+  --color-success:      #1A7A4A;
+  --color-danger:       #D40000;
+  --color-warning:      #F59E0B;
+  --color-info:         #0EA5E9;
 
-  /* Neutrales */
-  --color-white:      #FFFFFF;
-  --color-off-white:  #F8F7F7;   /* Fondo base de pantallas */
-  --color-charcoal:   #222222;   /* Footer, texto oscuro */
-  --color-dark-grey:  #353740;   /* Cuerpo destacado */
-  --color-mid-grey:   #666666;   /* Texto secundario */
-  --color-light-grey: #9B9B9B;   /* Texto terciario, prioridad Baja */
-  --color-border:     #DDDDDD;   /* Separadores, borders */
-  --color-bg-input:   #F4F4F6;   /* Fondo de inputs */
+  /* ── Tipografía ──────────────────────────────────────────────────────── */
+  --font-montserrat: var(--font-montserrat), 'Montserrat', Helvetica, Arial, sans-serif;
 
-  /* Semánticos de estado */
-  --color-success:    #1A7A4A;   /* Completada (único verde fuera de marca) */
-  --color-danger:     #D40000;   /* Urgente (único rojo fuera de marca) */
-  --color-warning:    #F59E0B;   /* Advertencia offline */
-  --color-info:       #0EA5E9;   /* Informativo */
-
-  /* Tipografía */
-  --font-montserrat: 'Montserrat', Helvetica, Arial, sans-serif;
-
-  /* Radios */
+  /* ── Radios de borde ─────────────────────────────────────────────────── */
   --radius-none: 0px;
   --radius-sm:   4px;
   --radius-md:   12px;
   --radius-lg:   20px;
   --radius-full: 9999px;
 
-  /* Sombras (extraídas de Vistalegre) */
-  --shadow-card:     6px 6px 18px 0px rgba(0, 0, 0, 0.12);
-  --shadow-elevated: 0px 12px 18px -6px rgba(0, 0, 0, 0.25);
-  --shadow-nav:      0px 2px 8px 0px rgba(0, 0, 0, 0.1);
+  /* ── Sombras (extraídas de Vistalegre) ──────────────────────────────── */
+  --shadow-card:     6px 6px 18px 0px rgba(0, 0, 0, 0.08);
+  --shadow-elevated: 0px 12px 18px -6px rgba(0, 0, 0, 0.20);
+  --shadow-nav:      0px 2px 8px 0px rgba(0, 0, 0, 0.08);
 
-  /* Safe area (notch + barra inferior iOS) */
+  /* ── Animaciones ─────────────────────────────────────────────────────── */
+  --animate-pulse-urgent: pulse-urgent 1.5s ease-in-out infinite;
+  --animate-slide-down:   slide-down 0.3s ease-out;
+  --animate-slide-up:     slide-up-fade 0.25s ease-out;
+}
+
+/* ─── Variables CSS globales (Safe Area & Layout) ───────────────────────────── */
+:root {
   --safe-top:    env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left:   env(safe-area-inset-left, 0px);
   --safe-right:  env(safe-area-inset-right, 0px);
 
-  /* Altura del Tab Bar móvil */
   --tab-bar-height: calc(64px + var(--safe-bottom));
-  /* Altura del header de pantalla */
-  --header-height: calc(56px + var(--safe-top));
+  --header-height:  calc(56px + var(--safe-top));
 }
 
-/* Modo oscuro (soporte básico Fase 0 — se amplía en Fase 4) */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-off-white: #0D1117;
-    --color-white:     #1A2130;
-    --color-charcoal:  #F0F0F0;
-    --color-dark-grey: #C8CDD8;
-    --color-mid-grey:  #8B9299;
-    --color-border:    #2A3448;
-    --color-bg-input:  #1E2A3A;
+@keyframes pulse-urgent {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.78; transform: scale(1.04); }
+}
+
+@keyframes slide-down {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slide-up-fade {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: var(--font-montserrat);
+    background-color: #F8F7F7;
+    color: #222222;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior: none;
+  }
+
+  /* Prevenir zoom automático al enfocar inputs en iOS */
+  input, select, textarea {
+    font-size: 16px;
   }
 }
 
-/* ─── Reset y base ───────────────────────────────────────────────────────────── */
-*, *::before, *::after {
-  box-sizing: border-box;
-}
-
-html {
-  /* Prevenir zoom automático al enfocar inputs en iOS */
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-
-body {
-  font-family: var(--font-montserrat);
-  background-color: var(--color-off-white);
-  color: var(--color-charcoal);
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  /* Prevenir rebote de scroll en iOS */
-  overscroll-behavior: none;
-}
-
-/* Prevenir zoom en inputs — CRÍTICO para usabilidad en campo en iOS */
-input, select, textarea {
-  font-size: 16px !important;  /* iOS no hace zoom si font-size >= 16px */
-}
-
-/* ─── Utilidades de scroll ───────────────────────────────────────────────────── */
+/* ─── Utilidades personalizadas ──────────────────────────────────────────────── */
 .scroll-container {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
-}
-
-/* ─── Animación de pulso para estado Urgente ─────────────────────────────────── */
-@keyframes pulse-urgent {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.75; transform: scale(1.05); }
 }
 
 .badge-urgent {
   animation: pulse-urgent 1.5s ease-in-out infinite;
 }
 
-/* ─── Transición de actualización del Service Worker ────────────────────────── */
-@keyframes slide-down {
-  from { transform: translateY(-100%); opacity: 0; }
-  to   { transform: translateY(0); opacity: 1; }
-}
-
 .sw-update-banner {
   animation: slide-down 0.3s ease-out;
-}
-
-/* ─── Toast de notificación in-app ──────────────────────────────────────────── */
-@keyframes slide-up-fade {
-  from { transform: translateY(16px); opacity: 0; }
-  to   { transform: translateY(0); opacity: 1; }
 }
 
 .toast-enter {
   animation: slide-up-fade 0.25s ease-out;
 }
 
-/* ─── Safe area helpers ──────────────────────────────────────────────────────── */
 .pb-safe { padding-bottom: var(--safe-bottom); }
 .pt-safe { padding-top: var(--safe-top); }
 .mb-tab-bar { margin-bottom: var(--tab-bar-height); }

@@ -71,7 +71,7 @@ self.addEventListener('fetch', (event) => {
 
   // ── Rutas de API de Supabase → NetworkFirst con fallback caché ──
   if (url.hostname.includes('supabase.co') && url.pathname.startsWith('/rest/')) {
-    event.respondWith(networkFirstWithCache(request, API_CACHE, 5 * 60));
+    event.respondWith(networkFirstWithCache(request, API_CACHE));
     return;
   }
 
@@ -104,7 +104,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // ── Resto → NetworkFirst genérico ──
-  event.respondWith(networkFirstWithCache(request, STATIC_CACHE, 60));
+  event.respondWith(networkFirstWithCache(request, STATIC_CACHE));
 });
 
 // ─── PUSH NOTIFICATIONS ──────────────────────────────────────────────────────
@@ -203,7 +203,7 @@ async function cacheFirst(request, cacheName) {
 }
 
 /** NetworkFirst: intenta red, si falla usa caché */
-async function networkFirstWithCache(request, cacheName, maxAgeSeconds) {
+async function networkFirstWithCache(request, cacheName) {
   const cache = await caches.open(cacheName);
 
   try {

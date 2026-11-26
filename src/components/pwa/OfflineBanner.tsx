@@ -1,49 +1,44 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import { WifiOff, X } from 'lucide-react';
 
-/**
- * OfflineBanner — Banner no intrusivo cuando no hay conexión.
- * Se muestra en la parte superior con animación de entrada.
- * El técnico puede descartarlo manualmente.
- */
+function subscribeOnline(callback: () => void) {
+  window.addEventListener('online', callback);
+  window.addEventListener('offline', callback);
+  return () => {
+    window.removeEventListener('online', callback);
+    window.removeEventListener('offline', callback);
+  };
+}
+
 export function OfflineBanner() {
-  const [isOffline, setIsOffline] = useState(false);
+  const isOnline = useSyncExternalStore(
+    subscribeOnline,
+    () => (typeof navigator === 'undefined' ? true : navigator.onLine),
+    () => true
+  );
   const [isDismissed, setIsDismissed] = useState(false);
   const [showReconnected, setShowReconnected] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    // Estado inicial
-    setIsOffline(!navigator.onLine);
-
-    const handleOffline = () => {
-      setIsOffline(true);
-      setIsDismissed(false); // Resetear dismiss al perder conexión de nuevo
-    };
-
+    const handleOffline = () => setIsDismissed(false);
     const handleOnline = () => {
-      setIsOffline(false);
-      // Mostrar mensaje de reconexión brevemente
       setShowReconnected(true);
       setTimeout(() => setShowReconnected(false), 3000);
     };
 
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
-
     return () => {
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
     };
   }, []);
 
-  if (!isOffline && !showReconnected) return null;
+  if (isOnline && !showReconnected) return null;
 
-  // Banner de reconexión (verde, temporal)
-  if (showReconnected) {
+  if (showReconnected && isOnline) {
     return (
       <div
         className="fixed top-0 left-0 right-0 z-50 animate-slide-down"
@@ -58,7 +53,6 @@ export function OfflineBanner() {
 
   if (isDismissed) return null;
 
-  // Banner offline (amarillo)
   return (
     <div
       className="fixed top-0 left-0 right-0 z-50 animate-slide-down"
@@ -67,7 +61,7 @@ export function OfflineBanner() {
       <div className="bg-warning text-charcoal px-4 py-2.5 flex items-center gap-3">
         <WifiOff size={16} className="flex-shrink-0" />
         <span className="text-sm font-semibold flex-1">
-          Sin conexión — Los datos mostrados pueden no estar actualizados
+          Sin conexión — Trabajando con caché local (los cambios se encolan automáticamente)
         </span>
         <button
           onClick={() => setIsDismissed(true)}

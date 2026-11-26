@@ -1,7 +1,9 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // Cabeceras de seguridad HTTP y configuración para SW
+  turbopack: {
+    root: process.cwd(),
+  },
   async headers() {
     return [
       {
@@ -33,31 +35,17 @@ const nextConfig: NextConfig = {
       {
         source: '/(.*)',
         headers: [
-          // Seguridad HTTP
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           {
             key: 'Permissions-Policy',
-            value: 'camera=self, microphone=(), geolocation=self, notifications=self',
+            value: 'camera=(self), microphone=(), geolocation=(self)',
           },
         ],
       },
     ];
   },
-
-  // Redirecciones: raíz → /dashboard (si autenticado) o /login
-  async redirects() {
-    return [
-      {
-        source: '/',
-        destination: '/dashboard',
-        permanent: false,
-      },
-    ];
-  },
-
-  // Optimización de imágenes
   images: {
     remotePatterns: [
       {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -9,55 +9,58 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 interface UsePWAInstallReturn {
-  /** True si la app ya está en modo standalone (instalada) */
   isInstalled: boolean;
-  /** True si es iOS/Safari y NO está en standalone */
   isIOSBrowser: boolean;
-  /** True si hay prompt de instalación disponible (Android/Chrome/Edge) */
   canInstall: boolean;
-  /** Lanzar el prompt nativo de instalación */
   triggerInstall: () => Promise<void>;
-  /** Resultado de la última instalación */
   installOutcome: 'accepted' | 'dismissed' | null;
 }
 
-/**
- * Hook de instalación PWA.
- * Gestiona el flujo completo para Android/Chrome/Edge e iOS/Safari.
- */
+const emptySubscribe = () => () => {};
+
+function getInstalledSnapshot(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+  );
+}
+
+function getIOSBrowserSnapshot(): boolean {
+  if (typeof window === 'undefined') return false;
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  return isIOS && !getInstalledSnapshot();
+}
+
 export function usePWAInstall(): UsePWAInstallReturn {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [isIOSBrowser, setIsIOSBrowser] = useState(false);
+  const [installedEvent, setInstalledEvent] = useState(false);
   const [installOutcome, setInstallOutcome] = useState<'accepted' | 'dismissed' | null>(null);
 
+  const isStandalone = useSyncExternalStore(
+    emptySubscribe,
+    getInstalledSnapshot,
+    () => false
+  );
+  const isIOSBrowser = useSyncExternalStore(
+    emptySubscribe,
+    getIOSBrowserSnapshot,
+    () => false
+  );
+
+  const isInstalled = isStandalone || installedEvent;
+
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (isInstalled) return;
 
-    // Detectar si ya está en modo standalone
-    const checkInstalled =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-
-    setIsInstalled(checkInstalled);
-
-    // Detectar iOS en navegador (no standalone)
-    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-    setIsIOSBrowser(isIOS && !checkInstalled);
-
-    if (checkInstalled) return; // Ya instalada, no necesitamos el prompt
-
-    // Escuchar el evento beforeinstallprompt (Android/Chrome/Edge)
     const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault(); // Evitar el banner nativo automático
+      e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
     };
 
-    // Detectar instalación completada
     const handleAppInstalled = () => {
-      setIsInstalled(true);
+      setInstalledEvent(true);
       setDeferredPrompt(null);
-      console.log('[PWA] App instalada correctamente');
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -67,7 +70,7 @@ export function usePWAInstall(): UsePWAInstallReturn {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
-  }, []);
+  }, [isInstalled]);
 
   const triggerInstall = useCallback(async () => {
     if (!deferredPrompt) return;

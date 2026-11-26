@@ -1,105 +1,60 @@
-# VistaSatPRO
+# VistaSatPRO — PWA de Gestión Integral de Servicio Técnico (SAT)
 
-**PWA de Gestión Integral de Servicio Técnico (SAT)**  
-Stack: Next.js 15 · TypeScript · Tailwind CSS · Supabase · Vercel
-
----
-
-## Estado del Proyecto
-
-| Fase | Estado | Descripción |
-|------|--------|-------------|
-| Fase 0 | ✅ Completada | Scaffold, PWA base, identidad Vistalegre, iconos, SW, offline |
-| Fase 1 | ⏳ Pendiente | Auth Supabase, RBAC, navegación, perfiles |
-| Fase 2 | ⏳ Pendiente | Clientes, tareas, audit trail, adjuntos, PDF |
-| Fase 3 | ⏳ Pendiente | Push notifications, centro de notificaciones in-app |
-| Fase 4 | ⏳ Pendiente | Panel admin, informes, offline sync, modo oscuro |
-| Fase 5 | ⏳ Pendiente | QA integral, producción, Vercel deploy |
+**Stack:** Next.js 16 (App Router) · TypeScript · Tailwind CSS v4 · Supabase (PostgreSQL + RLS + Realtime + Storage + Edge Functions) · Web Push (VAPID) · Despliegue en Vercel
 
 ---
 
-## Inicio rápido (desarrollo)
+## Estado de Implementación
+
+| Fase | Estado | Contenido implementado |
+|---|---|---|
+| Fase 0 | ✅ | PWA base (`manifest.webmanifest`, `sw.js`, 10 iconos + screenshots, `offline.html`, tokens Vistalegre, banners Android/iOS) |
+| Fase 1 | ✅ | Autenticación dual (Supabase Auth + Modo Demo Local), RBAC (`admin`, `coordinator`, `technician`), Tab Bar móvil + Sidebar colapsable, `/users`, `/profile` |
+| Fase 2 | ✅ | Clientes (`/customers`), Partes de trabajo (`/tasks`, `/tasks/new`, `/tasks/[id]`), código correlativo `VS-YYYY-XXXX`, Audit Trail inmutable, materiales, fotos cámara/galería, firma digital y generación PDF (`jsPDF`) |
+| Fase 3 | ✅ | Centro de Notificaciones in-app (`/notifications`), campana Realtime, Web Push VAPID (`/api/push/send` + `supabase/functions/handle-task-event`), filtro estricto anti-autonotificación (`actor_id != recipient_id`) |
+| Fase 4 | ✅ | Panel Coordinador con KPIs y gráficos, exportación CSV, informes (`/reports`), cola offline IndexedDB (`idb`) con sincronización automática |
+| Fase 5 | ✅ | Proxy SSR, headers de seguridad HTTP, migración SQL completa con RLS/triggers, verificación TypeScript/ESLint/Build/Browser |
+
+---
+
+## Arranque Rápido en Local (Modo Demo)
+
+Sin necesidad de configurar nada en Supabase, la aplicación arranca en **Modo Demo Local** persistente en `localStorage`:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Abre [http://localhost:3000](http://localhost:3000)
+Abre [http://localhost:3000](http://localhost:3000) y usa los botones de acceso rápido en `/login` (`Técnico`, `Coordinadora`, `Admin`) o inicia sesión con cualquiera de las cuentas demo (contraseña `demo1234`).
 
-## Generar iconos PWA
+---
+
+## Conexión a Producción (Supabase + Web Push + Vercel)
+
+1. **Crear proyecto en Supabase** y ejecutar la migración SQL completa:
+   - `supabase/migrations/0001_initial_schema.sql` (desde el SQL Editor de Supabase).
+2. **Generar claves VAPID** para notificaciones Push reales:
+   ```bash
+   npx web-push generate-vapid-keys
+   ```
+3. **Configurar `.env.local`** (en local) o **Environment Variables** en Vercel copiando `.env.example`:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `NEXT_PUBLIC_VAPID_PUBLIC_KEY`
+   - `VAPID_PRIVATE_KEY`
+   - `VAPID_SUBJECT`
+4. **Edge Function opcional (recomendada para triggers directos desde BD):**
+   - Desplegar `supabase/functions/handle-task-event/index.ts` con `supabase functions deploy handle-task-event` y configurar los secrets VAPID en Supabase.
+5. **Desplegar en Vercel** (HTTPS obligatorio para Service Worker y Web Push).
+
+---
+
+## Verificación de Calidad
 
 ```bash
-node scripts/generate-icons.mjs
-```
-
-Requiere `sharp` (ya incluido en devDependencies).
-
----
-
-## Variables de entorno
-
-Crea un fichero `.env.local` en la raíz con:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...  # Solo en Edge Functions / backend
-NEXT_PUBLIC_VAPID_PUBLIC_KEY=BNxx...
-VAPID_PRIVATE_KEY=xxxx...
-VAPID_SUBJECT=mailto:admin@tuempresa.com
-```
-
----
-
-## Verificación PWA (Lighthouse)
-
-1. Construye y sirve en producción local:
-   ```bash
-   npm run build
-   npm run start
-   ```
-2. Abre Chrome DevTools → Lighthouse → "Progressive Web App"
-3. Criterios objetivo: Score ≥ 90, Installable ✅, PWA Optimized ✅
-
----
-
-## Paleta de colores (tokens Vistalegre)
-
-| Token | HEX | Uso |
-|-------|-----|-----|
-| `navy` | `#002169` | Primario — headers, Tab Bar |
-| `magenta` | `#CF095E` | Acento — FAB, CTAs, urgente |
-| `petrol` | `#004876` | Estado "Asignada" / "En Proceso" |
-| `plum` | `#5E3654` | Estado "En Espera" |
-| `coral` | `#EA7267` | Prioridad Media |
-| `success` | `#1A7A4A` | Estado "Completada" |
-| `danger` | `#D40000` | Prioridad "Urgente" |
-
----
-
-## Arquitectura de directorios
-
-```
-src/
-├── app/
-│   ├── (auth)/login/        # Pantalla de login
-│   ├── dashboard/           # Panel principal (post-auth)
-│   ├── tasks/               # [Fase 2] Partes de trabajo
-│   ├── customers/           # [Fase 2] Clientes
-│   ├── users/               # [Fase 1] Gestión de usuarios (admin)
-│   ├── notifications/       # [Fase 3] Centro de notificaciones
-│   └── profile/             # [Fase 1] Perfil de usuario
-├── components/
-│   ├── pwa/                 # ServiceWorkerRegistration, InstallBanner, OfflineBanner...
-│   ├── ui/                  # Button, Badge, TaskCard, Avatar... [Fase 1+]
-│   ├── layout/              # TabBar, Sidebar, Header... [Fase 1]
-│   └── tasks/               # TaskDetail, AuditTrail, SignaturePad... [Fase 2]
-├── hooks/
-│   ├── usePWAInstall.ts     # Hook de instalación PWA
-│   ├── useAuth.ts           # [Fase 1] Hook de autenticación
-│   └── useNotifications.ts  # [Fase 3] Hook de notificaciones
-└── lib/
-    ├── supabase/            # [Fase 1] Cliente Supabase
-    └── types/               # [Fase 1+] Tipos TypeScript
+npx tsc --noEmit
+npm run lint
+npm run build
 ```
