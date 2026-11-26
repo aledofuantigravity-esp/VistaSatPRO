@@ -25,6 +25,7 @@ interface AuthContextValue {
   profile: Profile | null;
   isLoading: boolean;
   isDemoMode: boolean;
+  onlineUserIds: string[];
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signInDemoUser: (userId: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -54,6 +55,7 @@ async function purgeClientSessionData() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const router = useRouter();
   const isDemoMode = !isSupabaseConfigured();
 
@@ -205,14 +207,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       presenceChannel = supabase.channel('presence:online-users', {
         config: { presence: { key: profileId } },
       });
-      presenceChannel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          void presenceChannel?.track({
-            user_id: profileId,
-            online_at: new Date().toISOString(),
-          });
-        }
-      });
+      presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+          const state = presenceChannel?.presenceState() || {};
+          setOnlineUserIds(Object.keys(state));
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            void presenceChannel?.track({
+              user_id: profileId,
+              online_at: new Date().toISOString(),
+            });
+          }
+        });
     }
 
     return () => {
@@ -292,6 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         isLoading,
         isDemoMode,
+        onlineUserIds,
         signIn,
         signInDemoUser,
         signOut,

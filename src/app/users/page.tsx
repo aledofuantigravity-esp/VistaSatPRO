@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import {
   Clock,
   Pencil,
@@ -41,10 +41,11 @@ function isUserRecentlyActive(u: Profile, liveIds: Set<string>, currentId: strin
 }
 
 function UsersContent() {
-  const { profile } = useAuth();
+  const { profile, onlineUserIds } = useAuth();
+  const channelUid = useId();
   const [users, setUsers] = useState<Profile[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [liveOnlineIds, setLiveOnlineIds] = useState<Set<string>>(new Set());
+  const liveOnlineIds = useMemo(() => new Set(onlineUserIds), [onlineUserIds]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
@@ -99,12 +100,8 @@ function UsersContent() {
       };
     }
 
-    const channel = supabase.channel('presence:online-users');
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        setLiveOnlineIds(new Set(Object.keys(state)));
-      })
+    const channel = supabase
+      .channel(`profiles-admin-watch:${channelUid}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'profiles' },
@@ -118,7 +115,7 @@ function UsersContent() {
       clearInterval(interval);
       void supabase.removeChannel(channel);
     };
-  }, [profileRole, load]);
+  }, [profileRole, channelUid, load]);
 
   if (!profile) return null;
 
