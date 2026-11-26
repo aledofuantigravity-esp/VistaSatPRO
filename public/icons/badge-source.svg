@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Máscara para recortar los detalles interiores de forma transparente -->
+    <mask id="briefcase-cutout">
+      <rect width="512" height="512" fill="white"/>
+      <!-- Interior del asa -->
+      <rect x="202" y="128" width="108" height="44" rx="14" fill="black"/>
+      <!-- Franja horizontal divisoria -->
+      <rect x="44" y="256" width="424" height="24" fill="black"/>
+      <!-- Aro exterior del cierre -->
+      <circle cx="256" cy="268" r="44" fill="black"/>
+    </mask>
+  </defs>
+
+  <!-- Asa exterior del maletín -->
+  <path
+    d="M164 184 V142 C164 108 192 84 226 84 H286 C320 84 348 108 348 142 V184 Z"
+    fill="#FFFFFF"
+    mask="url(#briefcase-cutout)"
+  />
+
+  <!-- Cuerpo principal del maletín -->
+  <rect
+    x="52"
+    y="172"
+    width="408"
+    height="268"
+    rx="44"
+    fill="#FFFFFF"
+    mask="url(#briefcase-cutout)"
+  />
+
+  <!-- Botón central del cierre -->
+  <circle cx="256" cy="268" r="24" fill="#FFFFFF"/>
+</svg>

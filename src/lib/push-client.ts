@@ -110,7 +110,7 @@ export async function showLocalBrowserNotification(title: string, body: string, 
       await reg.showNotification(title, {
         body,
         icon: '/icons/icon-192.png',
-        badge: '/icons/badge-72.png',
+        badge: '/icons/badge-72.png?v=2',
         tag: taskId ? `task-${taskId}` : `vistasat-${Date.now()}`,
         data: { taskId, url: taskId ? `/tasks/${taskId}` : '/dashboard' },
       });

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const SVG_SOURCE = resolve(ROOT, 'public/icons/icon-source.svg');
+const BADGE_SVG_SOURCE = resolve(ROOT, 'public/icons/badge-source.svg');
 const OUTPUT_DIR = resolve(ROOT, 'public/icons');
 const SCREENSHOTS_DIR = resolve(ROOT, 'public/screenshots');
 
@@ -16,6 +17,7 @@ mkdirSync(OUTPUT_DIR, { recursive: true });
 mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
 const svgBuffer = readFileSync(SVG_SOURCE);
+const badgeSvgBuffer = readFileSync(BADGE_SVG_SOURCE);
 
 const standardIcons = [
   { name: 'icon-192.png', size: 192 },
@@ -25,7 +27,6 @@ const standardIcons = [
   { name: 'favicon-16.png', size: 16 },
   { name: 'shortcut-new.png', size: 96 },
   { name: 'shortcut-tasks.png', size: 96 },
-  { name: 'badge-72.png', size: 72 },
 ];
 
 const maskableIcons = [
@@ -41,6 +42,17 @@ for (const icon of standardIcons) {
     .png()
     .toFile(resolve(OUTPUT_DIR, icon.name));
 }
+
+// Badge monocromo transparente para barra de notificaciones Android
+await sharp(badgeSvgBuffer)
+  .resize(72, 72)
+  .png()
+  .toFile(resolve(OUTPUT_DIR, 'badge-72.png'));
+
+await sharp(badgeSvgBuffer)
+  .resize(96, 96)
+  .png()
+  .toFile(resolve(OUTPUT_DIR, 'badge-96.png'));
 
 for (const icon of maskableIcons) {
   const innerSize = Math.round(icon.size * 0.72);

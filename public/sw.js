@@ -1,7 +1,7 @@
-// Service Worker v2 — VistaSatPRO
+// Service Worker v3 — VistaSatPRO
 // Estrategia limpia compatible con Next.js App Router (sin interceptar RSC ni /api/)
 
-const STATIC_CACHE = 'vistasat-static-v2';
+const STATIC_CACHE = 'vistasat-static-v3';
 const MEDIA_CACHE = 'vistasat-media-v2';
 const OFFLINE_URL = '/offline.html';
 
@@ -11,6 +11,7 @@ const STATIC_ASSETS = [
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
+  '/icons/badge-72.png?v=2',
 ];
 
 // ─── INSTALL ─────────────────────────────────────────────────────────────────
@@ -130,7 +131,7 @@ self.addEventListener('push', (event) => {
   const options = {
     body: body || 'Tienes una actualización en un parte de trabajo.',
     icon: '/icons/icon-192.png',
-    badge: '/icons/badge-72.png',
+    badge: '/icons/badge-72.png?v=2',
     tag: taskId ? `task-${taskId}` : `generic-${Date.now()}`,
     renotify: true,
     data: {
