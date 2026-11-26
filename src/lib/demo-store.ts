@@ -22,10 +22,12 @@ export function loadDemoState(): DemoDatabaseState {
   }
 }
 
-export function saveDemoState(state: DemoDatabaseState) {
+export function saveDemoState(state: DemoDatabaseState, emitEvent = true) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  window.dispatchEvent(new CustomEvent('vistasat:demo-updated'));
+  if (emitEvent) {
+    window.dispatchEvent(new CustomEvent('vistasat:demo-updated'));
+  }
 }
 
 export function getDemoSessionUserId(): string | null {

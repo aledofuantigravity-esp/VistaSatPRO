@@ -23,13 +23,17 @@ function ReportsContent() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const profileId = profile?.id;
+  const profileRole = profile?.role;
+
   const load = useCallback(async () => {
-    if (!profile) return;
+    if (!profileId || !profileRole) return;
     await Promise.resolve();
     setLoading(true);
     try {
+      const viewer = { id: profileId, role: profileRole } as Profile;
       const [t, p, c] = await Promise.all([
-        listTasks(profile),
+        listTasks(viewer),
         listProfiles(),
         listCustomers(),
       ]);
@@ -39,7 +43,7 @@ function ReportsContent() {
     } finally {
       setLoading(false);
     }
-  }, [profile]);
+  }, [profileId, profileRole]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);

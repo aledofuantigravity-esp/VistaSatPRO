@@ -28,21 +28,25 @@ export default function DashboardPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const profileId = profile?.id;
+  const profileRole = profile?.role;
+
   const loadData = useCallback(async () => {
-    if (!profile) return;
+    if (!profileId || !profileRole) return;
     await Promise.resolve();
     setLoading(true);
     try {
+      const viewer = { id: profileId, role: profileRole } as Profile;
       const [t, p] = await Promise.all([
-        listTasks(profile),
-        profile.role === 'technician' ? Promise.resolve([]) : listProfiles(),
+        listTasks(viewer),
+        profileRole === 'technician' ? Promise.resolve([]) : listProfiles(),
       ]);
       setTasks(t);
       setProfiles(p);
     } finally {
       setLoading(false);
     }
-  }, [profile]);
+  }, [profileId, profileRole]);
 
   useEffect(() => {
     const t = setTimeout(() => void loadData(), 0);

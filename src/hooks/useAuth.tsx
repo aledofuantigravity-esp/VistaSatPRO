@@ -52,9 +52,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           { cache: 'no-store' }
         );
         const data = (await res.json()) as { profile: Profile | null };
-        setProfile(data.profile);
+        setProfile((prev) => {
+          if (
+            prev &&
+            data.profile &&
+            prev.id === data.profile.id &&
+            prev.updated_at === data.profile.updated_at &&
+            prev.role === data.profile.role &&
+            prev.notification_level === data.profile.notification_level
+          ) {
+            return prev;
+          }
+          return data.profile;
+        });
       } catch {
-        setProfile(null);
+        // Mantener perfil en memoria si falla puntualmente una petición
       } finally {
         setIsLoading(false);
       }

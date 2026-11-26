@@ -53,13 +53,17 @@ function TasksContent() {
   const [showFilters, setShowFilters] = useState(false);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
+  const profileId = profile?.id;
+  const profileRole = profile?.role;
+
   const load = useCallback(async () => {
-    if (!profile) return;
+    if (!profileId || !profileRole) return;
     await Promise.resolve();
     setLoading(true);
     try {
+      const viewer = { id: profileId, role: profileRole } as Profile;
       const [t, p] = await Promise.all([
-        listTasks(profile),
+        listTasks(viewer),
         isCoord ? listProfiles() : Promise.resolve([]),
       ]);
       setTasks(t);
@@ -67,7 +71,7 @@ function TasksContent() {
     } finally {
       setLoading(false);
     }
-  }, [profile, isCoord]);
+  }, [profileId, profileRole, isCoord]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);

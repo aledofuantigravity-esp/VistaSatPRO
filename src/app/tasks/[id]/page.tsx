@@ -79,14 +79,17 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
 
+  const profileId = profile?.id;
+  const profileRole = profile?.role;
+
   const load = useCallback(async () => {
-    if (!profile) return;
+    if (!profileId || !profileRole) return;
     await Promise.resolve();
     setLoading(true);
     try {
       const [detail, profs] = await Promise.all([
         getTaskDetail(taskId),
-        profile.role === 'technician' ? Promise.resolve([]) : listProfiles(),
+        profileRole === 'technician' ? Promise.resolve([]) : listProfiles(),
       ]);
       setTask(detail.task);
       setHistory(detail.history);
@@ -95,7 +98,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [taskId, profile]);
+  }, [taskId, profileId, profileRole]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);

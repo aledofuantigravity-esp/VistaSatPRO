@@ -36,18 +36,22 @@ function CustomersContent() {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const profileId = profile?.id;
+  const profileRole = profile?.role;
+
   const load = useCallback(async () => {
-    if (!profile) return;
+    if (!profileId || !profileRole) return;
     await Promise.resolve();
     setLoading(true);
     try {
-      const [c, t] = await Promise.all([listCustomers(), listTasks(profile)]);
+      const viewer = { id: profileId, role: profileRole } as import('@/types/database').Profile;
+      const [c, t] = await Promise.all([listCustomers(), listTasks(viewer)]);
       setCustomers(c);
       setTasks(t);
     } finally {
       setLoading(false);
     }
-  }, [profile]);
+  }, [profileId, profileRole]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);

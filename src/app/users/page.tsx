@@ -37,18 +37,22 @@ function UsersContent() {
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const profileId = profile?.id;
+  const profileRole = profile?.role;
+
   const load = useCallback(async () => {
-    if (!profile) return;
+    if (!profileId || !profileRole) return;
     await Promise.resolve();
     setLoading(true);
     try {
-      const [u, t] = await Promise.all([listProfiles(), listTasks(profile)]);
+      const viewer = { id: profileId, role: profileRole } as Profile;
+      const [u, t] = await Promise.all([listProfiles(), listTasks(viewer)]);
       setUsers(u);
       setTasks(t);
     } finally {
       setLoading(false);
     }
-  }, [profile]);
+  }, [profileId, profileRole]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);

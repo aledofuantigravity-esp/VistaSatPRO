@@ -211,10 +211,10 @@ export async function listTasks(viewer: Profile): Promise<Task[]> {
       const data = await demoGet<{ tasks: Task[] }>(
         `resource=tasks&userId=${encodeURIComponent(viewer.id)}`
       );
-      // Guardar caché offline local
+      // Guardar caché offline local de forma silenciosa (sin emitir evento de mutación)
       const local = loadDemoState();
       local.tasks = data.tasks;
-      saveDemoState(local);
+      saveDemoState(local, false);
       return data.tasks;
     } catch {
       const local = loadDemoState();
