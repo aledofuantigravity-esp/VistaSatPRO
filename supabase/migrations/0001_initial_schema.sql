@@ -333,8 +333,8 @@ CREATE POLICY "customers_insert_auth" ON public.customers
   FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 CREATE POLICY "customers_update_coord" ON public.customers
-  FOR UPDATE USING (public.is_coordinator_or_admin())
-  WITH CHECK (public.is_coordinator_or_admin());
+  FOR UPDATE USING (public.is_coordinator_or_admin() OR created_by = auth.uid())
+  WITH CHECK (public.is_coordinator_or_admin() OR created_by = auth.uid());
 
 CREATE POLICY "customers_delete_coord" ON public.customers
   FOR DELETE USING (public.is_coordinator_or_admin());

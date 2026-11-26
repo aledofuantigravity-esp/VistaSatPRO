@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Check, Plus, UserCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, UserCheck } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
@@ -38,10 +38,10 @@ function NewTaskContent() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Paso 1: Cliente y sitio
+  // Paso 1: Cliente y sitio (existente o alta manual automática)
   const [customerId, setCustomerId] = useState('');
-  const [creatingCustomer, setCreatingCustomer] = useState(false);
-  const [newCustomerName, setNewCustomerName] = useState('');
+  const [manualCustomerName, setManualCustomerName] = useState('');
+  const [manualTaxId, setManualTaxId] = useState('');
   const [siteContactName, setSiteContactName] = useState('');
   const [siteContactPhone, setSiteContactPhone] = useState('');
   const [siteAddress, setSiteAddress] = useState('');
@@ -79,6 +79,7 @@ function NewTaskContent() {
 
   const handleSelectCustomer = (id: string) => {
     setCustomerId(id);
+    if (!id) return;
     const c = customers.find((item) => item.id === id);
     if (c) {
       setSiteContactName(c.contact_name || '');
@@ -88,37 +89,38 @@ function NewTaskContent() {
     }
   };
 
-  const handleQuickCreateCustomer = async () => {
-    if (!newCustomerName.trim()) return;
-    const created = await createCustomer({
-      name: newCustomerName.trim(),
-      tax_id: null,
-      address: siteAddress || null,
-      city: siteCity || null,
-      postal_code: null,
-      contact_name: siteContactName || null,
-      contact_phone: siteContactPhone || null,
-      contact_email: null,
-      notes: null,
-      created_by: profile.id,
-    });
-    setCustomers((prev) => [...prev, created]);
-    setCustomerId(created.id);
-    setCreatingCustomer(false);
-    setNewCustomerName('');
-  };
-
   const handleSubmit = async () => {
     setError(null);
-    if (!customerId || !problemDesc.trim()) {
-      setError('Selecciona un cliente e introduce la descripción del problema.');
+    if ((!customerId && !manualCustomerName.trim()) || !problemDesc.trim()) {
+      setError('Indica un cliente (o sus datos manuales) y la descripción del problema.');
       return;
     }
     setSubmitting(true);
     try {
+      let resolvedCustomerId = customerId;
+
+      // Si no se seleccionó ningún cliente existente, se crea automáticamente con los datos introducidos
+      if (!resolvedCustomerId) {
+        const createdCustomer = await createCustomer({
+          name: manualCustomerName.trim(),
+          tax_id: manualTaxId.trim() || null,
+          address: siteAddress.trim() || null,
+          city: siteCity.trim() || null,
+          postal_code: null,
+          contact_name: siteContactName.trim() || null,
+          contact_phone: siteContactPhone.trim() || null,
+          contact_email: null,
+          notes: null,
+          created_by: profile.id,
+        });
+        resolvedCustomerId = createdCustomer.id;
+        setCustomerId(createdCustomer.id);
+        setCustomers((prev) => [...prev, createdCustomer]);
+      }
+
       const created = await createTask(
         {
-          customer_id: customerId,
+          customer_id: resolvedCustomerId,
           site_contact_name: siteContactName || undefined,
           site_contact_phone: siteContactPhone || undefined,
           site_address: siteAddress || undefined,
@@ -140,6 +142,9 @@ function NewTaskContent() {
   };
 
   const selectedCustomer = customers.find((c) => c.id === customerId);
+  const displayCustomerName = selectedCustomer
+    ? selectedCustomer.name
+    : `${manualCustomerName.trim()} (nuevo cliente)`;
   const selectedTech = isTechnician
     ? profile
     : technicians.find((t) => t.id === assignedTo);
@@ -182,48 +187,58 @@ function NewTaskContent() {
       <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-4">
         {step === 1 && (
           <>
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-bold text-charcoal">Cliente *</label>
-              <button
-                type="button"
-                onClick={() => setCreatingCustomer(!creatingCustomer)}
-                className="text-xs font-bold text-magenta hover:underline inline-flex items-center gap-1"
-              >
-                <Plus size={14} /> {creatingCustomer ? 'Seleccionar existente' : 'Cliente rápido'}
-              </button>
-            </div>
-
-            {creatingCustomer ? (
-              <div className="p-3 bg-off-white border border-border space-y-3">
-                <input
-                  type="text"
-                  value={newCustomerName}
-                  onChange={(e) => setNewCustomerName(e.target.value)}
-                  placeholder="Razón social / Nombre del cliente *"
-                  className="w-full px-3 py-2.5 bg-white border border-border"
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleQuickCreateCustomer}
-                  disabled={!newCustomerName.trim()}
-                >
-                  Guardar cliente rápido
-                </Button>
-              </div>
-            ) : (
+            <div>
+              <label className="block text-sm font-bold text-charcoal mb-1.5">
+                Cliente existente (opcional)
+              </label>
               <select
                 value={customerId}
                 onChange={(e) => handleSelectCustomer(e.target.value)}
                 className="w-full px-3 py-3 bg-bg-input border border-border"
               >
-                <option value="">Selecciona un cliente...</option>
+                <option value="">
+                  — Sin seleccionar (crear nuevo cliente manualmente) —
+                </option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} {c.city ? `(${c.city})` : ''}
                   </option>
                 ))}
               </select>
+            </div>
+
+            {!customerId && (
+              <div className="p-3.5 bg-navy/5 border-l-4 border-magenta space-y-3">
+                <p className="text-xs font-bold uppercase text-navy">
+                  Datos del nuevo cliente (se dará de alta automáticamente)
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      Nombre / Razón social *
+                    </label>
+                    <input
+                      type="text"
+                      value={manualCustomerName}
+                      onChange={(e) => setManualCustomerName(e.target.value)}
+                      placeholder="Ej. Farmacia Central S.L."
+                      className="w-full px-3 py-2.5 bg-white border border-border"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      CIF / NIF
+                    </label>
+                    <input
+                      type="text"
+                      value={manualTaxId}
+                      onChange={(e) => setManualTaxId(e.target.value)}
+                      placeholder="Opcional"
+                      className="w-full px-3 py-2.5 bg-white border border-border"
+                    />
+                  </div>
+                </div>
+              </div>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -279,7 +294,7 @@ function NewTaskContent() {
             <div className="pt-2 flex justify-end">
               <Button
                 type="button"
-                disabled={!customerId}
+                disabled={!customerId && !manualCustomerName.trim()}
                 onClick={() => setStep(2)}
               >
                 Siguiente <ArrowRight size={16} />
@@ -429,7 +444,7 @@ function NewTaskContent() {
             <div className="p-4 bg-off-white border-l-4 border-navy space-y-1.5 text-sm">
               <p className="text-xs font-bold uppercase text-navy">Resumen del parte</p>
               <p>
-                <strong>Cliente:</strong> {selectedCustomer?.name}
+                <strong>Cliente:</strong> {displayCustomerName}
               </p>
               <p>
                 <strong>Equipo:</strong> {equipmentRef || 'No especificado'}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Building2, MapPin, Phone, Plus, Search, Shield, X } from 'lucide-react';
+import { Building2, MapPin, Phone, Plus, Search, X } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
@@ -67,14 +67,7 @@ function CustomersContent() {
   }, [customers, search]);
 
   if (!profile) return null;
-  if (profile.role === 'technician') {
-    return (
-      <div className="p-6 text-center">
-        <Shield size={40} className="text-danger mx-auto mb-2" />
-        <h1 className="text-lg font-bold text-charcoal">Acceso restringido</h1>
-      </div>
-    );
-  }
+  const isCoord = profile.role === 'admin' || profile.role === 'coordinator';
 
   const openNew = () => {
     setEditing(null);
@@ -206,13 +199,15 @@ function CustomersContent() {
                   <span className="font-semibold text-mid-grey">
                     Partes asociados: <strong>{count}</strong>
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => openEdit(c)}
-                    className="font-bold text-navy hover:underline"
-                  >
-                    Editar ficha
-                  </button>
+                  {(isCoord || c.created_by === profile.id) && (
+                    <button
+                      type="button"
+                      onClick={() => openEdit(c)}
+                      className="font-bold text-navy hover:underline"
+                    >
+                      Editar ficha
+                    </button>
+                  )}
                 </div>
               </div>
             );

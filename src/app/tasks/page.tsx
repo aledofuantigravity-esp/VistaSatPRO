@@ -183,6 +183,11 @@ function TasksContent() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Link href="/customers">
+            <Button variant="secondary" size="sm">
+              Clientes
+            </Button>
+          </Link>
           {isCoord && (
             <Button variant="secondary" size="sm" onClick={exportCSV}>
               <Download size={15} /> CSV
