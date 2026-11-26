@@ -3,6 +3,7 @@ import { Montserrat } from 'next/font/google';
 import './globals.css';
 import { ServiceWorkerRegistration } from '@/components/pwa/ServiceWorkerRegistration';
 import { AuthProvider } from '@/hooks/useAuth';
+import { NotificationsProvider } from '@/hooks/useNotifications';
 
 const montserrat = Montserrat({
   subsets: ['latin'],
@@ -71,7 +72,9 @@ export default function RootLayout({
   return (
     <html lang="es" className={montserrat.variable}>
       <body className="font-montserrat antialiased bg-off-white text-charcoal">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <NotificationsProvider>{children}</NotificationsProvider>
+        </AuthProvider>
         <ServiceWorkerRegistration />
       </body>
     </html>

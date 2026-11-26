@@ -29,7 +29,7 @@ import { ROLE_LABELS } from '@/types/database';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { profile, isLoading, isDemoMode, signOut } = useAuth();
-  const { unreadCount, latestToast, dismissToast } = useNotifications(profile?.id);
+  const { unreadCount, latestToast, dismissToast } = useNotifications();
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);

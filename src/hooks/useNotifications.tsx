@@ -1,15 +1,41 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import {
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/lib/data-service';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import type { AppNotification } from '@/types/database';
 
-export function useNotifications(userId: string | undefined) {
+interface NotificationsContextValue {
+  notifications: AppNotification[];
+  unreadCount: number;
+  isLoading: boolean;
+  latestToast: AppNotification | null;
+  dismissToast: () => void;
+  markRead: (id: string) => Promise<void>;
+  markAllRead: () => Promise<void>;
+  reload: () => Promise<void>;
+}
+
+const NotificationsContext = createContext<NotificationsContextValue | null>(null);
+
+export function NotificationsProvider({ children }: { children: React.ReactNode }) {
+  const { profile } = useAuth();
+  const userId = profile?.id;
+  const instanceId = useId();
+
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [latestToast, setLatestToast] = useState<AppNotification | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,7 +81,6 @@ export function useNotifications(userId: string | undefined) {
       const handleDemo = () => void load();
       window.addEventListener('vistasat:demo-updated', handleDemo);
 
-      // Sincronización multi-dispositivo en el servidor simulado cada 4s cuando está visible
       const interval = setInterval(async () => {
         if (document.visibilityState !== 'visible' || !navigator.onLine) return;
         try {
@@ -80,8 +105,9 @@ export function useNotifications(userId: string | undefined) {
       };
     }
 
+    const channelName = `notifications:${userId}:${instanceId}`;
     const channel = supabase
-      .channel(`notifications:${userId}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -97,9 +123,9 @@ export function useNotifications(userId: string | undefined) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [userId, load]);
+  }, [userId, instanceId, load]);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
@@ -119,14 +145,28 @@ export function useNotifications(userId: string | undefined) {
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true, read_at: nowIso })));
   };
 
-  return {
-    notifications,
-    unreadCount,
-    isLoading,
-    latestToast,
-    dismissToast: () => setLatestToast(null),
-    markRead,
-    markAllRead,
-    reload: load,
-  };
+  return (
+    <NotificationsContext.Provider
+      value={{
+        notifications,
+        unreadCount,
+        isLoading,
+        latestToast,
+        dismissToast: () => setLatestToast(null),
+        markRead,
+        markAllRead,
+        reload: load,
+      }}
+    >
+      {children}
+    </NotificationsContext.Provider>
+  );
+}
+
+export function useNotifications(): NotificationsContextValue {
+  const ctx = useContext(NotificationsContext);
+  if (!ctx) {
+    throw new Error('useNotifications debe usarse dentro de NotificationsProvider');
+  }
+  return ctx;
 }

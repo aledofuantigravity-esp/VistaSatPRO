@@ -20,7 +20,7 @@ function NotificationsContent() {
   const { profile } = useAuth();
   const router = useRouter();
   const { notifications, unreadCount, isLoading, markRead, markAllRead } =
-    useNotifications(profile?.id);
+    useNotifications();
 
   if (!profile) return null;
 
