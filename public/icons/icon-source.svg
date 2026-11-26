@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Fondo azul marino -->
+  <rect width="512" height="512" rx="0" fill="#002169"/>
+  <!-- Maletín técnico (cuerpo) -->
+  <rect x="96" y="208" width="320" height="224" rx="24" fill="none" stroke="#FFFFFF" stroke-width="20"/>
+  <!-- Asa del maletín -->
+  <path d="M176 208V172C176 148 196 128 220 128H292C316 128 336 148 336 172V208" fill="none" stroke="#CF095E" stroke-width="20" stroke-linecap="round"/>
+  <!-- Línea central del maletín -->
+  <line x1="96" y1="296" x2="416" y2="296" stroke="rgba(255,255,255,0.4)" stroke-width="16"/>
+  <!-- Cierre central (círculo acento) -->
+  <circle cx="256" cy="296" r="28" fill="#CF095E"/>
+  <circle cx="256" cy="296" r="14" fill="#FFFFFF"/>
+  <!-- Detalles de herramienta (llave estilizada) -->
+  <path d="M228 364 L256 340 L284 364" stroke="rgba(255,255,255,0.3)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
