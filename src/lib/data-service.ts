@@ -296,37 +296,67 @@ export async function updateCustomer(
 
 // ─── TAREAS / PARTES DE TRABAJO ──────────────────────────────────────────────
 
-export async function listTasks(viewer: Profile): Promise<Task[]> {
+export async function listTasks(
+  viewer: Profile,
+  options?: { includeDeleted?: boolean }
+): Promise<Task[]> {
+  const includeDeleted = Boolean(options?.includeDeleted);
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
     try {
       const data = await demoGet<{ tasks: Task[] }>(
-        `resource=tasks&userId=${encodeURIComponent(viewer.id)}`
+        `resource=tasks&userId=${encodeURIComponent(viewer.id)}${
+          includeDeleted ? '&includeDeleted=1' : ''
+        }`
       );
-      // Guardar caché offline local de forma silenciosa (sin emitir evento de mutación)
-      const local = loadDemoState();
-      local.tasks = data.tasks;
-      saveDemoState(local, false);
+      if (includeDeleted) {
+        const local = loadDemoState();
+        local.tasks = data.tasks;
+        saveDemoState(local, false);
+      }
       return data.tasks;
     } catch {
       const local = loadDemoState();
       const isCoord = viewer.role === 'admin' || viewer.role === 'coordinator';
-      return local.tasks.filter(
-        (t) =>
-          isCoord ||
+      return local.tasks.filter((t) => {
+        if (!includeDeleted && t.deleted_at) return false;
+        if (isCoord) return true;
+        return (
           t.assigned_to === viewer.id ||
+          t.created_by === viewer.id ||
+          t.deleted_by === viewer.id ||
           (!t.assigned_to && t.status === 'pending')
-      );
+        );
+      });
     }
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('tasks')
     .select(
-      '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*)'
+      '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*), deleter:profiles!tasks_deleted_by_fkey(*)'
     )
     .order('created_at', { ascending: false });
-  if (error) throw new Error(error.message);
+
+  if (!includeDeleted) {
+    query = query.is('deleted_at', null);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    // Fallback elegante si la migración 0003 aún no se ha ejecutado en Supabase
+    if (error.code === '42703' || error.code === 'PGRST200' || error.message.includes('deleted_')) {
+      const legacy = await supabase
+        .from('tasks')
+        .select(
+          '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*)'
+        )
+        .order('created_at', { ascending: false });
+      if (legacy.error) throw new Error(legacy.error.message);
+      return (legacy.data || []) as Task[];
+    }
+    throw new Error(error.message);
+  }
   return (data || []) as Task[];
 }
 
@@ -344,11 +374,11 @@ export async function getTaskDetail(taskId: string): Promise<{
     }>(`resource=task_detail&taskId=${encodeURIComponent(taskId)}`);
   }
 
-  const [taskRes, histRes, attRes] = await Promise.all([
+  const [initialTaskRes, histRes, attRes] = await Promise.all([
     supabase
       .from('tasks')
       .select(
-        '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*)'
+        '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*), deleter:profiles!tasks_deleted_by_fkey(*)'
       )
       .eq('id', taskId)
       .single(),
@@ -363,6 +393,22 @@ export async function getTaskDetail(taskId: string): Promise<{
       .eq('task_id', taskId)
       .order('created_at', { ascending: false }),
   ]);
+
+  let taskRes = initialTaskRes;
+  if (
+    taskRes.error &&
+    (taskRes.error.code === '42703' ||
+      taskRes.error.code === 'PGRST200' ||
+      taskRes.error.message.includes('deleted_'))
+  ) {
+    taskRes = (await supabase
+      .from('tasks')
+      .select(
+        '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*)'
+      )
+      .eq('id', taskId)
+      .single()) as unknown as typeof initialTaskRes;
+  }
 
   if (taskRes.error) return { task: null, history: [], attachments: [] };
 
@@ -562,15 +608,22 @@ export async function addTaskNote(
 export async function updateTaskFields(
   taskId: string,
   patch: Partial<{
-    assigned_to: string | null;
+    customer_id: string;
+    site_contact_name: string | null;
+    site_contact_phone: string | null;
+    site_address: string | null;
+    site_city: string | null;
+    equipment_ref: string | null;
+    equipment_sn: string | null;
+    problem_desc: string;
     priority: TaskPriority;
     status: TaskStatus;
+    assigned_to: string | null;
+    estimated_duration: number | null;
     materials_used: MaterialItem[];
     client_signature_url: string | null;
     signer_name: string | null;
     resolution_notes: string | null;
-    problem_desc: string;
-    equipment_ref: string | null;
   }>,
   actor: Profile
 ): Promise<void> {
@@ -610,6 +663,83 @@ export async function updateTaskFields(
     type: patch.assigned_to !== undefined ? 'reassigned' : 'task_updated',
     title: `Parte ${data.code} actualizado`,
     body: `${actor.full_name} ha actualizado el parte.`,
+  });
+}
+
+export async function softDeleteTask(
+  taskId: string,
+  reason: string | undefined,
+  actor: Profile
+): Promise<void> {
+  const cleanReason = reason?.trim() || null;
+  const supabase = getSupabaseBrowserClient();
+
+  if (!supabase) {
+    await demoPost({
+      action: 'soft_delete_task',
+      taskId,
+      reason: cleanReason,
+      actorId: actor.id,
+    });
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: actor.id,
+      deletion_reason: cleanReason,
+    })
+    .eq('id', taskId)
+    .select('code')
+    .single();
+  if (error) throw new Error(error.message);
+
+  await triggerPushEndpoint({
+    taskId,
+    actorId: actor.id,
+    type: 'task_updated',
+    title: `Parte eliminado: ${data.code}`,
+    body: `${actor.full_name} movió el parte a la papelera${
+      cleanReason ? ` (${cleanReason})` : ''
+    }.`,
+  });
+}
+
+export async function restoreTask(
+  taskId: string,
+  actor: Profile
+): Promise<void> {
+  const supabase = getSupabaseBrowserClient();
+
+  if (!supabase) {
+    await demoPost({
+      action: 'restore_task',
+      taskId,
+      actorId: actor.id,
+    });
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .update({
+      deleted_at: null,
+      deleted_by: null,
+      deletion_reason: null,
+    })
+    .eq('id', taskId)
+    .select('code')
+    .single();
+  if (error) throw new Error(error.message);
+
+  await triggerPushEndpoint({
+    taskId,
+    actorId: actor.id,
+    type: 'task_updated',
+    title: `Parte restaurado: ${data.code}`,
+    body: `${actor.full_name} ha recuperado el parte desde la papelera.`,
   });
 }
 

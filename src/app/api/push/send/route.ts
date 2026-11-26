@@ -144,7 +144,7 @@ export async function POST(request: Request) {
 
     const { data: task } = await supabaseAdmin
       .from('tasks')
-      .select('id, assigned_to, created_by, status')
+      .select('id, assigned_to, created_by, deleted_by, status')
       .eq('id', taskId)
       .single();
 
@@ -159,6 +159,7 @@ export async function POST(request: Request) {
       isCoordOrAdmin ||
       task.assigned_to === actorId ||
       task.created_by === actorId ||
+      task.deleted_by === actorId ||
       (task.assigned_to === null && task.status === 'pending');
 
     if (!hasTaskAccess) {

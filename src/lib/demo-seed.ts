@@ -488,5 +488,6 @@ export function hydrateTasks(state: DemoDatabaseState, tasks: Task[]): Task[] {
     customer: state.customers.find((c) => c.id === t.customer_id),
     assignee: t.assigned_to ? state.profiles.find((p) => p.id === t.assigned_to) || null : null,
     creator: state.profiles.find((p) => p.id === t.created_by) || null,
+    deleter: t.deleted_by ? state.profiles.find((p) => p.id === t.deleted_by) || null : null,
   }));
 }

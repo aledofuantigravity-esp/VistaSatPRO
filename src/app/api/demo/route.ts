@@ -60,12 +60,18 @@ export async function GET(request: Request) {
     case 'tasks': {
       const viewer = state.profiles.find((p) => p.id === userId);
       if (!viewer) return NextResponse.json({ tasks: [] });
+      const includeDeleted = searchParams.get('includeDeleted') === '1';
       const isCoord = viewer.role === 'admin' || viewer.role === 'coordinator';
-      const filtered = isCoord
-        ? state.tasks
-        : state.tasks.filter(
-            (t) => t.assigned_to === viewer.id || (!t.assigned_to && t.status === 'pending')
-          );
+      const filtered = state.tasks.filter((t) => {
+        if (!includeDeleted && t.deleted_at) return false;
+        if (isCoord) return true;
+        return (
+          t.assigned_to === viewer.id ||
+          t.created_by === viewer.id ||
+          t.deleted_by === viewer.id ||
+          (!t.assigned_to && t.status === 'pending')
+        );
+      });
       const tasks = hydrateTasks(state, filtered).sort((a, b) =>
         b.created_at.localeCompare(a.created_at)
       );
@@ -526,6 +532,88 @@ export async function POST(request: Request) {
           });
         }
 
+        if (patch.customer_id && patch.customer_id !== prev.customer_id) {
+          const oldCust = state.customers.find((c) => c.id === prev.customer_id)?.name || prev.customer_id;
+          const newCust = state.customers.find((c) => c.id === patch.customer_id)?.name || patch.customer_id;
+          state.history.push({
+            id: `hist-${Date.now()}-c`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'customer_id',
+            old_value: oldCust,
+            new_value: newCust,
+            note: `Cliente actualizado: ${oldCust} → ${newCust}`,
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
+        if (patch.equipment_ref !== undefined && patch.equipment_ref !== prev.equipment_ref) {
+          state.history.push({
+            id: `hist-${Date.now()}-eq`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'equipment_ref',
+            old_value: prev.equipment_ref,
+            new_value: patch.equipment_ref ?? null,
+            note: `Equipo actualizado: ${prev.equipment_ref || '—'} → ${patch.equipment_ref || '—'}`,
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
+        if (patch.equipment_sn !== undefined && patch.equipment_sn !== prev.equipment_sn) {
+          state.history.push({
+            id: `hist-${Date.now()}-sn`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'equipment_sn',
+            old_value: prev.equipment_sn,
+            new_value: patch.equipment_sn ?? null,
+            note: `Nº de serie actualizado: ${prev.equipment_sn || '—'} → ${patch.equipment_sn || '—'}`,
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
+        if (patch.problem_desc !== undefined && patch.problem_desc !== prev.problem_desc) {
+          state.history.push({
+            id: `hist-${Date.now()}-pd`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'problem_desc',
+            old_value: prev.problem_desc,
+            new_value: patch.problem_desc,
+            note: 'Descripción de avería modificada',
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
+        if (
+          (patch.site_contact_name !== undefined && patch.site_contact_name !== prev.site_contact_name) ||
+          (patch.site_contact_phone !== undefined && patch.site_contact_phone !== prev.site_contact_phone) ||
+          (patch.site_address !== undefined && patch.site_address !== prev.site_address) ||
+          (patch.site_city !== undefined && patch.site_city !== prev.site_city)
+        ) {
+          state.history.push({
+            id: `hist-${Date.now()}-sc`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'site_contact',
+            old_value: null,
+            new_value: null,
+            note: 'Datos de contacto o dirección en sitio modificados',
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
         await dispatchServerDemoNotifications(state, {
           task: next,
           actorId,
@@ -537,6 +625,108 @@ export async function POST(request: Request) {
               : 'task_updated',
           title: `Parte ${prev.code} actualizado`,
           body: `${actor?.full_name || 'Usuario'} ha actualizado los datos del parte.`,
+        });
+
+        saveServerDemoDb(state);
+        return NextResponse.json({ ok: true });
+      }
+
+      case 'soft_delete_task': {
+        const { taskId, reason, actorId } = body as {
+          taskId: string;
+          reason?: string;
+          actorId: string;
+        };
+        const idx = state.tasks.findIndex((t) => t.id === taskId);
+        if (idx === -1) {
+          return NextResponse.json({ error: 'Parte no encontrado' }, { status: 404 });
+        }
+        const prev = state.tasks[idx];
+        if (prev.deleted_at) {
+          return NextResponse.json({ ok: true });
+        }
+        const actor = state.profiles.find((p) => p.id === actorId);
+        const cleanReason = reason?.trim() || null;
+
+        state.tasks[idx] = {
+          ...prev,
+          deleted_at: nowIso,
+          deleted_by: actorId,
+          deletion_reason: cleanReason,
+          updated_at: nowIso,
+        };
+
+        state.history.push({
+          id: `hist-${Date.now()}-del`,
+          task_id: taskId,
+          actor_id: actorId,
+          event_type: 'deleted',
+          field_name: 'deleted_at',
+          old_value: null,
+          new_value: nowIso,
+          note: cleanReason
+            ? `Parte enviado a la papelera. Motivo: ${cleanReason}`
+            : 'Parte enviado a la papelera',
+          metadata: cleanReason ? { reason: cleanReason } : {},
+          created_at: nowIso,
+        });
+
+        await dispatchServerDemoNotifications(state, {
+          task: state.tasks[idx],
+          actorId,
+          type: 'task_updated',
+          title: `Parte eliminado: ${prev.code}`,
+          body: `${actor?.full_name || 'Usuario'} movió el parte a la papelera${
+            cleanReason ? ` (${cleanReason})` : ''
+          }.`,
+        });
+
+        saveServerDemoDb(state);
+        return NextResponse.json({ ok: true });
+      }
+
+      case 'restore_task': {
+        const { taskId, actorId } = body as {
+          taskId: string;
+          actorId: string;
+        };
+        const idx = state.tasks.findIndex((t) => t.id === taskId);
+        if (idx === -1) {
+          return NextResponse.json({ error: 'Parte no encontrado' }, { status: 404 });
+        }
+        const prev = state.tasks[idx];
+        if (!prev.deleted_at) {
+          return NextResponse.json({ ok: true });
+        }
+        const actor = state.profiles.find((p) => p.id === actorId);
+
+        state.tasks[idx] = {
+          ...prev,
+          deleted_at: null,
+          deleted_by: null,
+          deletion_reason: null,
+          updated_at: nowIso,
+        };
+
+        state.history.push({
+          id: `hist-${Date.now()}-res`,
+          task_id: taskId,
+          actor_id: actorId,
+          event_type: 'restored',
+          field_name: 'deleted_at',
+          old_value: prev.deleted_at,
+          new_value: null,
+          note: 'Parte restaurado desde la papelera',
+          metadata: {},
+          created_at: nowIso,
+        });
+
+        await dispatchServerDemoNotifications(state, {
+          task: state.tasks[idx],
+          actorId,
+          type: 'task_updated',
+          title: `Parte restaurado: ${prev.code}`,
+          body: `${actor?.full_name || 'Usuario'} ha recuperado el parte de la papelera.`,
         });
 
         saveServerDemoDb(state);

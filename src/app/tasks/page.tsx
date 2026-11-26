@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
+  AlertTriangle,
   Download,
   Filter,
   LayoutGrid,
   Plus,
+  RotateCcw,
   Search,
   Table as TableIcon,
+  Trash2,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
@@ -16,7 +19,7 @@ import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { TaskCard } from '@/components/ui/TaskCard';
 import { useAuth } from '@/hooks/useAuth';
 import { downloadCsv } from '@/lib/csv';
-import { listProfiles, listTasks } from '@/lib/data-service';
+import { listProfiles, listTasks, restoreTask } from '@/lib/data-service';
 import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -42,7 +45,7 @@ function TasksContent() {
 
   const isCoord = profile?.role === 'admin' || profile?.role === 'coordinator';
 
-  const [tab, setTab] = useState<'mine' | 'unassigned' | 'all'>(() =>
+  const [tab, setTab] = useState<'mine' | 'unassigned' | 'all' | 'trash'>(() =>
     isCoord ? 'all' : 'mine'
   );
   const [search, setSearch] = useState('');
@@ -53,6 +56,8 @@ function TasksContent() {
   const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
 
   const profileId = profile?.id;
   const profileRole = profile?.role;
@@ -64,7 +69,7 @@ function TasksContent() {
     try {
       const viewer = { id: profileId, role: profileRole } as Profile;
       const [t, p] = await Promise.all([
-        listTasks(viewer),
+        listTasks(viewer, { includeDeleted: true }),
         isCoord ? listProfiles() : Promise.resolve([]),
       ]);
       setTasks(t);
@@ -84,8 +89,12 @@ function TasksContent() {
     };
   }, [load]);
 
+  const activeTasks = useMemo(() => tasks.filter((t) => !t.deleted_at), [tasks]);
+  const trashedTasks = useMemo(() => tasks.filter((t) => Boolean(t.deleted_at)), [tasks]);
+
   const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
+    const source = tab === 'trash' ? trashedTasks : activeTasks;
+    return source.filter((t) => {
       if (tab === 'mine' && t.assigned_to !== profile?.id) return false;
       if (tab === 'unassigned' && (t.assigned_to !== null || t.status !== 'pending')) return false;
 
@@ -107,6 +116,8 @@ function TasksContent() {
           t.problem_desc,
           t.site_city,
           t.assignee?.full_name,
+          t.deleter?.full_name,
+          t.deletion_reason,
         ]
           .filter(Boolean)
           .join(' ')
@@ -117,7 +128,8 @@ function TasksContent() {
       return true;
     });
   }, [
-    tasks,
+    activeTasks,
+    trashedTasks,
     tab,
     profile?.id,
     statusFilter,
@@ -163,8 +175,31 @@ function TasksContent() {
 
   const technicians = profiles.filter((p) => p.role === 'technician' && p.is_active);
 
+  const handleRestore = async (taskId: string, code: string) => {
+    setRestoringId(taskId);
+    try {
+      await restoreTask(taskId, profile);
+      setFeedbackBanner(`Parte ${code} restaurado y devuelto a la lista activa.`);
+      setTimeout(() => setFeedbackBanner(null), 4000);
+      await load();
+    } catch (err) {
+      setFeedbackBanner(
+        err instanceof Error ? err.message : 'No se pudo restaurar el parte.'
+      );
+      setTimeout(() => setFeedbackBanner(null), 4000);
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 space-y-4">
+      {feedbackBanner && (
+        <div className="p-3 bg-navy text-white text-xs font-bold border-l-4 border-magenta shadow-card">
+          {feedbackBanner}
+        </div>
+      )}
+
       {/* Cabecera */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -202,35 +237,45 @@ function TasksContent() {
           {isCoord && (
             <button
               onClick={() => setTab('all')}
-              className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
+              className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
                 tab === 'all'
                   ? 'bg-navy text-white'
                   : 'bg-white text-mid-grey border border-border'
               }`}
             >
-              Todos ({tasks.length})
+              Todos ({activeTasks.length})
             </button>
           )}
           <button
             onClick={() => setTab('mine')}
-            className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
+            className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
               tab === 'mine'
                 ? 'bg-navy text-white'
                 : 'bg-white text-mid-grey border border-border'
             }`}
           >
-            Mis Tareas ({tasks.filter((t) => t.assigned_to === profile.id).length})
+            Mis Tareas ({activeTasks.filter((t) => t.assigned_to === profile.id).length})
           </button>
           <button
             onClick={() => setTab('unassigned')}
-            className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
+            className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
               tab === 'unassigned'
                 ? 'bg-navy text-white'
                 : 'bg-white text-mid-grey border border-border'
             }`}
           >
             Sin Asignar (
-            {tasks.filter((t) => t.assigned_to === null && t.status === 'pending').length})
+            {activeTasks.filter((t) => t.assigned_to === null && t.status === 'pending').length})
+          </button>
+          <button
+            onClick={() => setTab('trash')}
+            className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap inline-flex items-center gap-1.5 ${
+              tab === 'trash'
+                ? 'bg-danger text-white'
+                : 'bg-white text-mid-grey border border-border hover:text-danger'
+            }`}
+          >
+            <Trash2 size={13} /> Papelera ({trashedTasks.length})
           </button>
         </div>
 
@@ -367,6 +412,17 @@ function TasksContent() {
         </div>
       )}
 
+      {tab === 'trash' && (
+        <div className="p-3 bg-danger/10 border-l-4 border-danger text-xs text-charcoal flex items-start gap-2">
+          <AlertTriangle size={16} className="text-danger flex-shrink-0 mt-0.5" />
+          <div>
+            <strong>Papelera de partes eliminados:</strong> Todos los partes borrados conservan
+            su historial cronológico completo y quién los eliminó. Puedes inspeccionarlos o
+            restaurarlos en cualquier momento.
+          </div>
+        </div>
+      )}
+
       {/* Resultados */}
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -376,9 +432,13 @@ function TasksContent() {
         </div>
       ) : filteredTasks.length === 0 ? (
         <div className="bg-white rounded-md p-8 text-center shadow-card">
-          <p className="font-bold text-charcoal">No se encontraron partes</p>
+          <p className="font-bold text-charcoal">
+            {tab === 'trash' ? 'La papelera está vacía' : 'No se encontraron partes'}
+          </p>
           <p className="text-sm text-mid-grey mt-1">
-            Prueba a limpiar los filtros o cambiar de pestaña.
+            {tab === 'trash'
+              ? 'No hay ningún parte eliminado en este momento.'
+              : 'Prueba a limpiar los filtros o cambiar de pestaña.'}
           </p>
         </div>
       ) : viewMode === 'table' ? (
@@ -391,8 +451,8 @@ function TasksContent() {
                 <th className="p-3">Equipo</th>
                 <th className="p-3">Estado</th>
                 <th className="p-3">Prioridad</th>
-                <th className="p-3">Técnico</th>
-                <th className="p-3">Apertura</th>
+                <th className="p-3">{tab === 'trash' ? 'Eliminado por' : 'Técnico'}</th>
+                <th className="p-3">{tab === 'trash' ? 'Acción' : 'Apertura'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-sm">
@@ -411,11 +471,39 @@ function TasksContent() {
                   <td className="p-3">
                     <PriorityBadge priority={t.priority} />
                   </td>
-                  <td className="p-3 text-dark-grey">
-                    {t.assignee?.full_name || 'Sin asignar'}
+                  <td className="p-3 text-dark-grey text-xs">
+                    {tab === 'trash' ? (
+                      <div>
+                        <span className="font-bold text-danger block">
+                          {t.deleter?.full_name || 'Usuario'}
+                        </span>
+                        <span className="text-mid-grey">
+                          {t.deleted_at ? new Date(t.deleted_at).toLocaleString('es-ES') : ''}
+                        </span>
+                        {t.deletion_reason && (
+                          <span className="block text-[11px] italic text-dark-grey">
+                            &ldquo;{t.deletion_reason}&rdquo;
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      t.assignee?.full_name || 'Sin asignar'
+                    )}
                   </td>
                   <td className="p-3 text-xs text-mid-grey">
-                    {new Date(t.created_at).toLocaleDateString('es-ES')}
+                    {tab === 'trash' ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        isLoading={restoringId === t.id}
+                        onClick={() => handleRestore(t.id, t.code)}
+                      >
+                        <RotateCcw size={14} /> Restaurar
+                      </Button>
+                    ) : (
+                      new Date(t.created_at).toLocaleDateString('es-ES')
+                    )}
                   </td>
                 </tr>
               ))}
@@ -424,9 +512,37 @@ function TasksContent() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredTasks.map((t) => (
-            <TaskCard key={t.id} task={t} />
-          ))}
+          {filteredTasks.map((t) =>
+            tab === 'trash' ? (
+              <div key={t.id} className="space-y-0">
+                <TaskCard task={t} />
+                <div className="bg-danger/10 border border-t-0 border-danger/30 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs rounded-b-md">
+                  <div className="min-w-0">
+                    <p className="font-bold text-danger">
+                      Eliminado por {t.deleter?.full_name || 'Usuario'} ·{' '}
+                      {t.deleted_at ? new Date(t.deleted_at).toLocaleString('es-ES') : ''}
+                    </p>
+                    {t.deletion_reason && (
+                      <p className="text-dark-grey italic truncate">
+                        Motivo: {t.deletion_reason}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    isLoading={restoringId === t.id}
+                    onClick={() => handleRestore(t.id, t.code)}
+                  >
+                    <RotateCcw size={14} /> Restaurar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <TaskCard key={t.id} task={t} />
+            )
+          )}
         </div>
       )}
     </div>

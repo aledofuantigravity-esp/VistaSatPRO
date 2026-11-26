@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
+  AlertTriangle,
   ArrowLeft,
   Camera,
   CheckCircle2,
@@ -11,9 +12,11 @@ import {
   History,
   MapPin,
   PackagePlus,
+  Pencil,
   PenTool,
   Phone,
   Plus,
+  RotateCcw,
   Send,
   Trash2,
   UserCheck,
@@ -28,8 +31,11 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   addTaskNote,
   getTaskDetail,
+  listCustomers,
   listProfiles,
+  restoreTask,
   saveTaskSignature,
+  softDeleteTask,
   updateTaskFields,
   updateTaskStatus,
   uploadTaskAttachment,
@@ -39,6 +45,7 @@ import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
   type Attachment,
+  type Customer,
   type MaterialItem,
   type Profile,
   type Task,
@@ -66,6 +73,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [history, setHistory] = useState<TaskHistoryItem[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [technicians, setTechnicians] = useState<Profile[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Acciones interactivas
@@ -80,6 +88,27 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
 
+  // Edición universal del parte
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editCustomerId, setEditCustomerId] = useState('');
+  const [editPriority, setEditPriority] = useState<TaskPriority>('medium');
+  const [editEquipmentRef, setEditEquipmentRef] = useState('');
+  const [editEquipmentSn, setEditEquipmentSn] = useState('');
+  const [editProblemDesc, setEditProblemDesc] = useState('');
+  const [editSiteContactName, setEditSiteContactName] = useState('');
+  const [editSiteContactPhone, setEditSiteContactPhone] = useState('');
+  const [editSiteAddress, setEditSiteAddress] = useState('');
+  const [editSiteCity, setEditSiteCity] = useState('');
+  const [editEstimatedDuration, setEditEstimatedDuration] = useState('');
+
+  // Borrado lógico y restauración
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deletingTask, setDeletingTask] = useState(false);
+  const [restoringTask, setRestoringTask] = useState(false);
+
   const profileId = profile?.id;
   const profileRole = profile?.role;
 
@@ -88,14 +117,16 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     await Promise.resolve();
     setLoading(true);
     try {
-      const [detail, profs] = await Promise.all([
+      const [detail, profs, custs] = await Promise.all([
         getTaskDetail(taskId),
         profileRole === 'technician' ? Promise.resolve([]) : listProfiles(),
+        listCustomers(),
       ]);
       setTask(detail.task);
       setHistory(detail.history);
       setAttachments(detail.attachments);
       setTechnicians(profs.filter((p) => p.role === 'technician' && p.is_active));
+      setCustomers(custs.filter((c) => c.is_active));
     } finally {
       setLoading(false);
     }
@@ -242,11 +273,159 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     await load();
   };
 
+  const isDeleted = Boolean(task.deleted_at);
+
+  const openEditModal = () => {
+    setEditError(null);
+    setEditCustomerId(task.customer_id);
+    setEditPriority(task.priority);
+    setEditEquipmentRef(task.equipment_ref || '');
+    setEditEquipmentSn(task.equipment_sn || '');
+    setEditProblemDesc(task.problem_desc);
+    setEditSiteContactName(task.site_contact_name || '');
+    setEditSiteContactPhone(task.site_contact_phone || '');
+    setEditSiteAddress(task.site_address || '');
+    setEditSiteCity(task.site_city || '');
+    setEditEstimatedDuration(
+      task.estimated_duration != null ? String(task.estimated_duration) : ''
+    );
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editCustomerId || !editProblemDesc.trim()) {
+      setEditError('El cliente y la descripción de la avería son obligatorios.');
+      return;
+    }
+
+    const patch: Parameters<typeof updateTaskFields>[1] = {};
+    if (editCustomerId !== task.customer_id) patch.customer_id = editCustomerId;
+    if (editPriority !== task.priority) patch.priority = editPriority;
+    if (editEquipmentRef.trim() !== (task.equipment_ref || '')) {
+      patch.equipment_ref = editEquipmentRef.trim() || null;
+    }
+    if (editEquipmentSn.trim() !== (task.equipment_sn || '')) {
+      patch.equipment_sn = editEquipmentSn.trim() || null;
+    }
+    if (editProblemDesc.trim() !== task.problem_desc) {
+      patch.problem_desc = editProblemDesc.trim();
+    }
+    if (editSiteContactName.trim() !== (task.site_contact_name || '')) {
+      patch.site_contact_name = editSiteContactName.trim() || null;
+    }
+    if (editSiteContactPhone.trim() !== (task.site_contact_phone || '')) {
+      patch.site_contact_phone = editSiteContactPhone.trim() || null;
+    }
+    if (editSiteAddress.trim() !== (task.site_address || '')) {
+      patch.site_address = editSiteAddress.trim() || null;
+    }
+    if (editSiteCity.trim() !== (task.site_city || '')) {
+      patch.site_city = editSiteCity.trim() || null;
+    }
+    const parsedDuration = editEstimatedDuration.trim()
+      ? Math.max(1, parseInt(editEstimatedDuration, 10) || 0)
+      : null;
+    if (parsedDuration !== (task.estimated_duration ?? null)) {
+      patch.estimated_duration = parsedDuration;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      setShowEditModal(false);
+      return;
+    }
+
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      await updateTaskFields(task.id, patch, profile);
+      setShowEditModal(false);
+      showTempMessage('Datos del parte actualizados y auditados en el historial.');
+      await load();
+    } catch (err) {
+      setEditError(
+        err instanceof Error ? err.message : 'No se pudieron guardar los cambios.'
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleSoftDelete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDeletingTask(true);
+    try {
+      await softDeleteTask(task.id, deleteReason, profile);
+      setShowDeleteModal(false);
+      setDeleteReason('');
+      showTempMessage('Parte enviado a la papelera. Registro guardado en historial.');
+      await load();
+    } catch (err) {
+      showTempMessage(
+        err instanceof Error ? err.message : 'No se pudo eliminar el parte.'
+      );
+    } finally {
+      setDeletingTask(false);
+    }
+  };
+
+  const handleRestoreTask = async () => {
+    setRestoringTask(true);
+    try {
+      await restoreTask(task.id, profile);
+      showTempMessage('Parte restaurado y devuelto a la lista activa.');
+      await load();
+    } catch (err) {
+      showTempMessage(
+        err instanceof Error ? err.message : 'No se pudo restaurar el parte.'
+      );
+    } finally {
+      setRestoringTask(false);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
       {feedbackBanner && (
         <div className="p-3 bg-navy text-white text-xs font-bold border-l-4 border-magenta shadow-card">
           {feedbackBanner}
+        </div>
+      )}
+
+      {/* Banner de Papelera si el parte está eliminado */}
+      {isDeleted && (
+        <div className="p-4 bg-danger/10 border-l-4 border-danger rounded-md shadow-card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={20} className="text-danger flex-shrink-0 mt-0.5" />
+            <div className="space-y-1 text-xs">
+              <p className="font-extrabold uppercase tracking-wider text-danger">
+                Parte eliminado (en la papelera)
+              </p>
+              <p className="text-charcoal font-medium">
+                Borrado por <strong>{task.deleter?.full_name || 'Usuario'}</strong> el{' '}
+                {task.deleted_at
+                  ? new Date(task.deleted_at).toLocaleString('es-ES', {
+                      dateStyle: 'medium',
+                      timeStyle: 'short',
+                    })
+                  : '—'}
+              </p>
+              {task.deletion_reason && (
+                <p className="text-dark-grey italic">
+                  Motivo: &ldquo;{task.deletion_reason}&rdquo;
+                </p>
+              )}
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            isLoading={restoringTask}
+            onClick={handleRestoreTask}
+          >
+            <RotateCcw size={15} /> Restaurar parte
+          </Button>
         </div>
       )}
 
@@ -273,6 +452,24 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={task.status} />
             <PriorityBadge priority={task.priority} />
+            {!isDeleted && (
+              <>
+                <button
+                  type="button"
+                  onClick={openEditModal}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold border border-navy text-navy hover:bg-navy/5 min-h-[34px]"
+                >
+                  <Pencil size={13} /> Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold border border-danger text-danger hover:bg-danger/5 min-h-[34px]"
+                >
+                  <Trash2 size={13} /> Eliminar
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -298,17 +495,19 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
               <span>{phone}</span>
             </a>
           )}
-          <button
-            type="button"
-            onClick={() => setShowStatusSheet(true)}
-            className="flex items-center justify-center gap-2 py-2.5 px-3 bg-navy text-white text-xs font-bold uppercase tracking-wider hover:bg-navy-dark min-h-[44px]"
-          >
-            <Clock size={16} /> Cambiar Estado
-          </button>
+          {!isDeleted && (
+            <button
+              type="button"
+              onClick={() => setShowStatusSheet(true)}
+              className="flex items-center justify-center gap-2 py-2.5 px-3 bg-navy text-white text-xs font-bold uppercase tracking-wider hover:bg-navy-dark min-h-[44px]"
+            >
+              <Clock size={16} /> Cambiar Estado
+            </button>
+          )}
         </div>
 
         {/* Auto-asignarse si está pendiente sin técnico */}
-        {!task.assigned_to && profile.role === 'technician' && (
+        {!isDeleted && !task.assigned_to && profile.role === 'technician' && (
           <div className="mt-3 pt-3 border-t border-border">
             <Button variant="accent" size="sm" className="w-full" onClick={handleSelfAssign}>
               <UserCheck size={16} /> Asignarme este parte
@@ -317,7 +516,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         )}
 
         {/* Controles de coordinación (reasignar / prioridad) */}
-        {isCoord && (
+        {!isDeleted && isCoord && (
           <div className="mt-4 pt-3 border-t border-border grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11px] font-bold uppercase text-mid-grey mb-1">
@@ -374,9 +573,20 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
 
       {/* Equipo y Descripción */}
       <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
-        <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
-          <Wrench size={16} className="text-magenta" /> Equipo y Avería
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
+            <Wrench size={16} className="text-magenta" /> Equipo y Avería
+          </h2>
+          {!isDeleted && (
+            <button
+              type="button"
+              onClick={openEditModal}
+              className="text-xs font-bold text-navy hover:underline inline-flex items-center gap-1"
+            >
+              <Pencil size={12} /> Modificar datos
+            </button>
+          )}
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
           <div>
             <span className="text-xs font-bold text-mid-grey block">Equipo / Modelo</span>
@@ -409,18 +619,20 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
             {task.resolution_notes}
           </div>
         )}
-        <form onSubmit={handleAddNote} className="space-y-2">
-          <textarea
-            rows={3}
-            value={noteInput}
-            onChange={(e) => setNoteInput(e.target.value)}
-            placeholder="Añade diagnóstico, actuaciones realizadas o incidencias..."
-            className="w-full px-3 py-2.5 bg-bg-input border border-border focus:outline-none focus:ring-2 focus:ring-navy"
-          />
-          <Button type="submit" size="sm" isLoading={savingNote} disabled={!noteInput.trim()}>
-            <Send size={14} /> Guardar nota en historial
-          </Button>
-        </form>
+        {!isDeleted && (
+          <form onSubmit={handleAddNote} className="space-y-2">
+            <textarea
+              rows={3}
+              value={noteInput}
+              onChange={(e) => setNoteInput(e.target.value)}
+              placeholder="Añade diagnóstico, actuaciones realizadas o incidencias..."
+              className="w-full px-3 py-2.5 bg-bg-input border border-border focus:outline-none focus:ring-2 focus:ring-navy"
+            />
+            <Button type="submit" size="sm" isLoading={savingNote} disabled={!noteInput.trim()}>
+              <Send size={14} /> Guardar nota en historial
+            </Button>
+          </form>
+        )}
       </div>
 
       {/* Materiales y Piezas (Decisión 4: campo libre) */}
@@ -441,53 +653,57 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
                   <span className="text-xs font-bold bg-off-white px-2 py-1 border border-border">
                     x{m.qty}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveMaterial(m.id)}
-                    className="p-1 text-mid-grey hover:text-danger"
-                    aria-label="Eliminar material"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {!isDeleted && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMaterial(m.id)}
+                      className="p-1 text-mid-grey hover:text-danger"
+                      aria-label="Eliminar material"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        <form onSubmit={handleAddMaterial} className="grid grid-cols-1 sm:grid-cols-6 gap-2">
-          <input
-            type="text"
-            value={matName}
-            onChange={(e) => setMatName(e.target.value)}
-            placeholder="Pieza o material *"
-            className="sm:col-span-3 px-3 py-2 bg-bg-input border border-border"
-          />
-          <input
-            type="text"
-            value={matRef}
-            onChange={(e) => setMatRef(e.target.value)}
-            placeholder="Ref. (opc.)"
-            className="sm:col-span-2 px-3 py-2 bg-bg-input border border-border"
-          />
-          <div className="flex gap-2 sm:col-span-1">
+        {!isDeleted && (
+          <form onSubmit={handleAddMaterial} className="grid grid-cols-1 sm:grid-cols-6 gap-2">
             <input
-              type="number"
-              min={1}
-              value={matQty}
-              onChange={(e) => setMatQty(e.target.value)}
-              className="w-16 px-2 py-2 bg-bg-input border border-border text-center"
+              type="text"
+              value={matName}
+              onChange={(e) => setMatName(e.target.value)}
+              placeholder="Pieza o material *"
+              className="sm:col-span-3 px-3 py-2 bg-bg-input border border-border"
             />
-            <button
-              type="submit"
-              disabled={!matName.trim()}
-              className="flex-1 bg-navy text-white px-3 py-2 flex items-center justify-center disabled:opacity-40"
-              aria-label="Añadir material"
-            >
-              <Plus size={18} />
-            </button>
-          </div>
-        </form>
+            <input
+              type="text"
+              value={matRef}
+              onChange={(e) => setMatRef(e.target.value)}
+              placeholder="Ref. (opc.)"
+              className="sm:col-span-2 px-3 py-2 bg-bg-input border border-border"
+            />
+            <div className="flex gap-2 sm:col-span-1">
+              <input
+                type="number"
+                min={1}
+                value={matQty}
+                onChange={(e) => setMatQty(e.target.value)}
+                className="w-16 px-2 py-2 bg-bg-input border border-border text-center"
+              />
+              <button
+                type="submit"
+                disabled={!matName.trim()}
+                className="flex-1 bg-navy text-white px-3 py-2 flex items-center justify-center disabled:opacity-40"
+                aria-label="Añadir material"
+              >
+                <Plus size={18} />
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Fotografías */}
@@ -497,17 +713,19 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
             <Camera size={16} className="text-magenta" /> Fotografías ({attachments.length})
           </h2>
 
-          <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy-dark min-h-[40px]">
-            <Camera size={15} /> {uploadingPhoto ? 'Subiendo...' : 'Añadir Foto'}
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handlePhotoUpload}
-              className="hidden"
-              disabled={uploadingPhoto}
-            />
-          </label>
+          {!isDeleted && (
+            <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy-dark min-h-[40px]">
+              <Camera size={15} /> {uploadingPhoto ? 'Subiendo...' : 'Añadir Foto'}
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePhotoUpload}
+                className="hidden"
+                disabled={uploadingPhoto}
+              />
+            </label>
+          )}
         </div>
 
         {attachments.length === 0 ? (
@@ -556,14 +774,16 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => setShowSignatureModal(true)}
-          >
-            <PenTool size={16} />{' '}
-            {task.client_signature_url ? 'Actualizar Firma' : 'Firma Cliente'}
-          </Button>
+          {!isDeleted && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowSignatureModal(true)}
+            >
+              <PenTool size={16} />{' '}
+              {task.client_signature_url ? 'Actualizar Firma' : 'Firma Cliente'}
+            </Button>
+          )}
 
           <Button
             type="button"
@@ -573,7 +793,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
             <FileDown size={16} /> Descargar PDF
           </Button>
 
-          {task.status !== 'completed' && (
+          {!isDeleted && task.status !== 'completed' && (
             <Button type="button" variant="accent" onClick={handleCloseTask}>
               <CheckCircle2 size={16} /> Cerrar Parte
             </Button>
@@ -589,44 +809,365 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         </h2>
 
         <div className="relative pl-5 border-l-2 border-navy/20 space-y-4">
-          {history.map((item) => (
-            <div key={item.id} className="relative">
-              <span className="absolute -left-[25px] top-1 w-3 h-3 rounded-full bg-navy border-2 border-white" />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-bold text-charcoal">
-                  {item.actor?.full_name || 'Sistema'}
-                </span>
-                <span className="text-[11px] font-medium text-mid-grey">
-                  {new Date(item.created_at).toLocaleString('es-ES', {
-                    dateStyle: 'short',
-                    timeStyle: 'medium',
-                  })}
-                </span>
+          {history.map((item) => {
+            const isDeletedEv = item.event_type === 'deleted';
+            const isRestoredEv = item.event_type === 'restored';
+            const isFieldEv = item.event_type === 'field_updated';
+            const dotClass = isDeletedEv
+              ? 'bg-danger'
+              : isRestoredEv
+              ? 'bg-emerald-600'
+              : isFieldEv
+              ? 'bg-amber-500'
+              : 'bg-navy';
+
+            return (
+              <div key={item.id} className="relative">
+                <span
+                  className={`absolute -left-[25px] top-1 w-3 h-3 rounded-full ${dotClass} border-2 border-white`}
+                />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-charcoal">
+                      {item.actor?.full_name || 'Sistema'}
+                    </span>
+                    {isDeletedEv && (
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-danger/10 text-danger border border-danger/30">
+                        Eliminado
+                      </span>
+                    )}
+                    {isRestoredEv && (
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        Restaurado
+                      </span>
+                    )}
+                    {isFieldEv && (
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300">
+                        Modificado
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] font-medium text-mid-grey">
+                    {new Date(item.created_at).toLocaleString('es-ES', {
+                      dateStyle: 'short',
+                      timeStyle: 'medium',
+                    })}
+                  </span>
+                </div>
+                <p
+                  className={`text-xs mt-0.5 leading-relaxed ${
+                    isDeletedEv
+                      ? 'text-danger font-semibold'
+                      : isRestoredEv
+                      ? 'text-emerald-800 font-semibold'
+                      : 'text-dark-grey'
+                  }`}
+                >
+                  {item.note ? (
+                    item.note
+                  ) : item.event_type === 'status_changed' ? (
+                    <>
+                      Estado:{' '}
+                      <strong>
+                        {TASK_STATUS_META[item.old_value as TaskStatus]?.label || item.old_value}
+                      </strong>{' '}
+                      →{' '}
+                      <strong className="text-navy">
+                        {TASK_STATUS_META[item.new_value as TaskStatus]?.label || item.new_value}
+                      </strong>
+                    </>
+                  ) : item.event_type === 'priority_changed' ? (
+                    <>
+                      Prioridad:{' '}
+                      <strong>
+                        {TASK_PRIORITY_META[item.old_value as TaskPriority]?.label ||
+                          item.old_value}
+                      </strong>{' '}
+                      →{' '}
+                      <strong className="text-navy">
+                        {TASK_PRIORITY_META[item.new_value as TaskPriority]?.label ||
+                          item.new_value}
+                      </strong>
+                    </>
+                  ) : (
+                    `${item.event_type}: ${item.old_value ? `${item.old_value} → ` : ''}${
+                      item.new_value || ''
+                    }`
+                  )}
+                </p>
               </div>
-              <p className="text-xs text-dark-grey mt-0.5 leading-relaxed">
-                {item.note ? (
-                  item.note
-                ) : item.event_type === 'status_changed' ? (
-                  <>
-                    Estado:{' '}
-                    <strong>
-                      {TASK_STATUS_META[item.old_value as TaskStatus]?.label || item.old_value}
-                    </strong>{' '}
-                    →{' '}
-                    <strong className="text-navy">
-                      {TASK_STATUS_META[item.new_value as TaskStatus]?.label || item.new_value}
-                    </strong>
-                  </>
-                ) : (
-                  `${item.event_type}: ${item.old_value ? `${item.old_value} → ` : ''}${
-                    item.new_value || ''
-                  }`
-                )}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
+
+      {/* Modal de edición universal del parte */}
+      {showEditModal && (
+        <div
+          className="fixed inset-0 z-50 bg-charcoal/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setShowEditModal(false)}
+        >
+          <div
+            className="bg-white w-full sm:max-w-lg rounded-t-lg sm:rounded-lg p-5 space-y-4 max-h-[90dvh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-border">
+              <h3 className="text-base font-bold text-charcoal flex items-center gap-2">
+                <Pencil size={16} className="text-magenta" /> Modificar Parte {task.code}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="p-1 text-mid-grey"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {editError && (
+              <div className="p-3 bg-danger/10 border-l-4 border-danger text-xs font-bold text-danger">
+                {editError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEdit} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Cliente *
+                  </label>
+                  <select
+                    value={editCustomerId}
+                    onChange={(e) => setEditCustomerId(e.target.value)}
+                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                    required
+                  >
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Prioridad
+                  </label>
+                  <select
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value as TaskPriority)}
+                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                  >
+                    {Object.entries(TASK_PRIORITY_META).map(([k, v]) => (
+                      <option key={k} value={k}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Equipo / Modelo
+                  </label>
+                  <input
+                    type="text"
+                    value={editEquipmentRef}
+                    onChange={(e) => setEditEquipmentRef(e.target.value)}
+                    placeholder="Ej. Enfriadora Daikin EWYT-B"
+                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Nº de Serie
+                  </label>
+                  <input
+                    type="text"
+                    value={editEquipmentSn}
+                    onChange={(e) => setEditEquipmentSn(e.target.value)}
+                    placeholder="Ej. SN-12345"
+                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                  Descripción de la Avería / Trabajo *
+                </label>
+                <textarea
+                  rows={3}
+                  value={editProblemDesc}
+                  onChange={(e) => setEditProblemDesc(e.target.value)}
+                  className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Contacto en sitio
+                  </label>
+                  <input
+                    type="text"
+                    value={editSiteContactName}
+                    onChange={(e) => setEditSiteContactName(e.target.value)}
+                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Teléfono contacto
+                  </label>
+                  <input
+                    type="text"
+                    value={editSiteContactPhone}
+                    onChange={(e) => setEditSiteContactPhone(e.target.value)}
+                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Dirección de intervención
+                  </label>
+                  <input
+                    type="text"
+                    value={editSiteAddress}
+                    onChange={(e) => setEditSiteAddress(e.target.value)}
+                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Localidad
+                  </label>
+                  <input
+                    type="text"
+                    value={editSiteCity}
+                    onChange={(e) => setEditSiteCity(e.target.value)}
+                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                  Duración estimada (minutos)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={editEstimatedDuration}
+                  onChange={(e) => setEditEstimatedDuration(e.target.value)}
+                  className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                />
+              </div>
+
+              <p className="text-[11px] text-mid-grey">
+                Todos los cambios quedarán registrados con tu nombre y fecha en el historial
+                inmutable del parte.
+              </p>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowEditModal(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" variant="primary" size="sm" isLoading={savingEdit}>
+                  Guardar Cambios
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación de borrado lógico */}
+      {showDeleteModal && (
+        <div
+          className="fixed inset-0 z-50 bg-charcoal/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setShowDeleteModal(false)}
+        >
+          <div
+            className="bg-white w-full sm:max-w-md rounded-t-lg sm:rounded-lg p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-border">
+              <h3 className="text-base font-bold text-danger flex items-center gap-2">
+                <Trash2 size={18} /> Eliminar Parte {task.code}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                className="p-1 text-mid-grey"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-3 bg-danger/10 border-l-4 border-danger text-xs text-charcoal space-y-1">
+              <p className="font-bold">El parte se enviará a la Papelera</p>
+              <p>
+                Quedará registro inmutable de que <strong>{profile.full_name}</strong> lo eliminó,
+                pero podrás recuperarlo en cualquier momento desde la pestaña Papelera.
+              </p>
+            </div>
+
+            <form onSubmit={handleSoftDelete} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                  Motivo de eliminación (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="Ej. Parte duplicado, cancelado por cliente..."
+                  className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                />
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {['Parte duplicado', 'Error en datos', 'Cancelado por cliente'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setDeleteReason(preset)}
+                      className="text-[11px] font-semibold px-2 py-1 bg-off-white border border-border text-dark-grey hover:bg-navy/5"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDeleteModal(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" variant="danger" size="sm" isLoading={deletingTask}>
+                  <Trash2 size={15} /> Enviar a Papelera
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Bottom sheet cambio de estado */}
       {showStatusSheet && (

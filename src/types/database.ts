@@ -25,7 +25,9 @@ export type TaskHistoryEventType =
   | 'attachment_added'
   | 'signature_captured'
   | 'pdf_generated'
-  | 'field_updated';
+  | 'field_updated'
+  | 'deleted'
+  | 'restored';
 
 export type NotificationType =
   | 'task_created'
@@ -98,14 +100,19 @@ export interface Task {
   pdf_url: string | null;
   completed_at: string | null;
   estimated_duration: number | null;
+  // Auditoría y borrado lógico
   created_by: string;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  deletion_reason?: string | null;
 
   // Relaciones expandidas opcionales
   customer?: Customer;
   assignee?: Profile | null;
   creator?: Profile | null;
+  deleter?: Profile | null;
 }
 
 export interface TaskHistoryItem {
