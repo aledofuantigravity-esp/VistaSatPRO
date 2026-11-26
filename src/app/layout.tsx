@@ -20,6 +20,11 @@ export const metadata: Metadata = {
   description: 'Gestión integral de partes de trabajo y servicio técnico en campo.',
   applicationName: 'VistaSatPRO',
   authors: [{ name: 'Vistalegre Solutions' }],
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+  },
   keywords: ['SAT', 'servicio técnico', 'partes de trabajo', 'gestión de reparaciones'],
   manifest: '/manifest.webmanifest',
   appleWebApp: {

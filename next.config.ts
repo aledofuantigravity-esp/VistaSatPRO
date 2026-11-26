@@ -18,6 +18,7 @@ const cspDirectives = [
 ].join('; ');
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   turbopack: {
     root: process.cwd(),
   },

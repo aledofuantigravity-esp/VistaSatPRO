@@ -48,6 +48,14 @@ function TasksContent() {
   const [tab, setTab] = useState<'mine' | 'unassigned' | 'all' | 'trash'>(() =>
     isCoord ? 'all' : 'mine'
   );
+
+  useEffect(() => {
+    const f = new URLSearchParams(window.location.search).get('filter');
+    if (f === 'mine' || f === 'unassigned' || f === 'trash' || f === 'all') {
+      const t = setTimeout(() => setTab(f), 0);
+      return () => clearTimeout(t);
+    }
+  }, []);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | 'all'>('all');

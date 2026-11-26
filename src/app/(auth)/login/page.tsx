@@ -90,7 +90,7 @@ export default function LoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tecnico@vistalegre.com"
+                  placeholder="nombre@empresa.com"
                   className="w-full px-4 py-3 bg-white border border-border text-charcoal placeholder:text-light-grey focus:outline-none focus:ring-2 focus:ring-navy focus:border-navy transition-colors"
                 />
               </div>

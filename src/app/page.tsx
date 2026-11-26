@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-// La raíz redirige al dashboard (el middleware en Fase 1 redirigirá a /login si no autenticado)
+// La raíz redirige al panel (proxy.ts redirigirá a /login si no hay sesión)
 export default function RootPage() {
-  redirect('/login');
+  redirect('/dashboard');
 }
