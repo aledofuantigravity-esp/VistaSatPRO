@@ -127,7 +127,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Badge Demo si aplica */}
         {isDemoMode && !sidebarCollapsed && (
           <div className="mx-3 mt-3 px-3 py-1.5 bg-magenta/20 border border-magenta/40 text-xs font-semibold text-white">
-            Modo Demo Local
+            Modo Prueba (Servidor)
           </div>
         )}
 
@@ -196,7 +196,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
             {isDemoMode && (
               <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-magenta text-white rounded-sm">
-                Demo
+                Prueba
               </span>
             )}
           </div>

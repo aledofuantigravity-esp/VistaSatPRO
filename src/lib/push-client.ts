@@ -1,4 +1,4 @@
-import { isVapidConfigured } from './supabase/config';
+import { isSupabaseConfigured, isVapidConfigured } from './supabase/config';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -32,6 +32,22 @@ export function getPushSupportStatus(): PushSupportStatus {
   return 'supported';
 }
 
+async function resolveVapidPublicKey(): Promise<string | null> {
+  if (isVapidConfigured() && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+    return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  }
+  if (!isSupabaseConfigured()) {
+    try {
+      const res = await fetch('/api/demo?resource=vapid_public_key', { cache: 'no-store' });
+      const data = (await res.json()) as { publicKey?: string };
+      return data.publicKey || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export async function subscribeToBrowserPush(): Promise<{
   endpoint: string;
   p256dh: string;
@@ -43,8 +59,8 @@ export async function subscribeToBrowserPush(): Promise<{
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return null;
 
-  // Si no hay VAPID real configurado aún (entorno demo local), devolvemos suscripción simulada local
-  if (!isVapidConfigured()) {
+  const vapidPublicKey = await resolveVapidPublicKey();
+  if (!vapidPublicKey) {
     return {
       endpoint: `local-demo://device/${navigator.userAgent.slice(0, 24)}/${Date.now()}`,
       p256dh: 'demo-p256dh-key',
@@ -52,29 +68,36 @@ export async function subscribeToBrowserPush(): Promise<{
     };
   }
 
-  const registration = await navigator.serviceWorker.ready;
-  let subscription = await registration.pushManager.getSubscription();
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
 
-  if (!subscription) {
-    const applicationServerKey = urlBase64ToUint8Array(
-      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
-    );
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
-    });
+    if (!subscription) {
+      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
+      });
+    }
+
+    const json = subscription.toJSON();
+    if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+      return null;
+    }
+
+    return {
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+    };
+  } catch {
+    // Fallback si el navegador o localhost bloquea PushManager
+    return {
+      endpoint: `local-demo://device/${navigator.userAgent.slice(0, 24)}/${Date.now()}`,
+      p256dh: 'demo-p256dh-key',
+      auth: 'demo-auth-secret',
+    };
   }
-
-  const json = subscription.toJSON();
-  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-    return null;
-  }
-
-  return {
-    endpoint: json.endpoint,
-    p256dh: json.keys.p256dh,
-    auth: json.keys.auth,
-  };
 }
 
 export async function showLocalBrowserNotification(title: string, body: string, taskId?: string) {

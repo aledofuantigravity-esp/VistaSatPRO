@@ -14,6 +14,7 @@ export function useNotifications(userId: string | undefined) {
   const [latestToast, setLatestToast] = useState<AppNotification | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const revisionRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     await Promise.resolve();
@@ -45,15 +46,38 @@ export function useNotifications(userId: string | undefined) {
     return () => clearTimeout(t);
   }, [load]);
 
-  // Suscripción en tiempo real (Supabase Realtime o eventos locales Demo)
+  // Suscripción en tiempo real (Supabase Realtime o polling ligero en servidor simulado)
   useEffect(() => {
     if (!userId) return;
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
-      const handleDemo = () => load();
+      const handleDemo = () => void load();
       window.addEventListener('vistasat:demo-updated', handleDemo);
-      return () => window.removeEventListener('vistasat:demo-updated', handleDemo);
+
+      // Sincronización multi-dispositivo en el servidor simulado cada 4s cuando está visible
+      const interval = setInterval(async () => {
+        if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+        try {
+          const res = await fetch('/api/demo?resource=revision', { cache: 'no-store' });
+          const data = (await res.json()) as { revision?: number };
+          if (typeof data.revision === 'number') {
+            if (revisionRef.current !== null && revisionRef.current !== data.revision) {
+              revisionRef.current = data.revision;
+              window.dispatchEvent(new CustomEvent('vistasat:demo-updated'));
+            } else {
+              revisionRef.current = data.revision;
+            }
+          }
+        } catch {
+          // Silencioso si no hay conexión momentánea
+        }
+      }, 4000);
+
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('vistasat:demo-updated', handleDemo);
+      };
     }
 
     const channel = supabase
@@ -67,7 +91,7 @@ export function useNotifications(userId: string | undefined) {
           filter: `recipient_id=eq.${userId}`,
         },
         () => {
-          load();
+          void load();
         }
       )
       .subscribe();

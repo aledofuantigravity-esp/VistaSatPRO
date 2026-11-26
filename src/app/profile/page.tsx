@@ -6,6 +6,8 @@ import {
   Check,
   Download,
   LogOut,
+  RotateCcw,
+  Send,
   Smartphone,
   Trash2,
   User as UserIcon,
@@ -17,7 +19,9 @@ import { usePWAInstall } from '@/hooks/usePWAInstall';
 import {
   listPushSubscriptions,
   removePushSubscription,
+  resetServerDemoData,
   savePushSubscription,
+  sendServerTestPush,
   updateProfile,
 } from '@/lib/data-service';
 import {
@@ -40,12 +44,13 @@ export default function ProfilePage() {
 }
 
 function ProfileContent() {
-  const { profile, signOut, refreshProfile } = useAuth();
+  const { profile, isDemoMode, signOut, refreshProfile } = useAuth();
   if (!profile) return null;
   return (
     <ProfileContentInner
       key={`${profile.id}-${profile.updated_at}`}
       profile={profile}
+      isDemoMode={isDemoMode}
       signOut={signOut}
       refreshProfile={refreshProfile}
     />
@@ -54,10 +59,12 @@ function ProfileContent() {
 
 function ProfileContentInner({
   profile,
+  isDemoMode,
   signOut,
   refreshProfile,
 }: {
   profile: NonNullable<ReturnType<typeof useAuth>['profile']>;
+  isDemoMode: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }) {
@@ -140,6 +147,25 @@ function ProfileContentInner({
   const handleRemoveSub = async (id: string) => {
     await removePushSubscription(id);
     await loadSubs();
+  };
+
+  const handleSendTestPush = async () => {
+    const sent = await sendServerTestPush(profile.id);
+    if (sent > 0) {
+      setPushFeedback(`Push enviado desde el servidor a ${sent} dispositivo(s).`);
+    } else {
+      await showLocalBrowserNotification(
+        'VistaSatPRO — Prueba Local',
+        'El aviso del navegador funciona (activa Push arriba para pruebas reales en segundo plano).'
+      );
+      setPushFeedback('Mostrada notificación local (registra primero un dispositivo HTTPS para Push real).');
+    }
+  };
+
+  const handleResetDemo = async () => {
+    await resetServerDemoData();
+    await refreshProfile();
+    setSavedMsg('Datos de prueba restablecidos en el servidor.');
   };
 
   return (
@@ -250,15 +276,27 @@ function ProfileContentInner({
               Activa las notificaciones push en este dispositivo para recibir avisos al instante
               incluso con la app cerrada (nunca te notificarás a ti mismo por tus propias acciones).
             </p>
-            <Button
-              type="button"
-              variant="accent"
-              size="sm"
-              isLoading={pushLoading}
-              onClick={handleEnablePush}
-            >
-              <Bell size={15} /> Activar Push en este dispositivo
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="accent"
+                size="sm"
+                isLoading={pushLoading}
+                onClick={handleEnablePush}
+              >
+                <Bell size={15} /> Activar Push en este dispositivo
+              </Button>
+              {isDemoMode && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleSendTestPush}
+                >
+                  <Send size={15} /> Probar Push
+                </Button>
+              )}
+            </div>
           </div>
         )}
 
@@ -323,6 +361,24 @@ function ProfileContentInner({
           )}
         </div>
       </div>
+
+      {/* Controles del Entorno de Prueba Simulado */}
+      {isDemoMode && isCoord && (
+        <div className="bg-white rounded-md shadow-card p-5 space-y-3 border border-magenta/30">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-navy">Entorno de Prueba Simulado</h2>
+              <p className="text-xs text-mid-grey mt-0.5">
+                Los cambios están compartidos en el servidor. Puedes restaurar los datos
+                iniciales en cualquier momento.
+              </p>
+            </div>
+            <Button size="sm" variant="secondary" onClick={handleResetDemo}>
+              <RotateCcw size={15} /> Restablecer datos
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Cerrar sesión */}
       <Button variant="danger" className="w-full" onClick={signOut}>

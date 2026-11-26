@@ -12,7 +12,6 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { isSupabaseConfigured } from '@/lib/supabase/config';
 import {
   getDemoSessionUserId,
-  loadDemoState,
   setDemoSessionUserId,
 } from '@/lib/demo-store';
 import { syncOfflineActions } from '@/lib/data-service';
@@ -42,14 +41,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!supabase) {
       const uid = getDemoSessionUserId();
-      if (uid) {
-        const state = loadDemoState();
-        const found = state.profiles.find((p) => p.id === uid && p.is_active) || null;
-        setProfile(found);
-      } else {
+      if (!uid) {
         setProfile(null);
+        setIsLoading(false);
+        return;
       }
-      setIsLoading(false);
+      try {
+        const res = await fetch(
+          `/api/demo?resource=profile&userId=${encodeURIComponent(uid)}`,
+          { cache: 'no-store' }
+        );
+        const data = (await res.json()) as { profile: Profile | null };
+        setProfile(data.profile);
+      } catch {
+        setProfile(null);
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -118,18 +126,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
-      const state = loadDemoState();
-      const normEmail = email.trim().toLowerCase();
-      const user = state.profiles.find(
-        (p) => p.email.toLowerCase() === normEmail && p.is_active
-      );
-      if (!user || state.passwords[normEmail] !== password) {
-        return { error: 'Credenciales incorrectas o cuenta inactiva.' };
+      try {
+        const res = await fetch('/api/demo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'login', email, password }),
+        });
+        const data = (await res.json()) as { profile?: Profile; error?: string };
+        if (!res.ok || !data.profile) {
+          return { error: data.error || 'Credenciales incorrectas o cuenta inactiva.' };
+        }
+        setDemoSessionUserId(data.profile.id);
+        setProfile(data.profile);
+        router.push('/dashboard');
+        return {};
+      } catch {
+        return { error: 'No se pudo conectar con el servidor de prueba.' };
       }
-      setDemoSessionUserId(user.id);
-      setProfile(user);
-      router.push('/dashboard');
-      return {};
     }
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -142,11 +155,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInDemoUser = async (userId: string) => {
-    const state = loadDemoState();
-    const user = state.profiles.find((p) => p.id === userId && p.is_active);
-    if (!user) return;
-    setDemoSessionUserId(user.id);
-    setProfile(user);
+    const res = await fetch(
+      `/api/demo?resource=profile&userId=${encodeURIComponent(userId)}`,
+      { cache: 'no-store' }
+    );
+    const data = (await res.json()) as { profile: Profile | null };
+    if (!data.profile) return;
+    setDemoSessionUserId(data.profile.id);
+    setProfile(data.profile);
     router.push('/dashboard');
   };
 

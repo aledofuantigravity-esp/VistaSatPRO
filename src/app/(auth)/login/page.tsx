@@ -148,12 +148,12 @@ export default function LoginPage() {
                 <div className="flex items-center gap-2 mb-2">
                   <Wrench size={15} className="text-magenta" />
                   <span className="text-xs font-extrabold text-navy uppercase tracking-wider">
-                    Acceso rápido — Entorno Demo Local
+                    Acceso rápido — Entorno de Prueba en Servidor
                   </span>
                 </div>
                 <p className="text-xs text-mid-grey mb-3 leading-relaxed">
-                  Aún no hay variables de Supabase en <code>.env.local</code>. Prueba todos los
-                  flujos con un toque (contraseña manual: <code>demo1234</code>):
+                  Sin base de datos externa: todos los cambios y avisos se comparten en el
+                  servidor entre dispositivos (clave manual: <code>demo1234</code>):
                 </p>
 
                 <div className="grid grid-cols-1 gap-2">

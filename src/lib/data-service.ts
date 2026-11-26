@@ -1,10 +1,6 @@
 import { getSupabaseBrowserClient } from './supabase/client';
 import { isSupabaseConfigured } from './supabase/config';
-import {
-  dispatchDemoNotifications,
-  loadDemoState,
-  saveDemoState,
-} from './demo-store';
+import { loadDemoState, saveDemoState } from './demo-store';
 import {
   enqueueOfflineAction,
   getPendingOfflineActions,
@@ -24,11 +20,31 @@ import {
   type TaskStatus,
   type UserRole,
   TASK_STATUS_META,
-  TASK_PRIORITY_META,
 } from '@/types/database';
 
 function isOnline(): boolean {
   return typeof navigator === 'undefined' ? true : navigator.onLine;
+}
+
+async function demoGet<T>(query: string): Promise<T> {
+  const res = await fetch(`/api/demo?${query}`, { cache: 'no-store' });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Error leyendo servidor simulado');
+  return json as T;
+}
+
+async function demoPost<T>(body: Record<string, unknown>): Promise<T> {
+  const res = await fetch('/api/demo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Error guardando en servidor simulado');
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('vistasat:demo-updated'));
+  }
+  return json as T;
 }
 
 async function triggerPushEndpoint(body: {
@@ -56,7 +72,12 @@ async function triggerPushEndpoint(body: {
 export async function listProfiles(): Promise<Profile[]> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    return loadDemoState().profiles;
+    try {
+      const data = await demoGet<{ profiles: Profile[] }>('resource=profiles');
+      return data.profiles;
+    } catch {
+      return loadDemoState().profiles;
+    }
   }
 
   const { data, error } = await supabase
@@ -73,16 +94,12 @@ export async function updateProfile(
 ): Promise<Profile> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    const state = loadDemoState();
-    const idx = state.profiles.findIndex((p) => p.id === profileId);
-    if (idx === -1) throw new Error('Usuario no encontrado');
-    state.profiles[idx] = {
-      ...state.profiles[idx],
-      ...patch,
-      updated_at: new Date().toISOString(),
-    };
-    saveDemoState(state);
-    return state.profiles[idx];
+    const data = await demoPost<{ profile: Profile }>({
+      action: 'update_profile',
+      profileId,
+      patch,
+    });
+    return data.profile;
   }
 
   const { data, error } = await supabase
@@ -104,26 +121,7 @@ export async function createUserAccount(input: {
 }): Promise<void> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    const state = loadDemoState();
-    if (state.profiles.some((p) => p.email.toLowerCase() === input.email.toLowerCase())) {
-      throw new Error('Ya existe un usuario con ese correo electrónico.');
-    }
-    const nowIso = new Date().toISOString();
-    const newProfile: Profile = {
-      id: `user-${Date.now()}`,
-      email: input.email.trim(),
-      full_name: input.full_name.trim(),
-      phone: input.phone?.trim() || null,
-      avatar_url: null,
-      role: input.role,
-      notification_level: 'assigned_or_created',
-      is_active: true,
-      created_at: nowIso,
-      updated_at: nowIso,
-    };
-    state.profiles.push(newProfile);
-    state.passwords[newProfile.email.toLowerCase()] = input.password;
-    saveDemoState(state);
+    await demoPost({ action: 'create_user', payload: input });
     return;
   }
 
@@ -141,7 +139,12 @@ export async function createUserAccount(input: {
 export async function listCustomers(): Promise<Customer[]> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    return loadDemoState().customers.sort((a, b) => a.name.localeCompare(b.name));
+    try {
+      const data = await demoGet<{ customers: Customer[] }>('resource=customers');
+      return data.customers;
+    } catch {
+      return loadDemoState().customers.sort((a, b) => a.name.localeCompare(b.name));
+    }
   }
 
   const { data, error } = await supabase
@@ -159,19 +162,11 @@ export async function createCustomer(
 ): Promise<Customer> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    const state = loadDemoState();
-    const nowIso = new Date().toISOString();
-    const created: Customer = {
-      ...input,
-      id: `cust-${Date.now()}`,
-      country: input.country || 'ES',
-      is_active: true,
-      created_at: nowIso,
-      updated_at: nowIso,
-    };
-    state.customers.push(created);
-    saveDemoState(state);
-    return created;
+    const data = await demoPost<{ customer: Customer }>({
+      action: 'create_customer',
+      payload: input,
+    });
+    return data.customer;
   }
 
   const { data, error } = await supabase
@@ -189,16 +184,12 @@ export async function updateCustomer(
 ): Promise<Customer> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    const state = loadDemoState();
-    const idx = state.customers.findIndex((c) => c.id === customerId);
-    if (idx === -1) throw new Error('Cliente no encontrado');
-    state.customers[idx] = {
-      ...state.customers[idx],
-      ...patch,
-      updated_at: new Date().toISOString(),
-    };
-    saveDemoState(state);
-    return state.customers[idx];
+    const data = await demoPost<{ customer: Customer }>({
+      action: 'update_customer',
+      customerId,
+      patch,
+    });
+    return data.customer;
   }
 
   const { data, error } = await supabase
@@ -213,29 +204,28 @@ export async function updateCustomer(
 
 // ─── TAREAS / PARTES DE TRABAJO ──────────────────────────────────────────────
 
-function hydrateDemoTasks(tasks: Task[]): Task[] {
-  const state = loadDemoState();
-  return tasks.map((t) => ({
-    ...t,
-    customer: state.customers.find((c) => c.id === t.customer_id),
-    assignee: t.assigned_to ? state.profiles.find((p) => p.id === t.assigned_to) || null : null,
-    creator: state.profiles.find((p) => p.id === t.created_by) || null,
-  }));
-}
-
 export async function listTasks(viewer: Profile): Promise<Task[]> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    const state = loadDemoState();
-    const isCoord = viewer.role === 'admin' || viewer.role === 'coordinator';
-    const filtered = isCoord
-      ? state.tasks
-      : state.tasks.filter(
-          (t) => t.assigned_to === viewer.id || (!t.assigned_to && t.status === 'pending')
-        );
-    return hydrateDemoTasks(filtered).sort((a, b) =>
-      b.created_at.localeCompare(a.created_at)
-    );
+    try {
+      const data = await demoGet<{ tasks: Task[] }>(
+        `resource=tasks&userId=${encodeURIComponent(viewer.id)}`
+      );
+      // Guardar caché offline local
+      const local = loadDemoState();
+      local.tasks = data.tasks;
+      saveDemoState(local);
+      return data.tasks;
+    } catch {
+      const local = loadDemoState();
+      const isCoord = viewer.role === 'admin' || viewer.role === 'coordinator';
+      return local.tasks.filter(
+        (t) =>
+          isCoord ||
+          t.assigned_to === viewer.id ||
+          (!t.assigned_to && t.status === 'pending')
+      );
+    }
   }
 
   const { data, error } = await supabase
@@ -255,21 +245,11 @@ export async function getTaskDetail(taskId: string): Promise<{
 }> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    const state = loadDemoState();
-    const rawTask = state.tasks.find((t) => t.id === taskId);
-    if (!rawTask) return { task: null, history: [], attachments: [] };
-    const [task] = hydrateDemoTasks([rawTask]);
-    const history = state.history
-      .filter((h) => h.task_id === taskId)
-      .map((h) => ({
-        ...h,
-        actor: state.profiles.find((p) => p.id === h.actor_id),
-      }))
-      .sort((a, b) => b.created_at.localeCompare(a.created_at));
-    const attachments = state.attachments
-      .filter((a) => a.task_id === taskId)
-      .sort((a, b) => b.created_at.localeCompare(a.created_at));
-    return { task, history, attachments };
+    return demoGet<{
+      task: Task | null;
+      history: TaskHistoryItem[];
+      attachments: Attachment[];
+    }>(`resource=task_detail&taskId=${encodeURIComponent(taskId)}`);
   }
 
   const [taskRes, histRes, attRes] = await Promise.all([
@@ -320,90 +300,19 @@ export async function createTask(
   const initialStatus: TaskStatus = input.assigned_to ? 'assigned' : 'pending';
 
   if (!supabase) {
-    const state = loadDemoState();
-    const nowIso = new Date().toISOString();
-    const year = new Date().getFullYear();
-    const code = `VS-${year}-${String(state.seqCounter).padStart(4, '0')}`;
-    state.seqCounter += 1;
-
-    const newTask: Task = {
-      id: `task-${Date.now()}`,
-      code,
-      customer_id: input.customer_id,
-      site_contact_name: input.site_contact_name || null,
-      site_contact_phone: input.site_contact_phone || null,
-      site_address: input.site_address || null,
-      site_city: input.site_city || null,
-      equipment_ref: input.equipment_ref || null,
-      equipment_sn: input.equipment_sn || null,
-      problem_desc: input.problem_desc,
-      priority: input.priority,
-      status: initialStatus,
-      assigned_to: input.assigned_to || null,
-      assigned_at: input.assigned_to ? nowIso : null,
-      resolution_notes: null,
-      materials_used: [],
-      client_signature_url: null,
-      signer_name: null,
-      pdf_url: null,
-      completed_at: null,
-      estimated_duration: input.estimated_duration || null,
-      created_by: actor.id,
-      created_at: nowIso,
-      updated_at: nowIso,
-    };
-    state.tasks.unshift(newTask);
-
-    state.history.push({
-      id: `hist-${Date.now()}-1`,
-      task_id: newTask.id,
-      actor_id: actor.id,
-      event_type: 'created',
-      field_name: null,
-      old_value: null,
-      new_value: code,
-      note: 'Parte de trabajo creado',
-      metadata: {},
-      created_at: nowIso,
-    });
-
-    if (newTask.assigned_to) {
-      const assignee = state.profiles.find((p) => p.id === newTask.assigned_to);
-      state.history.push({
-        id: `hist-${Date.now()}-2`,
-        task_id: newTask.id,
-        actor_id: actor.id,
-        event_type: 'assigned',
-        field_name: 'assigned_to',
-        old_value: null,
-        new_value: assignee?.full_name || newTask.assigned_to,
-        note: `Asignado a ${assignee?.full_name || 'técnico'}`,
-        metadata: {},
-        created_at: nowIso,
-      });
-    }
-
-    const customer = state.customers.find((c) => c.id === newTask.customer_id);
-    dispatchDemoNotifications(state, {
-      task: newTask,
+    const data = await demoPost<{ task: Task }>({
+      action: 'create_task',
+      payload: input,
       actorId: actor.id,
-      type: newTask.assigned_to ? 'task_assigned' : 'task_created',
-      title: newTask.assigned_to
-        ? `Nuevo parte asignado: ${code}`
-        : `Parte disponible sin asignar: ${code}`,
-      body: `${customer?.name || 'Cliente'} — ${input.equipment_ref || input.problem_desc.slice(0, 60)}`,
-      isNewTask: true,
     });
-
-    saveDemoState(state);
-    return hydrateDemoTasks([newTask])[0];
+    return data.task;
   }
 
   const { data, error } = await supabase
     .from('tasks')
     .insert({
       ...input,
-      code: '', // El trigger SQL genera VS-YYYY-XXXX automáticamente
+      code: '',
       status: initialStatus,
       assigned_at: input.assigned_to ? new Date().toISOString() : null,
       created_by: actor.id,
@@ -446,42 +355,12 @@ export async function updateTaskStatus(
   const nowIso = new Date().toISOString();
 
   if (!supabase) {
-    const state = loadDemoState();
-    const idx = state.tasks.findIndex((t) => t.id === taskId);
-    if (idx === -1) throw new Error('Parte no encontrado');
-    const prev = state.tasks[idx];
-    const oldStatus = prev.status;
-    if (oldStatus === newStatus) return {};
-
-    state.tasks[idx] = {
-      ...prev,
+    await demoPost({
+      action: 'update_task_status',
+      taskId,
       status: newStatus,
-      completed_at: newStatus === 'completed' ? prev.completed_at || nowIso : prev.completed_at,
-      updated_at: nowIso,
-    };
-
-    state.history.push({
-      id: `hist-${Date.now()}`,
-      task_id: taskId,
-      actor_id: actor.id,
-      event_type: 'status_changed',
-      field_name: 'status',
-      old_value: oldStatus,
-      new_value: newStatus,
-      note: null,
-      metadata: {},
-      created_at: nowIso,
-    });
-
-    dispatchDemoNotifications(state, {
-      task: state.tasks[idx],
       actorId: actor.id,
-      type: 'status_changed',
-      title: `Estado actualizado en ${prev.code}`,
-      body: `${actor.full_name} cambió el estado a "${TASK_STATUS_META[newStatus].label}".`,
     });
-
-    saveDemoState(state);
     return {};
   }
 
@@ -526,41 +405,14 @@ export async function addTaskNote(
   }
 
   const supabase = getSupabaseBrowserClient();
-  const nowIso = new Date().toISOString();
 
   if (!supabase) {
-    const state = loadDemoState();
-    const idx = state.tasks.findIndex((t) => t.id === taskId);
-    if (idx === -1) throw new Error('Parte no encontrado');
-
-    state.tasks[idx] = {
-      ...state.tasks[idx],
-      resolution_notes: cleanNote,
-      updated_at: nowIso,
-    };
-
-    state.history.push({
-      id: `hist-${Date.now()}`,
-      task_id: taskId,
-      actor_id: actor.id,
-      event_type: 'note_added',
-      field_name: 'resolution_notes',
-      old_value: null,
-      new_value: null,
+    await demoPost({
+      action: 'add_task_note',
+      taskId,
       note: cleanNote,
-      metadata: {},
-      created_at: nowIso,
-    });
-
-    dispatchDemoNotifications(state, {
-      task: state.tasks[idx],
       actorId: actor.id,
-      type: 'comment_added',
-      title: `Nueva nota en ${state.tasks[idx].code}`,
-      body: `${actor.full_name}: "${cleanNote.slice(0, 90)}"`,
     });
-
-    saveDemoState(state);
     return {};
   }
 
@@ -599,122 +451,14 @@ export async function updateTaskFields(
   actor: Profile
 ): Promise<void> {
   const supabase = getSupabaseBrowserClient();
-  const nowIso = new Date().toISOString();
 
   if (!supabase) {
-    const state = loadDemoState();
-    const idx = state.tasks.findIndex((t) => t.id === taskId);
-    if (idx === -1) throw new Error('Parte no encontrado');
-
-    const prev = state.tasks[idx];
-    const next: Task = { ...prev, ...patch, updated_at: nowIso };
-    if (patch.assigned_to !== undefined && patch.assigned_to !== prev.assigned_to) {
-      next.assigned_at = patch.assigned_to ? nowIso : null;
-      if (patch.assigned_to && prev.status === 'pending' && !patch.status) {
-        next.status = 'assigned';
-      }
-    }
-    if (patch.status === 'completed' && !next.completed_at) {
-      next.completed_at = nowIso;
-    }
-
-    state.tasks[idx] = next;
-
-    if (patch.priority && patch.priority !== prev.priority) {
-      state.history.push({
-        id: `hist-${Date.now()}-p`,
-        task_id: taskId,
-        actor_id: actor.id,
-        event_type: 'priority_changed',
-        field_name: 'priority',
-        old_value: prev.priority,
-        new_value: patch.priority,
-        note: `Prioridad cambiada a ${TASK_PRIORITY_META[patch.priority].label}`,
-        metadata: {},
-        created_at: nowIso,
-      });
-    }
-
-    if (patch.assigned_to !== undefined && patch.assigned_to !== prev.assigned_to) {
-      const oldTech = prev.assigned_to
-        ? state.profiles.find((p) => p.id === prev.assigned_to)?.full_name || prev.assigned_to
-        : null;
-      const newTech = patch.assigned_to
-        ? state.profiles.find((p) => p.id === patch.assigned_to)?.full_name || patch.assigned_to
-        : 'Sin asignar';
-      state.history.push({
-        id: `hist-${Date.now()}-a`,
-        task_id: taskId,
-        actor_id: actor.id,
-        event_type: prev.assigned_to ? 'reassigned' : 'assigned',
-        field_name: 'assigned_to',
-        old_value: oldTech,
-        new_value: newTech,
-        note: `Asignación: ${newTech}`,
-        metadata: {},
-        created_at: nowIso,
-      });
-    }
-
-    if (patch.materials_used) {
-      state.history.push({
-        id: `hist-${Date.now()}-m`,
-        task_id: taskId,
-        actor_id: actor.id,
-        event_type: 'field_updated',
-        field_name: 'materials_used',
-        old_value: null,
-        new_value: `${patch.materials_used.length} materiales`,
-        note: `Lista de materiales actualizada (${patch.materials_used.length} ítem/s).`,
-        metadata: {},
-        created_at: nowIso,
-      });
-    }
-
-    if (patch.client_signature_url && patch.client_signature_url !== prev.client_signature_url) {
-      state.history.push({
-        id: `hist-${Date.now()}-s`,
-        task_id: taskId,
-        actor_id: actor.id,
-        event_type: 'signature_captured',
-        field_name: 'client_signature_url',
-        old_value: null,
-        new_value: patch.signer_name || 'Cliente',
-        note: `Firma digital recogida (${patch.signer_name || 'Cliente'})`,
-        metadata: {},
-        created_at: nowIso,
-      });
-    }
-
-    if (patch.status && patch.status !== prev.status) {
-      state.history.push({
-        id: `hist-${Date.now()}-st`,
-        task_id: taskId,
-        actor_id: actor.id,
-        event_type: 'status_changed',
-        field_name: 'status',
-        old_value: prev.status,
-        new_value: patch.status,
-        note: null,
-        metadata: {},
-        created_at: nowIso,
-      });
-    }
-
-    dispatchDemoNotifications(state, {
-      task: next,
+    await demoPost({
+      action: 'update_task_fields',
+      taskId,
+      patch,
       actorId: actor.id,
-      type:
-        patch.assigned_to !== undefined && patch.assigned_to !== prev.assigned_to
-          ? 'reassigned'
-          : patch.priority
-          ? 'priority_changed'
-          : 'task_updated',
-      title: `Parte ${prev.code} actualizado`,
-      body: `${actor.full_name} ha actualizado los datos del parte.`,
     });
-
-    saveDemoState(state);
     return;
   }
 
@@ -763,48 +507,20 @@ export async function uploadTaskAttachment(
   actor: Profile
 ): Promise<Attachment> {
   const supabase = getSupabaseBrowserClient();
-  const nowIso = new Date().toISOString();
 
   if (!supabase) {
     const dataUrl = await fileToDataUrl(file);
-    const state = loadDemoState();
-    const att: Attachment = {
-      id: `att-${Date.now()}`,
-      task_id: taskId,
-      uploaded_by: actor.id,
-      storage_path: `demo/${taskId}/${file.name}`,
-      public_url: dataUrl,
-      file_name: file.name,
-      file_size: file.size,
-      mime_type: file.type,
-      caption: caption || null,
-      created_at: nowIso,
-    };
-    state.attachments.unshift(att);
-    state.history.push({
-      id: `hist-${Date.now()}`,
-      task_id: taskId,
-      actor_id: actor.id,
-      event_type: 'attachment_added',
-      field_name: null,
-      old_value: null,
-      new_value: file.name,
-      note: caption ? `Foto adjunta: ${caption}` : `Foto adjunta (${file.name})`,
-      metadata: {},
-      created_at: nowIso,
+    const data = await demoPost<{ attachment: Attachment }>({
+      action: 'upload_attachment',
+      taskId,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type,
+      publicUrl: dataUrl,
+      caption,
+      actorId: actor.id,
     });
-    const task = state.tasks.find((t) => t.id === taskId);
-    if (task) {
-      dispatchDemoNotifications(state, {
-        task,
-        actorId: actor.id,
-        type: 'task_updated',
-        title: `Nueva fotografía en ${task.code}`,
-        body: `${actor.full_name} adjuntó ${file.name}.`,
-      });
-    }
-    saveDemoState(state);
-    return att;
+    return data.attachment;
   }
 
   const ext = file.name.split('.').pop() || 'jpg';
@@ -848,14 +564,10 @@ export async function uploadTaskAttachment(
 export async function listNotifications(userId: string): Promise<AppNotification[]> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    const state = loadDemoState();
-    return state.notifications
-      .filter((n) => n.recipient_id === userId && n.actor_id !== userId)
-      .map((n) => ({
-        ...n,
-        actor: state.profiles.find((p) => p.id === n.actor_id),
-      }))
-      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const data = await demoGet<{ notifications: AppNotification[] }>(
+      `resource=notifications&userId=${encodeURIComponent(userId)}`
+    );
+    return data.notifications;
   }
 
   const { data, error } = await supabase
@@ -870,40 +582,25 @@ export async function listNotifications(userId: string): Promise<AppNotification
 
 export async function markNotificationRead(id: string): Promise<void> {
   const supabase = getSupabaseBrowserClient();
-  const nowIso = new Date().toISOString();
   if (!supabase) {
-    const state = loadDemoState();
-    const item = state.notifications.find((n) => n.id === id);
-    if (item && !item.is_read) {
-      item.is_read = true;
-      item.read_at = nowIso;
-      saveDemoState(state);
-    }
+    await demoPost({ action: 'mark_notification_read', id });
     return;
   }
   await supabase
     .from('notifications')
-    .update({ is_read: true, read_at: nowIso })
+    .update({ is_read: true, read_at: new Date().toISOString() })
     .eq('id', id);
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
   const supabase = getSupabaseBrowserClient();
-  const nowIso = new Date().toISOString();
   if (!supabase) {
-    const state = loadDemoState();
-    state.notifications.forEach((n) => {
-      if (n.recipient_id === userId && !n.is_read) {
-        n.is_read = true;
-        n.read_at = nowIso;
-      }
-    });
-    saveDemoState(state);
+    await demoPost({ action: 'mark_all_notifications_read', userId });
     return;
   }
   await supabase
     .from('notifications')
-    .update({ is_read: true, read_at: nowIso })
+    .update({ is_read: true, read_at: new Date().toISOString() })
     .eq('recipient_id', userId)
     .eq('is_read', false);
 }
@@ -911,9 +608,10 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
 export async function listPushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    return loadDemoState().pushSubscriptions.filter(
-      (s) => s.user_id === userId && s.is_active
+    const data = await demoGet<{ subscriptions: PushSubscriptionRecord[] }>(
+      `resource=push_subscriptions&userId=${encodeURIComponent(userId)}`
     );
+    return data.subscriptions;
   }
   const { data } = await supabase
     .from('push_subscriptions')
@@ -931,31 +629,14 @@ export async function savePushSubscription(
   const supabase = getSupabaseBrowserClient();
   const nowIso = new Date().toISOString();
   if (!supabase) {
-    const state = loadDemoState();
-    const existing = state.pushSubscriptions.find(
-      (s) => s.user_id === userId && s.endpoint === sub.endpoint
-    );
-    if (existing) {
-      existing.is_active = true;
-      existing.last_used_at = nowIso;
-      saveDemoState(state);
-      return existing;
-    }
-    const record: PushSubscriptionRecord = {
-      id: `sub-${Date.now()}`,
-      user_id: userId,
-      endpoint: sub.endpoint,
-      p256dh: sub.p256dh,
-      auth: sub.auth,
-      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-      device_label: deviceLabel,
-      is_active: true,
-      created_at: nowIso,
-      last_used_at: nowIso,
-    };
-    state.pushSubscriptions.push(record);
-    saveDemoState(state);
-    return record;
+    const data = await demoPost<{ subscription: PushSubscriptionRecord }>({
+      action: 'save_push_subscription',
+      userId,
+      sub,
+      deviceLabel,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+    });
+    return data.subscription;
   }
 
   const { data, error } = await supabase
@@ -982,12 +663,24 @@ export async function savePushSubscription(
 export async function removePushSubscription(subId: string): Promise<void> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    const state = loadDemoState();
-    state.pushSubscriptions = state.pushSubscriptions.filter((s) => s.id !== subId);
-    saveDemoState(state);
+    await demoPost({ action: 'remove_push_subscription', subId });
     return;
   }
   await supabase.from('push_subscriptions').delete().eq('id', subId);
+}
+
+export async function sendServerTestPush(userId: string): Promise<number> {
+  if (isSupabaseConfigured()) return 0;
+  const data = await demoPost<{ sent: number }>({
+    action: 'test_push',
+    userId,
+  });
+  return data.sent || 0;
+}
+
+export async function resetServerDemoData(): Promise<void> {
+  if (isSupabaseConfigured()) return;
+  await demoPost({ action: 'reset_demo' });
 }
 
 // ─── SINCRONIZACIÓN DE COLA OFFLINE ──────────────────────────────────────────
