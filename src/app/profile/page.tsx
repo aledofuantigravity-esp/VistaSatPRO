@@ -286,16 +286,14 @@ function ProfileContentInner({
               >
                 <Bell size={15} /> Activar Push en este dispositivo
               </Button>
-              {isDemoMode && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleSendTestPush}
-                >
-                  <Send size={15} /> Probar Push
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleSendTestPush}
+              >
+                <Send size={15} /> Probar Push
+              </Button>
             </div>
           </div>
         )}

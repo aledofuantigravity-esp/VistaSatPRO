@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { sendNotification, setVapidDetails } from 'web-push';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { isVapidConfigured } from '@/lib/supabase/config';
 
 if (
@@ -46,7 +47,55 @@ export async function POST(request: Request) {
       );
     }
 
-    const payload = (await request.json()) as PushSendBody;
+    const payload = (await request.json()) as PushSendBody & { testSelf?: boolean };
+
+    // Modo prueba de Push desde /profile hacia los dispositivos del propio usuario
+    if (payload.testSelf) {
+      const supabaseServer = await getSupabaseServerClient();
+      const authUser = supabaseServer ? (await supabaseServer.auth.getUser()).data.user : null;
+      if (!authUser) {
+        return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+      }
+      const vapidReady =
+        isVapidConfigured() && Boolean(process.env.VAPID_PRIVATE_KEY);
+      if (!vapidReady) {
+        return NextResponse.json({ ok: true, pushCount: 0 });
+      }
+      const { data: subs } = await supabase
+        .from('push_subscriptions')
+        .select('id, endpoint, p256dh, auth')
+        .eq('user_id', authUser.id)
+        .eq('is_active', true);
+
+      let sent = 0;
+      for (const sub of subs || []) {
+        try {
+          await sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: { p256dh: sub.p256dh, auth: sub.auth },
+            },
+            JSON.stringify({
+              title: 'VistaSatPRO — Prueba Push Real',
+              body: 'Las notificaciones Push en segundo plano funcionan correctamente.',
+              taskId: null,
+              type: 'generic',
+            })
+          );
+          sent++;
+        } catch (err: unknown) {
+          const statusCode = (err as { statusCode?: number })?.statusCode;
+          if (statusCode === 410 || statusCode === 404) {
+            await supabase
+              .from('push_subscriptions')
+              .update({ is_active: false })
+              .eq('id', sub.id);
+          }
+        }
+      }
+      return NextResponse.json({ ok: true, pushCount: sent });
+    }
+
     const { taskId, actorId, type, title, body, isNewTask } = payload;
 
     const { data: task } = await supabase

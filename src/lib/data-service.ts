@@ -560,6 +560,14 @@ export async function uploadTaskAttachment(
     note: caption || `Adjunto: ${file.name}`,
   });
 
+  await triggerPushEndpoint({
+    taskId,
+    actorId: actor.id,
+    type: 'task_updated',
+    title: 'Nueva fotografía adjunta',
+    body: `${actor.full_name} adjuntó ${file.name}.`,
+  });
+
   return attData as Attachment;
 }
 
@@ -674,12 +682,21 @@ export async function removePushSubscription(subId: string): Promise<void> {
 }
 
 export async function sendServerTestPush(userId: string): Promise<number> {
-  if (isSupabaseConfigured()) return 0;
-  const data = await demoPost<{ sent: number }>({
-    action: 'test_push',
-    userId,
+  if (!isSupabaseConfigured()) {
+    const data = await demoPost<{ sent: number }>({
+      action: 'test_push',
+      userId,
+    });
+    return data.sent || 0;
+  }
+
+  const res = await fetch('/api/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ testSelf: true }),
   });
-  return data.sent || 0;
+  const json = (await res.json()) as { pushCount?: number };
+  return json.pushCount || 0;
 }
 
 export async function resetServerDemoData(): Promise<void> {
