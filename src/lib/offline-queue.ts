@@ -72,3 +72,10 @@ export async function removeOfflineAction(id: string): Promise<void> {
   await db.delete(STORE_NAME, id);
   window.dispatchEvent(new CustomEvent('vistasat:offline-queue-changed'));
 }
+
+export async function clearOfflineQueue(): Promise<void> {
+  const db = await getDB();
+  if (!db) return;
+  await db.clear(STORE_NAME);
+  window.dispatchEvent(new CustomEvent('vistasat:offline-queue-changed'));
+}

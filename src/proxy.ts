@@ -3,8 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isSupabaseConfigured } from '@/lib/supabase/config';
 
 /**
- * Proxy SSR (Next.js 16): refresca cookies de sesión de Supabase Auth cuando está
- * configurado en producción. En Modo Demo Local no bloquea las rutas SSR.
+ * Proxy SSR (Next.js 16): refresca cookies de sesión de Supabase Auth
+ * y aplica control de acceso por estado activo y rol antes de servir rutas protegidas.
  */
 export async function proxy(request: NextRequest) {
   if (!isSupabaseConfigured()) {
@@ -52,10 +52,41 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && pathname === '/login') {
-    const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
+  if (user && (isProtected || pathname === '/login')) {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('role, is_active')
+      .eq('id', user.id)
+      .single();
+
+    if (prof && !prof.is_active) {
+      await supabase.auth.signOut();
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
+      return NextResponse.redirect(url);
+    }
+
+    if (pathname === '/login') {
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
+    }
+
+    if (pathname.startsWith('/users') && prof?.role !== 'admin') {
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
+    }
+
+    if (
+      pathname.startsWith('/reports') &&
+      prof?.role !== 'admin' &&
+      prof?.role !== 'coordinator'
+    ) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;

@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { TaskCard } from '@/components/ui/TaskCard';
 import { useAuth } from '@/hooks/useAuth';
+import { downloadCsv } from '@/lib/csv';
 import { listProfiles, listTasks } from '@/lib/data-service';
 import {
   TASK_PRIORITY_META,
@@ -151,17 +152,11 @@ function TasksContent() {
       t.completed_at ? new Date(t.completed_at).toLocaleString('es-ES') : '',
     ]);
 
-    const csv = [headers, ...rows]
-      .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(';'))
-      .join('\n');
-
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `VistaSatPRO_partes_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(
+      `VistaSatPRO_partes_${new Date().toISOString().slice(0, 10)}.csv`,
+      headers,
+      rows
+    );
   };
 
   if (!profile) return null;

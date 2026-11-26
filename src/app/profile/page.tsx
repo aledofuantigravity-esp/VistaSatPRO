@@ -5,6 +5,7 @@ import {
   Bell,
   Check,
   Download,
+  KeyRound,
   LogOut,
   RotateCcw,
   Send,
@@ -17,6 +18,7 @@ import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { usePWAInstall } from '@/hooks/usePWAInstall';
 import {
+  changeOwnPassword,
   listPushSubscriptions,
   removePushSubscription,
   resetServerDemoData,
@@ -79,6 +81,13 @@ function ProfileContentInner({
   const [subs, setSubs] = useState<PushSubscriptionRecord[]>([]);
   const [pushLoading, setPushLoading] = useState(false);
   const [pushFeedback, setPushFeedback] = useState<string | null>(null);
+
+  // Cambio de contraseña
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPass, setChangingPass] = useState(false);
+  const [passMsg, setPassMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const loadSubs = useCallback(async () => {
     await Promise.resolve();
@@ -168,6 +177,40 @@ function ProfileContentInner({
     setSavedMsg('Datos de prueba restablecidos en el servidor.');
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPassMsg(null);
+    if (newPassword.length < 8) {
+      setPassMsg({
+        type: 'err',
+        text: 'La nueva contraseña debe tener al menos 8 caracteres.',
+      });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPassMsg({
+        type: 'err',
+        text: 'La nueva contraseña y su confirmación no coinciden.',
+      });
+      return;
+    }
+    setChangingPass(true);
+    try {
+      await changeOwnPassword(currentPassword, newPassword, profile);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPassMsg({ type: 'ok', text: 'Contraseña actualizada correctamente.' });
+    } catch (err) {
+      setPassMsg({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'No se pudo cambiar la contraseña.',
+      });
+    } finally {
+      setChangingPass(false);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-6">
       {/* Tarjeta cabecera de usuario */}
@@ -250,6 +293,81 @@ function ProfileContentInner({
 
         <Button type="submit" isLoading={saving} className="w-full sm:w-auto">
           Guardar cambios
+        </Button>
+      </form>
+
+      {/* Seguridad — Cambiar contraseña */}
+      <form
+        onSubmit={handleChangePassword}
+        className="bg-white rounded-md shadow-card p-5 space-y-4 border border-border/60"
+      >
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <KeyRound size={18} className="text-navy" />
+          <h2 className="text-base font-bold text-charcoal">Seguridad y Contraseña</h2>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-dark-grey mb-1">
+            Contraseña actual *
+          </label>
+          <input
+            type="password"
+            required
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            placeholder="••••••••"
+            className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-semibold text-dark-grey mb-1">
+              Nueva contraseña * (mín. 8)
+            </label>
+            <input
+              type="password"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-dark-grey mb-1">
+              Confirmar contraseña *
+            </label>
+            <input
+              type="password"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
+            />
+          </div>
+        </div>
+
+        {passMsg && (
+          <div
+            className={`p-3 border-l-4 text-xs font-semibold ${
+              passMsg.type === 'ok'
+                ? 'bg-success/10 border-success text-success'
+                : 'bg-danger/10 border-danger text-danger'
+            }`}
+          >
+            {passMsg.text}
+          </div>
+        )}
+
+        <Button type="submit" variant="primary" isLoading={changingPass} className="w-full sm:w-auto">
+          Actualizar contraseña
         </Button>
       </form>
 

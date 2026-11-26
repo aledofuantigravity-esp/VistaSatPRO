@@ -5,6 +5,7 @@ import { BarChart3, Download, Shield } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
+import { downloadCsv } from '@/lib/csv';
 import { listCustomers, listProfiles, listTasks } from '@/lib/data-service';
 import type { Customer, Profile, Task } from '@/types/database';
 
@@ -95,24 +96,25 @@ function ReportsContent() {
   }
 
   const exportSummaryCSV = () => {
-    const rows = [
-      ['Técnico', 'Partes Totales', 'Completados', 'Tasa Cierre %', 'Tiempo Medio (h)'],
-      ...techStats.map((r) => [
-        r.tech.full_name,
-        String(r.total),
-        String(r.completed),
-        `${r.rate}%`,
-        String(r.avgHours),
-      ]),
+    const headers = [
+      'Técnico',
+      'Partes Totales',
+      'Completados',
+      'Tasa Cierre %',
+      'Tiempo Medio (h)',
     ];
-    const csv = rows.map((r) => r.map((c) => `"${c}"`).join(';')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `VistaSatPRO_informe_tecnicos_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const rows = techStats.map((r) => [
+      r.tech.full_name,
+      String(r.total),
+      String(r.completed),
+      `${r.rate}%`,
+      String(r.avgHours),
+    ]);
+    downloadCsv(
+      `VistaSatPRO_informe_tecnicos_${new Date().toISOString().slice(0, 10)}.csv`,
+      headers,
+      rows
+    );
   };
 
   return (

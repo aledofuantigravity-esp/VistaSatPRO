@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Clock,
   Pencil,
   Plus,
   Shield,
@@ -20,6 +21,7 @@ import {
   listTasks,
   updateProfile,
 } from '@/lib/data-service';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { ROLE_LABELS, type Profile, type Task, type UserRole } from '@/types/database';
 
 export default function UsersPage() {
@@ -30,10 +32,19 @@ export default function UsersPage() {
   );
 }
 
+function isUserRecentlyActive(u: Profile, liveIds: Set<string>, currentId: string): boolean {
+  if (u.id === currentId) return true;
+  if (liveIds.has(u.id)) return true;
+  if (!u.is_online || !u.last_seen_at) return false;
+  const ageMs = Date.now() - new Date(u.last_seen_at).getTime();
+  return ageMs < 2 * 60 * 1000; // Considerado en línea si hubo heartbeat < 2 min
+}
+
 function UsersContent() {
   const { profile } = useAuth();
   const [users, setUsers] = useState<Profile[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [liveOnlineIds, setLiveOnlineIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
@@ -53,7 +64,6 @@ function UsersContent() {
   const load = useCallback(async () => {
     if (!profileId || !profileRole) return;
     await Promise.resolve();
-    setLoading(true);
     try {
       const viewer = { id: profileId, role: profileRole } as Profile;
       const [u, t] = await Promise.all([listProfiles(), listTasks(viewer)]);
@@ -69,9 +79,49 @@ function UsersContent() {
     return () => clearTimeout(t);
   }, [load]);
 
+  // Escucha en vivo de presencia y cambios en profiles para que el Admin vea quién está conectado
+  useEffect(() => {
+    if (profileRole !== 'admin') return;
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void load();
+      }
+    }, 15000);
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      const handleDemo = () => void load();
+      window.addEventListener('vistasat:demo-updated', handleDemo);
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('vistasat:demo-updated', handleDemo);
+      };
+    }
+
+    const channel = supabase.channel('presence:online-users');
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        setLiveOnlineIds(new Set(Object.keys(state)));
+      })
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        () => {
+          void load();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      void supabase.removeChannel(channel);
+    };
+  }, [profileRole, load]);
+
   if (!profile) return null;
 
-  // Solo el Administrador puede crear y editar usuarios/roles
   if (profile.role !== 'admin') {
     return (
       <div className="p-6 text-center">
@@ -110,8 +160,8 @@ function UsersContent() {
     e.preventDefault();
     setFormError(null);
 
-    if (!editingUser && password.length < 6) {
-      setFormError('La contraseña inicial debe tener al menos 6 caracteres.');
+    if (!editingUser && password.length < 8) {
+      setFormError('La contraseña inicial debe tener al menos 8 caracteres.');
       return;
     }
 
@@ -152,6 +202,10 @@ function UsersContent() {
     await load();
   };
 
+  const onlineCount = users.filter((u) =>
+    isUserRecentlyActive(u, liveOnlineIds, profile.id)
+  ).length;
+
   return (
     <div className="p-4 sm:p-6 space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -160,7 +214,7 @@ function UsersContent() {
             <UsersIcon size={22} className="text-navy" /> Equipo y Usuarios
           </h1>
           <p className="text-xs text-mid-grey mt-0.5">
-            Solo Administrador · Alta, edición y asignación de roles RBAC
+            Solo Administrador · {onlineCount} en línea ahora de {users.length} usuarios
           </p>
         </div>
 
@@ -184,6 +238,8 @@ function UsersContent() {
                 t.status !== 'completed' &&
                 t.status !== 'cancelled'
             ).length;
+            const online = u.is_active && isUserRecentlyActive(u, liveOnlineIds, profile.id);
+
             return (
               <div
                 key={u.id}
@@ -193,21 +249,43 @@ function UsersContent() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-base font-bold text-charcoal truncate">
                         {u.full_name}
                       </h3>
                       {!u.is_active && (
                         <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-danger/15 text-danger rounded-sm">
-                          Inactivo
+                          Desactivado
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-mid-grey truncate">{u.email}</p>
                     {u.phone && <p className="text-xs text-dark-grey mt-0.5">{u.phone}</p>}
+
+                    {/* Estado de conexión en vivo y última conexión */}
+                    <div className="mt-2 flex items-center gap-1.5 text-xs">
+                      {online ? (
+                        <span className="inline-flex items-center gap-1.5 font-bold text-success">
+                          <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                          En línea ahora
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-mid-grey font-medium">
+                          <Clock size={12} />
+                          {u.last_seen_at
+                            ? `Desconectado · Última conexión: ${new Date(
+                                u.last_seen_at
+                              ).toLocaleString('es-ES', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })}`
+                            : 'Desconectado · Sin conexiones registradas'}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-navy/10 text-navy text-xs font-bold rounded-sm">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-navy/10 text-navy text-xs font-bold rounded-sm flex-shrink-0">
                     {u.role === 'technician' ? <Wrench size={12} /> : <UserCheck size={12} />}
                     {ROLE_LABELS[u.role]}
                   </span>
@@ -342,15 +420,15 @@ function UsersContent() {
               {!editingUser && (
                 <div>
                   <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
-                    Contraseña inicial * (mín. 6 caracteres)
+                    Contraseña inicial * (mín. 8 caracteres)
                   </label>
                   <input
                     type="text"
                     required
-                    minLength={6}
+                    minLength={8}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Clave temporal para entregar al técnico"
+                    placeholder="Clave temporal para entregar al usuario"
                     className="w-full px-3 py-2.5 bg-bg-input border border-border"
                   />
                 </div>

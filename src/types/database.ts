@@ -52,6 +52,8 @@ export interface Profile {
   role: UserRole;
   notification_level: NotificationLevel;
   is_active: boolean;
+  is_online?: boolean;
+  last_seen_at?: string | null;
   created_at: string;
   updated_at: string;
 }

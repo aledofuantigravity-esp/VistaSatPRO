@@ -11,6 +11,7 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY')!;
 const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY')!;
 const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') || 'mailto:soporte@vistasat.pro';
+const INTERNAL_WEBHOOK_SECRET = Deno.env.get('INTERNAL_WEBHOOK_SECRET');
 
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -25,6 +26,15 @@ interface WebhookPayload {
 
 Deno.serve(async (req) => {
   try {
+    if (INTERNAL_WEBHOOK_SECRET) {
+      const provided =
+        req.headers.get('x-webhook-secret') ||
+        req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+      if (provided !== INTERNAL_WEBHOOK_SECRET) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+      }
+    }
+
     const payload: WebhookPayload = await req.json();
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 

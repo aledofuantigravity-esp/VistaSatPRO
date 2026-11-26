@@ -215,8 +215,29 @@ export function generateTaskPDF(task: Task, history: TaskHistoryItem[]): Blob {
   return doc.output('blob');
 }
 
-export function downloadTaskPDF(task: Task, history: TaskHistoryItem[]) {
-  const blob = generateTaskPDF(task, history);
+async function urlToDataUrl(url: string): Promise<string> {
+  if (url.startsWith('data:')) return url;
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+export async function downloadTaskPDF(task: Task, history: TaskHistoryItem[]) {
+  let preparedTask = task;
+  if (task.client_signature_url && !task.client_signature_url.startsWith('data:')) {
+    try {
+      const sigDataUrl = await urlToDataUrl(task.client_signature_url);
+      preparedTask = { ...task, client_signature_url: sigDataUrl };
+    } catch {
+      // Si falla la descarga, genera el PDF sin romper
+    }
+  }
+  const blob = generateTaskPDF(preparedTask, history);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

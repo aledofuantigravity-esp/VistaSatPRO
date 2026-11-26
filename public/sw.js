@@ -1,11 +1,10 @@
-// Service Worker v3 — VistaSatPRO
-// Estrategia limpia compatible con Next.js App Router (sin interceptar RSC ni /api/)
+// Service Worker v4 — VistaSatPRO
+// Estrategia limpia compatible con Next.js App Router (sin interceptar RSC, /api/ ni URLs firmadas)
 
-const STATIC_CACHE = 'vistasat-static-v3';
-const MEDIA_CACHE = 'vistasat-media-v2';
+const STATIC_CACHE = 'vistasat-static-v4';
+const MEDIA_CACHE = 'vistasat-media-v4';
 const OFFLINE_URL = '/offline.html';
 
-// Solo recursos estáticos directos (sin rutas con redirect como '/')
 const STATIC_ASSETS = [
   '/offline.html',
   '/manifest.webmanifest',
@@ -52,6 +51,13 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// ─── MESSAGES (Limpieza de caché al cerrar sesión) ───────────────────────────
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'CLEAR_USER_CACHES') {
+    event.waitUntil(caches.delete(MEDIA_CACHE));
+  }
+});
+
 // ─── FETCH ───────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', (event) => {
   const { request } = event;
@@ -61,19 +67,14 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (!url.protocol.startsWith('http')) return;
 
-  // Nunca interceptar APIs del servidor ni peticiones RSC/prefetch de Next.js App Router
+  // Nunca interceptar APIs, RSC/prefetch ni URLs firmadas privadas de Storage
   if (
     url.pathname.startsWith('/api/') ||
     url.searchParams.has('_rsc') ||
     request.headers.get('RSC') === '1' ||
-    request.headers.get('Next-Router-Prefetch') === '1'
+    request.headers.get('Next-Router-Prefetch') === '1' ||
+    url.pathname.includes('/storage/v1/object/sign/')
   ) {
-    return;
-  }
-
-  // Imágenes de Supabase Storage → CacheFirst (7 días)
-  if (url.hostname.includes('supabase.co') && url.pathname.includes('/storage/')) {
-    event.respondWith(cacheFirstWithExpiry(request, MEDIA_CACHE, 7 * 24 * 60 * 60));
     return;
   }
 
@@ -176,8 +177,6 @@ self.addEventListener('sync', (event) => {
   }
 });
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
@@ -186,35 +185,6 @@ async function cacheFirst(request, cacheName) {
   const response = await fetch(request);
   if (response.ok && !response.redirected) {
     cache.put(request, response.clone());
-  }
-  return response;
-}
-
-async function cacheFirstWithExpiry(request, cacheName, maxAgeSeconds) {
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
-
-  if (cached) {
-    const cachedDate = cached.headers.get('sw-cached-at');
-    if (cachedDate) {
-      const age = (Date.now() - parseInt(cachedDate, 10)) / 1000;
-      if (age < maxAgeSeconds) return cached;
-    } else {
-      return cached;
-    }
-  }
-
-  const response = await fetch(request);
-  if (response.ok && !response.redirected) {
-    const headers = new Headers(response.headers);
-    headers.append('sw-cached-at', Date.now().toString());
-    const responseToCache = new Response(await response.blob(), {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
-    cache.put(request, responseToCache);
-    return responseToCache;
   }
   return response;
 }

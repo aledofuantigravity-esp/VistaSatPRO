@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   notification_level TEXT NOT NULL DEFAULT 'assigned_or_created'
                      CHECK (notification_level IN ('all', 'assigned_or_created', 'none')),
   is_active          BOOLEAN NOT NULL DEFAULT true,
+  is_online          BOOLEAN NOT NULL DEFAULT false,
+  last_seen_at       TIMESTAMPTZ,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );

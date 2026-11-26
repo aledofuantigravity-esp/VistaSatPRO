@@ -1,11 +1,19 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 
+const createUserSchema = z.object({
+  email: z.string().trim().email('Correo electrónico inválido'),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(128),
+  full_name: z.string().trim().min(2, 'Nombre demasiado corto').max(120),
+  phone: z.string().trim().max(30).optional(),
+  role: z.enum(['admin', 'coordinator', 'technician']).default('technician'),
+});
+
 /**
  * POST /api/admin/users
- * Decisión 3: El administrador crea la cuenta (email + contraseña inicial)
- * sin depender de emails automáticos de invitación.
+ * Exclusivo para el Administrador activo.
  */
 export async function POST(request: Request) {
   try {
@@ -19,7 +27,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verificar que quien llama es admin o coordinador autenticado
     const {
       data: { user },
     } = await supabaseServer.auth.getUser();
@@ -29,32 +36,27 @@ export async function POST(request: Request) {
 
     const { data: callerProfile } = await supabaseAdmin
       .from('profiles')
-      .select('role')
+      .select('role, is_active')
       .eq('id', user.id)
       .single();
 
-    if (!callerProfile || callerProfile.role !== 'admin') {
+    if (!callerProfile || !callerProfile.is_active || callerProfile.role !== 'admin') {
       return NextResponse.json(
-        { error: 'Solo el Administrador puede crear o editar usuarios' },
+        { error: 'Solo un Administrador activo puede crear usuarios' },
         { status: 403 }
       );
     }
 
-    const body = await request.json();
-    const { email, password, full_name, phone, role } = body as {
-      email: string;
-      password: string;
-      full_name: string;
-      phone?: string;
-      role: 'admin' | 'coordinator' | 'technician';
-    };
-
-    if (!email || !password || !full_name || password.length < 6) {
+    const rawBody = await request.json();
+    const parsed = createUserSchema.safeParse(rawBody);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Email, nombre completo y contraseña (mín. 6 caracteres) son obligatorios.' },
+        { error: parsed.error.issues[0]?.message || 'Datos inválidos' },
         { status: 400 }
       );
     }
+
+    const { email, password, full_name, phone, role } = parsed.data;
 
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email,
@@ -63,7 +65,7 @@ export async function POST(request: Request) {
       user_metadata: {
         full_name,
         phone: phone || null,
-        role: role || 'technician',
+        role,
       },
     });
 
@@ -76,7 +78,7 @@ export async function POST(request: Request) {
       .update({
         full_name,
         phone: phone || null,
-        role: role || 'technician',
+        role,
       })
       .eq('id', created.user.id);
 

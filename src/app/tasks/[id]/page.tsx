@@ -29,6 +29,7 @@ import {
   addTaskNote,
   getTaskDetail,
   listProfiles,
+  saveTaskSignature,
   updateTaskFields,
   updateTaskStatus,
   uploadTaskAttachment,
@@ -219,6 +220,10 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       await uploadTaskAttachment(task.id, file, undefined, profile);
       showTempMessage('Fotografía adjuntada al parte.');
       await load();
+    } catch (err) {
+      showTempMessage(
+        err instanceof Error ? err.message : 'No se pudo subir la fotografía.'
+      );
     } finally {
       setUploadingPhoto(false);
       e.target.value = '';
@@ -226,11 +231,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   };
 
   const handleSaveSignature = async (dataUrl: string, signerName: string) => {
-    await updateTaskFields(
-      task.id,
-      { client_signature_url: dataUrl, signer_name: signerName },
-      profile
-    );
+    await saveTaskSignature(task.id, dataUrl, signerName, profile);
     showTempMessage('Firma del cliente guardada correctamente.');
     await load();
   };

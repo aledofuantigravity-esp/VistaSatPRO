@@ -14,7 +14,11 @@ import {
   getDemoSessionUserId,
   setDemoSessionUserId,
 } from '@/lib/demo-store';
-import { syncOfflineActions } from '@/lib/data-service';
+import {
+  sendPresenceHeartbeat,
+  syncOfflineActions,
+} from '@/lib/data-service';
+import { clearOfflineQueue } from '@/lib/offline-queue';
 import type { Profile } from '@/types/database';
 
 interface AuthContextValue {
@@ -28,6 +32,24 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+async function purgeClientSessionData() {
+  try {
+    await clearOfflineQueue();
+  } catch {
+    // Silencioso
+  }
+  if (typeof window !== 'undefined') {
+    Object.keys(localStorage).forEach((k) => {
+      if (k.startsWith('vistasat')) {
+        localStorage.removeItem(k);
+      }
+    });
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_USER_CACHES' });
+    }
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -52,6 +74,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           { cache: 'no-store' }
         );
         const data = (await res.json()) as { profile: Profile | null };
+        if (data.profile && !data.profile.is_active) {
+          setDemoSessionUserId(null);
+          setProfile(null);
+          return;
+        }
         setProfile((prev) => {
           if (
             prev &&
@@ -89,7 +116,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', user.id)
         .single();
 
-      setProfile((prof as Profile) || null);
+      const typedProf = (prof as Profile) || null;
+      if (typedProf && !typedProf.is_active) {
+        await supabase.auth.signOut();
+        await purgeClientSessionData();
+        setProfile(null);
+        setIsLoading(false);
+        return;
+      }
+
+      setProfile(typedProf);
     } catch {
       setProfile(null);
     } finally {
@@ -135,6 +171,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('online', handleOnline);
   }, [profile]);
 
+  // Presencia en tiempo real + heartbeat de última conexión
+  const profileId = profile?.id;
+  useEffect(() => {
+    if (!profileId) return;
+
+    void sendPresenceHeartbeat(profileId, true);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void sendPresenceHeartbeat(profileId, true);
+      }
+    }, 45000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void sendPresenceHeartbeat(profileId, true);
+      } else {
+        void sendPresenceHeartbeat(profileId, false, true);
+      }
+    };
+
+    const handlePageHide = () => {
+      void sendPresenceHeartbeat(profileId, false, true);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+
+    const supabase = getSupabaseBrowserClient();
+    let presenceChannel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
+    if (supabase) {
+      presenceChannel = supabase.channel('presence:online-users', {
+        config: { presence: { key: profileId } },
+      });
+      presenceChannel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          void presenceChannel?.track({
+            user_id: profileId,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
+    }
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+      if (presenceChannel && supabase) {
+        void supabase.removeChannel(presenceChannel);
+      }
+    };
+  }, [profileId]);
+
   const signIn = async (email: string, password: string) => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
@@ -159,7 +249,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      return { error: 'Correo o contraseña incorrectos.' };
+      return { error: 'Correo o contraseña incorrectos o cuenta desactivada.' };
     }
     await loadCurrentUser();
     router.push('/dashboard');
@@ -179,6 +269,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    if (profile?.id) {
+      await sendPresenceHeartbeat(profile.id, false);
+    }
+    await purgeClientSessionData();
+
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
       setDemoSessionUserId(null);

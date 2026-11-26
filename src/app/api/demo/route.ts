@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { hydrateTasks } from '@/lib/demo-seed';
+import { isSupabaseConfigured } from '@/lib/supabase/config';
 import {
   dispatchServerDemoNotifications,
   getServerDemoDb,
@@ -23,6 +24,9 @@ import {
 } from '@/types/database';
 
 export async function GET(request: Request) {
+  if (isSupabaseConfigured()) {
+    return NextResponse.json({ error: 'Not Found' }, { status: 404 });
+  }
   const { searchParams } = new URL(request.url);
   const resource = searchParams.get('resource');
   const userId = searchParams.get('userId');
@@ -113,6 +117,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (isSupabaseConfigured()) {
+    return NextResponse.json({ error: 'Not Found' }, { status: 404 });
+  }
   try {
     const body = await request.json();
     const { action } = body as { action: string };
@@ -132,6 +139,9 @@ export async function POST(request: Request) {
             { status: 401 }
           );
         }
+        user.is_online = true;
+        user.last_seen_at = nowIso;
+        saveServerDemoDb(state);
         return NextResponse.json({ profile: user });
       }
 
@@ -653,6 +663,42 @@ export async function POST(request: Request) {
         const { userId } = body as { userId: string };
         const sent = await sendTestPushForUser(userId);
         return NextResponse.json({ ok: true, sent });
+      }
+
+      case 'change_password': {
+        const { userId, currentPassword, newPassword } = body as {
+          userId: string;
+          currentPassword: string;
+          newPassword: string;
+        };
+        const user = state.profiles.find((p) => p.id === userId && p.is_active);
+        if (!user) {
+          return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 });
+        }
+        const key = user.email.toLowerCase();
+        if (state.passwords[key] !== currentPassword) {
+          return NextResponse.json({ error: 'La contraseña actual no es correcta.' }, { status: 400 });
+        }
+        if (!newPassword || newPassword.length < 8) {
+          return NextResponse.json(
+            { error: 'La nueva contraseña debe tener al menos 8 caracteres.' },
+            { status: 400 }
+          );
+        }
+        state.passwords[key] = newPassword;
+        saveServerDemoDb(state);
+        return NextResponse.json({ ok: true });
+      }
+
+      case 'heartbeat': {
+        const { userId, isOnline } = body as { userId: string; isOnline?: boolean };
+        const user = state.profiles.find((p) => p.id === userId);
+        if (user) {
+          user.is_online = isOnline !== false;
+          user.last_seen_at = nowIso;
+          saveServerDemoDb(state);
+        }
+        return NextResponse.json({ ok: true });
       }
 
       case 'reset_demo': {

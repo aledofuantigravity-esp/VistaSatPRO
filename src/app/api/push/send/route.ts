@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { sendNotification, setVapidDetails } from 'web-push';
+import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { isVapidConfigured } from '@/lib/supabase/config';
@@ -16,52 +17,79 @@ if (
   );
 }
 
-interface PushSendBody {
-  taskId: string;
-  actorId: string;
-  type:
-    | 'task_created'
-    | 'task_assigned'
-    | 'task_updated'
-    | 'status_changed'
-    | 'priority_changed'
-    | 'comment_added'
-    | 'reassigned';
-  title: string;
-  body: string;
-  isNewTask?: boolean;
-}
+const pushPayloadSchema = z.union([
+  z.object({
+    testSelf: z.literal(true),
+  }),
+  z.object({
+    testSelf: z.literal(false).optional(),
+    taskId: z.string().uuid(),
+    type: z.enum([
+      'task_created',
+      'task_assigned',
+      'task_updated',
+      'status_changed',
+      'priority_changed',
+      'comment_added',
+      'reassigned',
+    ]),
+    title: z.string().trim().min(1).max(120),
+    body: z.string().trim().min(1).max(300),
+    isNewTask: z.boolean().optional(),
+  }),
+]);
 
 /**
  * POST /api/push/send
- * Dispara notificaciones in-app + Web Push VAPID a todos los destinatarios
- * pertinentes, aplicando el filtro estricto anti-autonotificación (actorId !== recipientId).
+ * Dispara notificaciones in-app + Web Push VAPID a destinatarios legítimos.
+ * Requiere sesión JWT activa y deriva actorId exclusivamente del servidor.
  */
 export async function POST(request: Request) {
   try {
-    const supabase = getSupabaseAdminClient();
-    if (!supabase) {
+    const supabaseAdmin = getSupabaseAdminClient();
+    const supabaseServer = await getSupabaseServerClient();
+
+    if (!supabaseAdmin || !supabaseServer) {
       return NextResponse.json(
-        { ok: true, mode: 'demo', message: 'Supabase no configurado; notificaciones manejadas localmente.' },
+        { ok: true, mode: 'demo', message: 'Supabase no configurado; notificaciones manejadas en modo prueba.' },
         { status: 200 }
       );
     }
 
-    const payload = (await request.json()) as PushSendBody & { testSelf?: boolean };
+    // 1. Autenticación obligatoria en TODAS las llamadas
+    const {
+      data: { user: authUser },
+    } = await supabaseServer.auth.getUser();
 
-    // Modo prueba de Push desde /profile hacia los dispositivos del propio usuario
-    if (payload.testSelf) {
-      const supabaseServer = await getSupabaseServerClient();
-      const authUser = supabaseServer ? (await supabaseServer.auth.getUser()).data.user : null;
-      if (!authUser) {
-        return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
-      }
-      const vapidReady =
-        isVapidConfigured() && Boolean(process.env.VAPID_PRIVATE_KEY);
+    if (!authUser) {
+      return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+    }
+
+    const { data: callerProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, role, is_active')
+      .eq('id', authUser.id)
+      .single();
+
+    if (!callerProfile || !callerProfile.is_active) {
+      return NextResponse.json({ error: 'Cuenta desactivada o sin perfil' }, { status: 403 });
+    }
+
+    const rawBody = await request.json();
+    const parsed = pushPayloadSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Payload de notificación inválido' }, { status: 400 });
+    }
+
+    const vapidReady =
+      isVapidConfigured() && Boolean(process.env.VAPID_PRIVATE_KEY);
+
+    // 2. Modo prueba de Push hacia los dispositivos del propio usuario
+    if ('testSelf' in parsed.data && parsed.data.testSelf === true) {
       if (!vapidReady) {
         return NextResponse.json({ ok: true, pushCount: 0 });
       }
-      const { data: subs } = await supabase
+      const { data: subs } = await supabaseAdmin
         .from('push_subscriptions')
         .select('id, endpoint, p256dh, auth')
         .eq('user_id', authUser.id)
@@ -86,7 +114,7 @@ export async function POST(request: Request) {
         } catch (err: unknown) {
           const statusCode = (err as { statusCode?: number })?.statusCode;
           if (statusCode === 410 || statusCode === 404) {
-            await supabase
+            await supabaseAdmin
               .from('push_subscriptions')
               .update({ is_active: false })
               .eq('id', sub.id);
@@ -96,16 +124,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, pushCount: sent });
     }
 
-    const { taskId, actorId, type, title, body, isNewTask } = payload;
+    const { taskId, type, title, body, isNewTask } = parsed.data as {
+      taskId: string;
+      type:
+        | 'task_created'
+        | 'task_assigned'
+        | 'task_updated'
+        | 'status_changed'
+        | 'priority_changed'
+        | 'comment_added'
+        | 'reassigned';
+      title: string;
+      body: string;
+      isNewTask?: boolean;
+    };
 
-    const { data: task } = await supabase
+    // Derivar actorId exclusivamente de la sesión verificada
+    const actorId = authUser.id;
+
+    const { data: task } = await supabaseAdmin
       .from('tasks')
-      .select('id, assigned_to, created_by')
+      .select('id, assigned_to, created_by, status')
       .eq('id', taskId)
       .single();
 
     if (!task) {
       return NextResponse.json({ error: 'Parte no encontrado' }, { status: 404 });
+    }
+
+    // 3. Verificar autorización del actor sobre el parte
+    const isCoordOrAdmin =
+      callerProfile.role === 'admin' || callerProfile.role === 'coordinator';
+    const hasTaskAccess =
+      isCoordOrAdmin ||
+      task.assigned_to === actorId ||
+      task.created_by === actorId ||
+      (task.assigned_to === null && task.status === 'pending');
+
+    if (!hasTaskAccess) {
+      return NextResponse.json(
+        { error: 'Sin permisos para notificar sobre este parte' },
+        { status: 403 }
+      );
     }
 
     const recipientSet = new Set<string>();
@@ -115,7 +175,7 @@ export async function POST(request: Request) {
     }
 
     if (isNewTask && !task.assigned_to) {
-      const { data: techs } = await supabase
+      const { data: techs } = await supabaseAdmin
         .from('profiles')
         .select('id')
         .eq('role', 'technician')
@@ -123,7 +183,7 @@ export async function POST(request: Request) {
       techs?.forEach((t) => recipientSet.add(t.id));
     }
 
-    const { data: coordinators } = await supabase
+    const { data: coordinators } = await supabaseAdmin
       .from('profiles')
       .select('id, notification_level')
       .in('role', ['admin', 'coordinator'])
@@ -144,13 +204,10 @@ export async function POST(request: Request) {
     recipientSet.delete(actorId);
     const recipients = Array.from(recipientSet).filter((id) => id !== actorId);
 
-    const vapidReady =
-      isVapidConfigured() && Boolean(process.env.VAPID_PRIVATE_KEY);
-
     let pushCount = 0;
 
     for (const recipientId of recipients) {
-      await supabase.from('notifications').insert({
+      await supabaseAdmin.from('notifications').insert({
         recipient_id: recipientId,
         actor_id: actorId,
         task_id: taskId,
@@ -161,7 +218,7 @@ export async function POST(request: Request) {
       });
 
       if (vapidReady) {
-        const { data: subs } = await supabase
+        const { data: subs } = await supabaseAdmin
           .from('push_subscriptions')
           .select('id, endpoint, p256dh, auth')
           .eq('user_id', recipientId)
@@ -180,7 +237,7 @@ export async function POST(request: Request) {
           } catch (err: unknown) {
             const statusCode = (err as { statusCode?: number })?.statusCode;
             if (statusCode === 410 || statusCode === 404) {
-              await supabase
+              await supabaseAdmin
                 .from('push_subscriptions')
                 .update({ is_active: false })
                 .eq('id', sub.id);
