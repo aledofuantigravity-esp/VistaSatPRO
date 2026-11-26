@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -35,8 +35,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [pendingQueueCount, setPendingQueueCount] = useState(0);
 
+  const redirectedRef = useRef(false);
+
   useEffect(() => {
-    if (!isLoading && !profile) {
+    if (!isLoading && !profile && !redirectedRef.current) {
+      redirectedRef.current = true;
       router.replace('/login');
     }
   }, [isLoading, profile, router]);
