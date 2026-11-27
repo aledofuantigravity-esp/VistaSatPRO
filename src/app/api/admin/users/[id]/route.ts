@@ -4,12 +4,56 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
 import { captureMonitoringError } from '@/lib/monitoring';
+import {
+  normalizeNotificationPreferences,
+  syncLegacyNotificationLevel,
+} from '@/lib/notification-preferences';
+import type { NotificationLevel, UserRole } from '@/types/database';
+
+const channelToggleSchema = z.object({
+  in_app: z.boolean(),
+  push: z.boolean(),
+});
+
+const notificationPreferencesSchema = z.object({
+  scope: z.enum(['all', 'assigned_or_created', 'assigned_only', 'none']),
+  include_unassigned_new_tasks: z.boolean(),
+  include_created_by_me: z.boolean(),
+  in_app_enabled: z.boolean(),
+  push_enabled: z.boolean(),
+  events: z.object({
+    task_created: channelToggleSchema,
+    task_assigned: channelToggleSchema,
+    comment_added: channelToggleSchema,
+    status_changed: channelToggleSchema,
+    priority_changed: channelToggleSchema,
+    task_updated: channelToggleSchema,
+    sla_alert: channelToggleSchema,
+  }),
+  task_types: z.object({
+    installation: z.boolean(),
+    rma_incident: z.boolean(),
+    cxc_incident: z.boolean(),
+    task: z.boolean(),
+  }),
+  min_priority_in_app: z.enum(['low', 'medium', 'high', 'urgent']),
+  min_priority_push: z.enum(['low', 'medium', 'high', 'urgent']),
+  quiet_hours: z.object({
+    enabled: z.boolean(),
+    start: z.string().regex(/^\d{2}:\d{2}$/),
+    end: z.string().regex(/^\d{2}:\d{2}$/),
+    allow_urgent_override: z.boolean(),
+  }),
+  allow_user_override: z.boolean(),
+});
 
 const updateUserSchema = z.object({
   full_name: z.string().trim().min(2).max(120).optional(),
   phone: z.string().trim().max(30).nullable().optional(),
   role: z.enum(['admin', 'coordinator', 'technician']).optional(),
   is_active: z.boolean().optional(),
+  notification_level: z.enum(['all', 'assigned_or_created', 'none']).optional(),
+  notification_preferences: notificationPreferencesSchema.optional(),
 });
 
 /**
@@ -87,16 +131,58 @@ export async function PATCH(
       }
     }
 
-    const { data: updated, error } = await supabaseAdmin
+    const { data: targetCurrent } = await supabaseAdmin
       .from('profiles')
-      .update({
-        ...patch,
-        ...(patch.is_active === false ? { is_online: false } : {}),
-        updated_at: new Date().toISOString(),
-      })
+      .select('role, notification_level')
+      .eq('id', targetId)
+      .single();
+
+    const effectiveRole = (patch.role || targetCurrent?.role || 'technician') as UserRole;
+    const effectiveLegacyLevel = (patch.notification_level ||
+      targetCurrent?.notification_level ||
+      'assigned_or_created') as NotificationLevel;
+
+    const dbPayload: Record<string, unknown> = {
+      ...(patch.full_name !== undefined ? { full_name: patch.full_name } : {}),
+      ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+      ...(patch.role !== undefined ? { role: patch.role } : {}),
+      ...(patch.is_active !== undefined ? { is_active: patch.is_active } : {}),
+      ...(patch.is_active === false ? { is_online: false } : {}),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (patch.notification_preferences !== undefined) {
+      const normalized = normalizeNotificationPreferences(
+        patch.notification_preferences,
+        effectiveRole,
+        effectiveLegacyLevel
+      );
+      dbPayload.notification_preferences = normalized;
+      dbPayload.notification_level = syncLegacyNotificationLevel(normalized);
+    } else if (patch.notification_level !== undefined) {
+      dbPayload.notification_level = patch.notification_level;
+    }
+
+    let { data: updated, error } = await supabaseAdmin
+      .from('profiles')
+      .update(dbPayload)
       .eq('id', targetId)
       .select()
       .single();
+
+    // Fallback retroactivo si aún no se aplicó migración 0008 (columna notification_preferences)
+    if (error?.code === '42703' && 'notification_preferences' in dbPayload) {
+      const { notification_preferences: _omit, ...legacyPayload } = dbPayload;
+      void _omit;
+      const retry = await supabaseAdmin
+        .from('profiles')
+        .update(legacyPayload)
+        .eq('id', targetId)
+        .select()
+        .single();
+      updated = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });

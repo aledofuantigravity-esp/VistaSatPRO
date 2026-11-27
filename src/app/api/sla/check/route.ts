@@ -4,6 +4,8 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { isSupabaseConfigured, isVapidConfigured } from '@/lib/supabase/config';
 import { captureMonitoringError } from '@/lib/monitoring';
 import { timingSafeEqualSecret } from '@/lib/server-security';
+import { evaluateUserNotificationDelivery } from '@/lib/notification-preferences';
+import type { Profile, TaskPriority, TaskType } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,14 +46,29 @@ async function runSlaCheck(request: Request) {
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const { data: tasks, error } = await supabaseAdmin
+    let { data: tasks, error } = await supabaseAdmin
       .from('tasks')
-      .select('id, code, due_date, assigned_to, created_by, status, customer:customers(name)')
+      .select('id, code, due_date, assigned_to, created_by, status, priority, task_type, customer:customers(name)')
       .is('deleted_at', null)
       .not('due_date', 'is', null)
       .not('assigned_to', 'is', null)
       .not('status', 'in', '("completed","cancelled")')
       .lte('due_date', endOfDay.toISOString());
+
+    if (error?.code === '42703') {
+      const fb = await supabaseAdmin
+        .from('tasks')
+        .select('id, code, due_date, assigned_to, created_by, status, priority, customer:customers(name)')
+        .is('deleted_at', null)
+        .not('due_date', 'is', null)
+        .not('assigned_to', 'is', null)
+        .not('status', 'in', '("completed","cancelled")')
+        .lte('due_date', endOfDay.toISOString());
+      tasks = fb.data
+        ? fb.data.map((row) => ({ ...row, task_type: 'rma_incident' }))
+        : null;
+      error = fb.error;
+    }
 
     if (error) {
       // Si la migración 0004 aún no se aplicó, salir sin error fatal
@@ -60,6 +77,30 @@ async function runSlaCheck(request: Request) {
       }
       throw new Error(error.message);
     }
+
+    const { data: initialActiveProfiles, error: profErr } = await supabaseAdmin
+      .from('profiles')
+      .select('id, role, is_active, notification_level, notification_preferences')
+      .eq('is_active', true);
+
+    let activeProfiles = initialActiveProfiles;
+    if (profErr?.code === '42703') {
+      const fbProf = await supabaseAdmin
+        .from('profiles')
+        .select('id, role, is_active, notification_level')
+        .eq('is_active', true);
+      activeProfiles = (fbProf.data || []).map((p) => ({
+        ...p,
+        notification_preferences: null,
+      }));
+    }
+
+    const typedProfiles = (activeProfiles || []) as Array<
+      Pick<
+        Profile,
+        'id' | 'role' | 'is_active' | 'notification_level' | 'notification_preferences'
+      >
+    >;
 
     const vapidReady =
       isVapidConfigured() &&
@@ -78,19 +119,7 @@ async function runSlaCheck(request: Request) {
     let pushCount = 0;
 
     for (const t of tasks || []) {
-      if (!t.assigned_to || !t.due_date) continue;
-
-      // Evitar duplicados en el mismo día para el mismo parte y técnico
-      const { data: existingToday } = await supabaseAdmin
-        .from('notifications')
-        .select('id')
-        .eq('recipient_id', t.assigned_to)
-        .eq('task_id', t.id)
-        .gte('created_at', startOfDay.toISOString())
-        .ilike('title', '%SLA%')
-        .limit(1);
-
-      if (existingToday && existingToday.length > 0) continue;
+      if (!t.due_date) continue;
 
       const due = new Date(t.due_date);
       const isOverdue = due.getTime() < now.getTime();
@@ -110,41 +139,95 @@ async function runSlaCheck(request: Request) {
             minute: '2-digit',
           })}.`;
 
-      await supabaseAdmin.from('notifications').insert({
-        recipient_id: t.assigned_to,
-        actor_id: t.created_by,
-        task_id: t.id,
-        type: 'priority_changed',
-        title,
-        body,
-        push_sent: vapidReady,
-      });
-      notified++;
+      for (const candidate of typedProfiles) {
+        const decision = evaluateUserNotificationDelivery({
+          recipient: candidate,
+          actorId: 'system-sla-cron',
+          task: {
+            assigned_to: t.assigned_to,
+            created_by: t.created_by,
+            priority: (t.priority || 'medium') as TaskPriority,
+            task_type: ((t as { task_type?: string }).task_type ||
+              'rma_incident') as TaskType,
+          },
+          eventType: 'sla_alert',
+          now,
+        });
 
-      if (vapidReady) {
-        const { data: subs } = await supabaseAdmin
-          .from('push_subscriptions')
-          .select('id, endpoint, p256dh, auth')
-          .eq('user_id', t.assigned_to)
-          .eq('is_active', true);
+        if (!decision.inApp && !decision.push) continue;
 
-        for (const sub of subs || []) {
-          try {
-            await sendNotification(
-              {
-                endpoint: sub.endpoint,
-                keys: { p256dh: sub.p256dh, auth: sub.auth },
-              },
-              JSON.stringify({ title, body, taskId: t.id, type: 'priority_changed' })
-            );
-            pushCount++;
-          } catch (err: unknown) {
-            const statusCode = (err as { statusCode?: number })?.statusCode;
-            if (statusCode === 410 || statusCode === 404) {
-              await supabaseAdmin
-                .from('push_subscriptions')
-                .update({ is_active: false })
-                .eq('id', sub.id);
+        // Evitar duplicados en el mismo día para el mismo parte y destinatario
+        const { data: existingToday } = await supabaseAdmin
+          .from('notifications')
+          .select('id')
+          .eq('recipient_id', candidate.id)
+          .eq('task_id', t.id)
+          .gte('created_at', startOfDay.toISOString())
+          .ilike('title', '%SLA%')
+          .limit(1);
+
+        if (existingToday && existingToday.length > 0) continue;
+
+        if (decision.inApp) {
+          // Garantizar actor_id != recipient_id para cumplir CHECK en BD
+          const fallbackActor =
+            candidate.id !== t.created_by
+              ? t.created_by
+              : t.assigned_to && t.assigned_to !== candidate.id
+              ? t.assigned_to
+              : typedProfiles.find((p) => p.id !== candidate.id)?.id || t.created_by;
+
+          if (fallbackActor !== candidate.id) {
+            let { error: insErr } = await supabaseAdmin.from('notifications').insert({
+              recipient_id: candidate.id,
+              actor_id: fallbackActor,
+              task_id: t.id,
+              type: 'sla_alert',
+              title,
+              body,
+              push_sent: vapidReady && decision.push,
+            });
+            if (insErr?.code === '23514') {
+              const fbIns = await supabaseAdmin.from('notifications').insert({
+                recipient_id: candidate.id,
+                actor_id: fallbackActor,
+                task_id: t.id,
+                type: 'priority_changed',
+                title,
+                body,
+                push_sent: vapidReady && decision.push,
+              });
+              insErr = fbIns.error;
+            }
+            if (!insErr) notified++;
+          }
+        }
+
+        if (decision.push && vapidReady) {
+          const { data: subs } = await supabaseAdmin
+            .from('push_subscriptions')
+            .select('id, endpoint, p256dh, auth')
+            .eq('user_id', candidate.id)
+            .eq('is_active', true);
+
+          for (const sub of subs || []) {
+            try {
+              await sendNotification(
+                {
+                  endpoint: sub.endpoint,
+                  keys: { p256dh: sub.p256dh, auth: sub.auth },
+                },
+                JSON.stringify({ title, body, taskId: t.id, type: 'sla_alert' })
+              );
+              pushCount++;
+            } catch (err: unknown) {
+              const statusCode = (err as { statusCode?: number })?.statusCode;
+              if (statusCode === 410 || statusCode === 404) {
+                await supabaseAdmin
+                  .from('push_subscriptions')
+                  .update({ is_active: false })
+                  .eq('id', sub.id);
+              }
             }
           }
         }

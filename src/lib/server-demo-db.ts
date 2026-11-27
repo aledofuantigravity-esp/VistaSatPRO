@@ -3,8 +3,8 @@ import os from 'os';
 import path from 'path';
 import { generateVAPIDKeys, sendNotification, setVapidDetails } from 'web-push';
 import {
-  buildNotificationRecipients,
   createInitialDemoState,
+  evaluateDemoNotificationRecipients,
   type DemoDatabaseState,
 } from './demo-seed';
 import type { AppNotification, NotificationType, Task } from '@/types/database';
@@ -102,8 +102,8 @@ export async function dispatchServerDemoNotifications(
     isNewTask?: boolean;
   }
 ): Promise<AppNotification[]> {
-  const created = buildNotificationRecipients(state, params);
-  if (created.length === 0) return [];
+  const { created, pushEntries } = evaluateDemoNotificationRecipients(state, params);
+  if (created.length === 0 && pushEntries.length === 0) return [];
 
   const keys = ensureVapidKeys(state);
   setVapidDetails(
@@ -112,10 +112,10 @@ export async function dispatchServerDemoNotifications(
     keys.privateKey
   );
 
-  for (const notif of created) {
+  for (const entry of pushEntries) {
     const subs = state.pushSubscriptions.filter(
       (s) =>
-        s.user_id === notif.recipient_id &&
+        s.user_id === entry.recipientId &&
         s.is_active &&
         s.endpoint.startsWith('https://')
     );
@@ -128,10 +128,10 @@ export async function dispatchServerDemoNotifications(
             keys: { p256dh: sub.p256dh, auth: sub.auth },
           },
           JSON.stringify({
-            title: notif.title,
-            body: notif.body,
-            taskId: notif.task_id,
-            type: notif.type,
+            title: entry.title,
+            body: entry.body,
+            taskId: entry.taskId,
+            type: entry.type,
           })
         );
       } catch (err: unknown) {

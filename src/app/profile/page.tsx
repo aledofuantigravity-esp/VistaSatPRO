@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
+import { NotificationPreferencesEditor } from '@/components/users/NotificationPreferencesEditor';
 import { useAuth } from '@/hooks/useAuth';
 import { usePWAInstall } from '@/hooks/usePWAInstall';
 import { useTheme, type ThemePreference } from '@/hooks/useTheme';
@@ -30,6 +31,7 @@ import {
   sendServerTestPush,
   updateProfile,
 } from '@/lib/data-service';
+import { normalizeNotificationPreferences } from '@/lib/notification-preferences';
 import {
   getPushSupportStatus,
   showLocalBrowserNotification,
@@ -38,7 +40,7 @@ import {
 import { validatePasswordStrength } from '@/lib/security';
 import {
   ROLE_LABELS,
-  type NotificationLevel,
+  type NotificationPreferences,
   type PushSubscriptionRecord,
 } from '@/types/database';
 
@@ -83,9 +85,20 @@ function ProfileContentInner({
 
   const [fullName, setFullName] = useState(profile.full_name);
   const [phone, setPhone] = useState(profile.phone || '');
-  const [notifLevel, setNotifLevel] = useState<NotificationLevel>(profile.notification_level);
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>(() =>
+    normalizeNotificationPreferences(
+      profile.notification_preferences,
+      profile.role,
+      profile.notification_level
+    )
+  );
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [savingNotifPrefs, setSavingNotifPrefs] = useState(false);
+  const [notifPrefsMsg, setNotifPrefsMsg] = useState<{
+    type: 'ok' | 'err';
+    text: string;
+  } | null>(null);
 
   const [subs, setSubs] = useState<PushSubscriptionRecord[]>([]);
   const [pushLoading, setPushLoading] = useState(false);
@@ -120,12 +133,36 @@ function ProfileContentInner({
       await updateProfile(profile.id, {
         full_name: fullName.trim(),
         phone: phone.trim() || null,
-        notification_level: notifLevel,
       });
       await refreshProfile();
-      setSavedMsg('Perfil y preferencias guardados.');
+      setSavedMsg('Datos personales guardados.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveNotifPrefs = async () => {
+    setSavingNotifPrefs(true);
+    setNotifPrefsMsg(null);
+    try {
+      await updateProfile(profile.id, {
+        notification_preferences: notifPrefs,
+      });
+      await refreshProfile();
+      setNotifPrefsMsg({
+        type: 'ok',
+        text: 'Preferencias de notificaciones y Web Push guardadas.',
+      });
+    } catch (err) {
+      setNotifPrefsMsg({
+        type: 'err',
+        text:
+          err instanceof Error
+            ? err.message
+            : 'No se pudieron guardar las preferencias.',
+      });
+    } finally {
+      setSavingNotifPrefs(false);
     }
   };
 
@@ -273,28 +310,6 @@ function ProfileContentInner({
           />
         </div>
 
-        {isCoord && (
-          <div className="pt-2 border-t border-border">
-            <label className="block text-sm font-bold text-navy mb-1">
-              Nivel de notificaciones (Coordinador / Admin)
-            </label>
-            <p className="text-xs text-mid-grey mb-2">
-              Elige de qué partes quieres recibir alertas cuando otros usuarios los actualicen.
-            </p>
-            <select
-              value={notifLevel}
-              onChange={(e) => setNotifLevel(e.target.value as NotificationLevel)}
-              className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
-            >
-              <option value="assigned_or_created">
-                Solo partes que yo creé o tengo asignados (Recomendado)
-              </option>
-              <option value="all">Todos los cambios de todos los partes del equipo</option>
-              <option value="none">Silenciar avisos de coordinación</option>
-            </select>
-          </div>
-        )}
-
         {savedMsg && (
           <div className="p-3 bg-success/10 border-l-4 border-success text-xs font-semibold text-success flex items-center gap-2">
             <Check size={15} /> {savedMsg}
@@ -302,9 +317,50 @@ function ProfileContentInner({
         )}
 
         <Button type="submit" isLoading={saving} className="w-full sm:w-auto">
-          Guardar cambios
+          Guardar datos personales
         </Button>
       </form>
+
+      {/* Preferencias detalladas de notificaciones y Push */}
+      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-4 border border-border/60">
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <Bell size={18} className="text-magenta" />
+          <h2 className="text-base font-bold text-charcoal">
+            Preferencias de Notificaciones y Push
+          </h2>
+        </div>
+
+        <NotificationPreferencesEditor
+          value={notifPrefs}
+          onChange={setNotifPrefs}
+          isAdminView={profile.role === 'admin'}
+          readOnly={!notifPrefs.allow_user_override && profile.role !== 'admin'}
+        />
+
+        {notifPrefsMsg && (
+          <div
+            className={`p-3 border-l-4 text-xs font-semibold ${
+              notifPrefsMsg.type === 'ok'
+                ? 'bg-success/10 border-success text-success'
+                : 'bg-danger/10 border-danger text-danger'
+            }`}
+          >
+            {notifPrefsMsg.text}
+          </div>
+        )}
+
+        {(notifPrefs.allow_user_override || profile.role === 'admin') && (
+          <Button
+            type="button"
+            variant="accent"
+            isLoading={savingNotifPrefs}
+            onClick={handleSaveNotifPrefs}
+            className="w-full sm:w-auto"
+          >
+            Guardar preferencias de avisos
+          </Button>
+        )}
+      </div>
 
       {/* Seguridad — Cambiar contraseña */}
       <form

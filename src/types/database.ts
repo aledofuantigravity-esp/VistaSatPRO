@@ -4,6 +4,41 @@ export type UserRole = 'admin' | 'coordinator' | 'technician';
 
 export type NotificationLevel = 'all' | 'assigned_or_created' | 'none';
 
+export type NotificationScope = 'all' | 'assigned_or_created' | 'assigned_only' | 'none';
+
+export type NotificationEventKey =
+  | 'task_created'
+  | 'task_assigned'
+  | 'comment_added'
+  | 'status_changed'
+  | 'priority_changed'
+  | 'task_updated'
+  | 'sla_alert';
+
+export interface ChannelToggle {
+  in_app: boolean;
+  push: boolean;
+}
+
+export interface NotificationPreferences {
+  scope: NotificationScope;
+  include_unassigned_new_tasks: boolean;
+  include_created_by_me: boolean;
+  in_app_enabled: boolean;
+  push_enabled: boolean;
+  events: Record<NotificationEventKey, ChannelToggle>;
+  task_types: Record<TaskType, boolean>;
+  min_priority_in_app: TaskPriority;
+  min_priority_push: TaskPriority;
+  quiet_hours: {
+    enabled: boolean;
+    start: string;
+    end: string;
+    allow_urgent_override: boolean;
+  };
+  allow_user_override: boolean;
+}
+
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export type TaskType = 'installation' | 'rma_incident' | 'cxc_incident' | 'task';
@@ -40,7 +75,8 @@ export type NotificationType =
   | 'status_changed'
   | 'priority_changed'
   | 'comment_added'
-  | 'reassigned';
+  | 'reassigned'
+  | 'sla_alert';
 
 export interface MaterialItem {
   id: string;
@@ -57,6 +93,7 @@ export interface Profile {
   avatar_url: string | null;
   role: UserRole;
   notification_level: NotificationLevel;
+  notification_preferences?: NotificationPreferences | null;
   is_active: boolean;
   is_online?: boolean;
   last_seen_at?: string | null;

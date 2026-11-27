@@ -2,6 +2,10 @@ import { getSupabaseBrowserClient } from './supabase/client';
 import { isSupabaseConfigured } from './supabase/config';
 import { loadDemoState, saveDemoState } from './demo-store';
 import { captureMonitoringError } from './monitoring';
+import {
+  normalizeNotificationPreferences,
+  syncLegacyNotificationLevel,
+} from './notification-preferences';
 import { validatePasswordStrength } from './security';
 import {
   enqueueOfflineAction,
@@ -97,7 +101,17 @@ export async function listProfiles(): Promise<Profile[]> {
 
 export async function updateProfile(
   profileId: string,
-  patch: Partial<Pick<Profile, 'full_name' | 'phone' | 'role' | 'is_active' | 'notification_level'>>
+  patch: Partial<
+    Pick<
+      Profile,
+      | 'full_name'
+      | 'phone'
+      | 'role'
+      | 'is_active'
+      | 'notification_level'
+      | 'notification_preferences'
+    >
+  >
 ): Promise<Profile> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
@@ -109,34 +123,142 @@ export async function updateProfile(
     return data.profile;
   }
 
-  // Si un Administrador cambia rol, estado activo o edita a otro usuario, usar endpoint server-side
-  // para propagar también ban/unban en Supabase Auth y revocar suscripciones Push.
+  // Si se cambia rol o estado activo, usar endpoint admin para propagar ban/unban en Auth
   if (patch.role !== undefined || patch.is_active !== undefined) {
-    const res = await fetch(`/api/admin/users/${encodeURIComponent(profileId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        full_name: patch.full_name,
-        phone: patch.phone,
-        role: patch.role,
-        is_active: patch.is_active,
-      }),
-    });
-    const json = (await res.json()) as { profile?: Profile; error?: string };
-    if (!res.ok || !json.profile) {
-      throw new Error(json.error || 'No se pudo actualizar el usuario');
-    }
-    return json.profile;
+    return adminUpdateUserProfile(profileId, patch);
   }
 
-  const { data, error } = await supabase
+  const updatePayload: Record<string, unknown> = {
+    ...patch,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (patch.notification_preferences) {
+    const normalized = normalizeNotificationPreferences(patch.notification_preferences);
+    updatePayload.notification_preferences = normalized;
+    updatePayload.notification_level = syncLegacyNotificationLevel(normalized);
+  }
+
+  let { data, error } = await supabase
     .from('profiles')
-    .update({ ...patch, updated_at: new Date().toISOString() })
+    .update(updatePayload)
     .eq('id', profileId)
     .select()
     .single();
+
+  if (error?.code === '42703' && 'notification_preferences' in updatePayload) {
+    const { notification_preferences: _omit, ...legacy } = updatePayload;
+    void _omit;
+    const retry = await supabase
+      .from('profiles')
+      .update(legacy)
+      .eq('id', profileId)
+      .select()
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) throw new Error(error.message);
   return data as Profile;
+}
+
+/**
+ * Actualización administrativa de la ficha de cualquier usuario desde /users.
+ */
+export async function adminUpdateUserProfile(
+  targetUserId: string,
+  patch: Partial<
+    Pick<
+      Profile,
+      | 'full_name'
+      | 'phone'
+      | 'role'
+      | 'is_active'
+      | 'notification_level'
+      | 'notification_preferences'
+    >
+  >
+): Promise<Profile> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    const data = await demoPost<{ profile: Profile }>({
+      action: 'update_profile',
+      profileId: targetUserId,
+      patch,
+    });
+    return data.profile;
+  }
+
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(targetUserId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  const json = (await res.json()) as { profile?: Profile; error?: string };
+  if (!res.ok || !json.profile) {
+    throw new Error(json.error || 'No se pudo actualizar el usuario');
+  }
+  return json.profile;
+}
+
+export async function adminListUserPushSubscriptions(
+  targetUserId: string
+): Promise<PushSubscriptionRecord[]> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    const res = await demoGet<{ subscriptions?: PushSubscriptionRecord[] }>(
+      `resource=push_subscriptions&userId=${encodeURIComponent(targetUserId)}`
+    );
+    return res.subscriptions || [];
+  }
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(targetUserId)}/push`, {
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  const json = (await res.json()) as { subscriptions?: PushSubscriptionRecord[] };
+  return json.subscriptions || [];
+}
+
+export async function adminSendTestPushToUser(
+  targetUserId: string
+): Promise<{ sent: number }> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    const res = await demoPost<{ sent: number }>({
+      action: 'test_push',
+      userId: targetUserId,
+    });
+    return { sent: res.sent || 0 };
+  }
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(targetUserId)}/push`, {
+    method: 'POST',
+  });
+  const json = (await res.json()) as { sent?: number; error?: string };
+  if (!res.ok) {
+    throw new Error(json.error || 'No se pudo enviar la notificación Push de prueba.');
+  }
+  return { sent: json.sent || 0 };
+}
+
+export async function adminRevokeUserPushSubscription(
+  targetUserId: string,
+  subId: string
+): Promise<void> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    await demoPost({ action: 'remove_push_subscription', subId });
+    return;
+  }
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(targetUserId)}/push`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subId }),
+  });
+  if (!res.ok) {
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(json.error || 'No se pudo revocar el dispositivo.');
+  }
 }
 
 export async function changeOwnPassword(
@@ -781,7 +903,12 @@ export async function updateTaskFields(
   await triggerPushEndpoint({
     taskId,
     actorId: actor.id,
-    type: patch.assigned_to !== undefined ? 'reassigned' : 'task_updated',
+    type:
+      patch.assigned_to !== undefined
+        ? 'reassigned'
+        : patch.priority !== undefined
+        ? 'priority_changed'
+        : 'task_updated',
     title: `Parte ${data.code} actualizado`,
     body: `${actor.full_name} ha actualizado el parte.`,
   });

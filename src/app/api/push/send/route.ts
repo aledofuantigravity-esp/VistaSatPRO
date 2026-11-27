@@ -6,6 +6,8 @@ import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { isVapidConfigured } from '@/lib/supabase/config';
 import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
 import { captureMonitoringError } from '@/lib/monitoring';
+import { evaluateUserNotificationDelivery } from '@/lib/notification-preferences';
+import type { Profile, TaskPriority, TaskType } from '@/types/database';
 
 if (
   isVapidConfigured() &&
@@ -34,6 +36,7 @@ const pushPayloadSchema = z.union([
       'priority_changed',
       'comment_added',
       'reassigned',
+      'sla_alert',
     ]),
     title: z.string().trim().min(1).max(120),
     body: z.string().trim().min(1).max(300),
@@ -140,7 +143,8 @@ export async function POST(request: Request) {
         | 'status_changed'
         | 'priority_changed'
         | 'comment_added'
-        | 'reassigned';
+        | 'reassigned'
+        | 'sla_alert';
       title: string;
       body: string;
       isNewTask?: boolean;
@@ -149,11 +153,23 @@ export async function POST(request: Request) {
     // Derivar actorId exclusivamente de la sesión verificada
     const actorId = authUser.id;
 
-    const { data: task } = await supabaseAdmin
+    const { data: initialTask, error: taskErr } = await supabaseAdmin
       .from('tasks')
-      .select('id, assigned_to, created_by, deleted_by, status')
+      .select('id, assigned_to, created_by, deleted_by, status, priority, task_type')
       .eq('id', taskId)
       .single();
+
+    let task = initialTask;
+    if (taskErr?.code === '42703') {
+      const fallbackTask = await supabaseAdmin
+        .from('tasks')
+        .select('id, assigned_to, created_by, deleted_by, status, priority')
+        .eq('id', taskId)
+        .single();
+      task = fallbackTask.data
+        ? { ...fallbackTask.data, task_type: 'rma_incident' }
+        : null;
+    }
 
     if (!task) {
       return NextResponse.json({ error: 'Parte no encontrado' }, { status: 404 });
@@ -176,60 +192,69 @@ export async function POST(request: Request) {
       );
     }
 
-    const recipientSet = new Set<string>();
-
-    if (task.assigned_to) {
-      recipientSet.add(task.assigned_to);
-    }
-
-    if (isNewTask && !task.assigned_to) {
-      const { data: techs } = await supabaseAdmin
-        .from('profiles')
-        .select('id')
-        .eq('role', 'technician')
-        .eq('is_active', true);
-      techs?.forEach((t) => recipientSet.add(t.id));
-    }
-
-    const { data: coordinators } = await supabaseAdmin
+    // 4. Evaluar destinatarios según preferencias granulares de cada usuario activo
+    const { data: initialProfiles, error: profErr } = await supabaseAdmin
       .from('profiles')
-      .select('id, notification_level')
-      .in('role', ['admin', 'coordinator'])
+      .select('id, role, is_active, notification_level, notification_preferences')
       .eq('is_active', true);
 
-    coordinators?.forEach((coord) => {
-      if (coord.notification_level === 'all') {
-        recipientSet.add(coord.id);
-      } else if (
-        coord.notification_level === 'assigned_or_created' &&
-        (task.created_by === coord.id || task.assigned_to === coord.id)
-      ) {
-        recipientSet.add(coord.id);
-      }
-    });
+    let candidateProfiles = initialProfiles;
+    if (profErr?.code === '42703') {
+      const fallbackProfs = await supabaseAdmin
+        .from('profiles')
+        .select('id, role, is_active, notification_level')
+        .eq('is_active', true);
+      candidateProfiles = (fallbackProfs.data || []).map((p) => ({
+        ...p,
+        notification_preferences: null,
+      }));
+    }
 
-    // FILTRO ESTRICTO ANTI-AUTONOTIFICACIÓN
-    recipientSet.delete(actorId);
-    const recipients = Array.from(recipientSet).filter((id) => id !== actorId);
-
+    const now = new Date();
+    let inAppCount = 0;
     let pushCount = 0;
 
-    for (const recipientId of recipients) {
-      await supabaseAdmin.from('notifications').insert({
-        recipient_id: recipientId,
-        actor_id: actorId,
-        task_id: taskId,
-        type,
-        title,
-        body,
-        push_sent: vapidReady,
+    for (const candidate of (candidateProfiles || []) as Array<
+      Pick<
+        Profile,
+        'id' | 'role' | 'is_active' | 'notification_level' | 'notification_preferences'
+      >
+    >) {
+      const decision = evaluateUserNotificationDelivery({
+        recipient: candidate,
+        actorId,
+        task: {
+          assigned_to: task.assigned_to,
+          created_by: task.created_by,
+          priority: (task.priority || 'medium') as TaskPriority,
+          task_type: ((task as { task_type?: string }).task_type ||
+            'rma_incident') as TaskType,
+        },
+        eventType: type,
+        isNewTask,
+        now,
       });
 
-      if (vapidReady) {
+      if (!decision.inApp && !decision.push) continue;
+
+      if (decision.inApp) {
+        const { error: insertErr } = await supabaseAdmin.from('notifications').insert({
+          recipient_id: candidate.id,
+          actor_id: actorId,
+          task_id: taskId,
+          type,
+          title,
+          body,
+          push_sent: vapidReady && decision.push,
+        });
+        if (!insertErr) inAppCount++;
+      }
+
+      if (decision.push && vapidReady) {
         const { data: subs } = await supabaseAdmin
           .from('push_subscriptions')
           .select('id, endpoint, p256dh, auth')
-          .eq('user_id', recipientId)
+          .eq('user_id', candidate.id)
           .eq('is_active', true);
 
         for (const sub of subs || []) {
@@ -255,7 +280,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, recipients: recipients.length, pushCount });
+    return NextResponse.json({ ok: true, recipients: inAppCount, pushCount });
   } catch (error) {
     captureMonitoringError(error, { route: '/api/push/send' });
     return NextResponse.json(

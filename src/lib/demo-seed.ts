@@ -1,3 +1,7 @@
+import {
+  evaluateUserNotificationDelivery,
+  getDefaultNotificationPreferences,
+} from '@/lib/notification-preferences';
 import type {
   AppNotification,
   Attachment,
@@ -42,6 +46,7 @@ export function createInitialDemoState(): DemoDatabaseState {
       avatar_url: null,
       role: 'admin',
       notification_level: 'all',
+      notification_preferences: getDefaultNotificationPreferences('admin', 'all'),
       is_active: true,
       created_at: hoursAgo(720),
       updated_at: hoursAgo(24),
@@ -54,6 +59,10 @@ export function createInitialDemoState(): DemoDatabaseState {
       avatar_url: null,
       role: 'coordinator',
       notification_level: 'assigned_or_created',
+      notification_preferences: getDefaultNotificationPreferences(
+        'coordinator',
+        'assigned_or_created'
+      ),
       is_active: true,
       created_at: hoursAgo(680),
       updated_at: hoursAgo(12),
@@ -66,6 +75,10 @@ export function createInitialDemoState(): DemoDatabaseState {
       avatar_url: null,
       role: 'technician',
       notification_level: 'assigned_or_created',
+      notification_preferences: getDefaultNotificationPreferences(
+        'technician',
+        'assigned_or_created'
+      ),
       is_active: true,
       created_at: hoursAgo(500),
       updated_at: hoursAgo(3),
@@ -78,6 +91,10 @@ export function createInitialDemoState(): DemoDatabaseState {
       avatar_url: null,
       role: 'technician',
       notification_level: 'assigned_or_created',
+      notification_preferences: getDefaultNotificationPreferences(
+        'technician',
+        'assigned_or_created'
+      ),
       is_active: true,
       created_at: hoursAgo(420),
       updated_at: hoursAgo(5),
@@ -475,9 +492,74 @@ export function createInitialDemoState(): DemoDatabaseState {
 }
 
 /**
- * Calcula destinatarios y genera notificaciones respetando estrictamente
- * el filtro anti-autonotificación (actorId !== recipientId) y preferencias de coordinador.
+ * Evalúa qué usuarios reciben notificación In-App y Web Push en modo demo,
+ * aplicando el motor unificado y el filtro anti-autonotificación.
  */
+export function evaluateDemoNotificationRecipients(
+  state: DemoDatabaseState,
+  params: {
+    task: Task;
+    actorId: string;
+    type: NotificationType;
+    title: string;
+    body: string;
+    isNewTask?: boolean;
+  }
+): { created: AppNotification[]; pushEntries: Array<{ recipientId: string; title: string; body: string; taskId: string; type: NotificationType }> } {
+  const { task, actorId, type, title, body, isNewTask } = params;
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const created: AppNotification[] = [];
+  const pushEntries: Array<{
+    recipientId: string;
+    title: string;
+    body: string;
+    taskId: string;
+    type: NotificationType;
+  }> = [];
+
+  for (const candidate of state.profiles) {
+    const decision = evaluateUserNotificationDelivery({
+      recipient: candidate,
+      actorId,
+      task,
+      eventType: type,
+      isNewTask,
+      now,
+    });
+
+    if (decision.inApp) {
+      const item: AppNotification = {
+        id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        recipient_id: candidate.id,
+        actor_id: actorId,
+        task_id: task.id,
+        type,
+        title,
+        body,
+        is_read: false,
+        push_sent: decision.push,
+        created_at: nowIso,
+        read_at: null,
+      };
+      state.notifications.unshift(item);
+      created.push(item);
+    }
+
+    if (decision.push) {
+      pushEntries.push({
+        recipientId: candidate.id,
+        title,
+        body,
+        taskId: task.id,
+        type,
+      });
+    }
+  }
+
+  return { created, pushEntries };
+}
+
 export function buildNotificationRecipients(
   state: DemoDatabaseState,
   params: {
@@ -489,58 +571,7 @@ export function buildNotificationRecipients(
     isNewTask?: boolean;
   }
 ): AppNotification[] {
-  const { task, actorId, type, title, body, isNewTask } = params;
-  const recipients = new Set<string>();
-
-  if (task.assigned_to) {
-    recipients.add(task.assigned_to);
-  }
-
-  if (isNewTask && !task.assigned_to) {
-    state.profiles
-      .filter((p) => p.role === 'technician' && p.is_active)
-      .forEach((p) => recipients.add(p.id));
-  }
-
-  state.profiles
-    .filter((p) => (p.role === 'admin' || p.role === 'coordinator') && p.is_active)
-    .forEach((coord) => {
-      if (coord.notification_level === 'all') {
-        recipients.add(coord.id);
-      } else if (
-        coord.notification_level === 'assigned_or_created' &&
-        (task.created_by === coord.id || task.assigned_to === coord.id)
-      ) {
-        recipients.add(coord.id);
-      }
-    });
-
-  // REGLA CRÍTICA: Nunca autonotificar al autor de la acción
-  recipients.delete(actorId);
-
-  const nowIso = new Date().toISOString();
-  const created: AppNotification[] = [];
-
-  for (const recipientId of recipients) {
-    if (recipientId === actorId) continue;
-    const item: AppNotification = {
-      id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      recipient_id: recipientId,
-      actor_id: actorId,
-      task_id: task.id,
-      type,
-      title,
-      body,
-      is_read: false,
-      push_sent: true,
-      created_at: nowIso,
-      read_at: null,
-    };
-    state.notifications.unshift(item);
-    created.push(item);
-  }
-
-  return created;
+  return evaluateDemoNotificationRecipients(state, params).created;
 }
 
 export function hydrateTasks(state: DemoDatabaseState, tasks: Task[]): Task[] {

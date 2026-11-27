@@ -291,4 +291,58 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByText(/mín\. 10, letras y números/i)).toBeVisible();
     expect(cspErrors).toEqual([]);
   });
+
+  test('7. Admin configura notificaciones y Push por usuario en /users y bloqueo en /profile', async ({
+    page,
+  }) => {
+    await page.goto('/login');
+    const adminBtn = page.getByRole('button', { name: /Carlos Mendoza/i });
+    await expect(adminBtn).toBeEnabled({ timeout: 25_000 });
+    await adminBtn.click();
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+
+    await page.goto('/users');
+    await expect(page.getByRole('heading', { name: /Equipo y Usuarios/i })).toBeVisible();
+
+    // Abrir configuración de notificaciones de Javier Ruiz
+    const techCard = page
+      .locator('div.bg-white, div.dark\\:bg-surface')
+      .filter({ hasText: 'Javier Ruiz' })
+      .filter({ hasText: 'tecnico@vistalegre.com' })
+      .first();
+    await techCard.getByRole('button', { name: /Notificaciones/i }).click();
+
+    await expect(page.getByRole('heading', { name: /Notificaciones · Javier Ruiz/i })).toBeVisible();
+    await page.getByRole('button', { name: /Solo Urgencias/i }).click();
+    await page
+      .getByLabel(/Permitir que el usuario modifique estas preferencias/i)
+      .uncheck();
+    await page.getByRole('button', { name: /Guardar preferencias/i }).click();
+    await expect(
+      page.getByText(/Preferencias de Javier Ruiz guardadas correctamente/i)
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
+
+    // Verificar en la tarjeta que muestra los nuevos badges
+    await expect(techCard.getByText(/Push: Solo Urgentes/i)).toBeVisible();
+    await expect(techCard.getByText(/Fijado por Admin/i)).toBeVisible();
+
+    // Iniciar sesión como Javier Ruiz y comprobar bloqueo en /profile
+    await page.goto('/profile');
+    await page
+      .getByRole('main')
+      .getByRole('button', { name: 'Cerrar sesión', exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
+
+    await page.getByRole('button', { name: /Javier Ruiz/i }).click();
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+    await page.goto('/profile');
+    await expect(
+      page.getByText(/Estas preferencias están fijadas por el Administrador/i)
+    ).toBeVisible();
+    await expect(
+      page.getByRole('checkbox', { name: /Mensajes en el chat interno por Push/i })
+    ).toBeDisabled();
+  });
 });

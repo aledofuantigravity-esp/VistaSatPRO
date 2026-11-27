@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { hydrateTasks } from '@/lib/demo-seed';
 import { validatePasswordStrength } from '@/lib/security';
+import {
+  normalizeNotificationPreferences,
+  syncLegacyNotificationLevel,
+} from '@/lib/notification-preferences';
 import { isDemoModeAllowed } from '@/lib/supabase/config';
 import {
   dispatchServerDemoNotifications,
@@ -267,7 +271,40 @@ export async function POST(request: Request) {
         if (idx === -1) {
           return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 });
         }
-        state.profiles[idx] = { ...state.profiles[idx], ...patch, updated_at: nowIso };
+        const current = state.profiles[idx];
+        const nextRole = (patch.role || current.role) as UserRole;
+        const nextLevel = patch.notification_level || current.notification_level;
+        const nextPrefs = patch.notification_preferences
+          ? normalizeNotificationPreferences(patch.notification_preferences, nextRole, nextLevel)
+          : patch.notification_level
+          ? normalizeNotificationPreferences(
+              {
+                ...normalizeNotificationPreferences(
+                  current.notification_preferences,
+                  nextRole,
+                  current.notification_level
+                ),
+                scope:
+                  patch.notification_level === 'none'
+                    ? 'none'
+                    : patch.notification_level === 'all'
+                    ? 'all'
+                    : 'assigned_or_created',
+                in_app_enabled: patch.notification_level !== 'none',
+                push_enabled: patch.notification_level !== 'none',
+              },
+              nextRole,
+              patch.notification_level
+            )
+          : current.notification_preferences;
+
+        state.profiles[idx] = {
+          ...current,
+          ...patch,
+          ...(nextPrefs ? { notification_preferences: nextPrefs } : {}),
+          ...(nextPrefs ? { notification_level: syncLegacyNotificationLevel(nextPrefs) } : {}),
+          updated_at: nowIso,
+        };
         saveServerDemoDb(state);
         return NextResponse.json({ profile: state.profiles[idx] });
       }
