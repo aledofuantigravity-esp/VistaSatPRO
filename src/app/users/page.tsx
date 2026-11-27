@@ -227,7 +227,14 @@ function UsersContent() {
           full_name: fullName.trim(),
           phone: phone.trim() || null,
           role: editingUser.id === profile.id ? editingUser.role : role,
-          ...(notifDraft ? { notification_preferences: notifDraft } : {}),
+          ...(notifDraft
+            ? {
+                notification_preferences: {
+                  ...notifDraft,
+                  allow_user_override: false,
+                },
+              }
+            : {}),
         });
       } else {
         await createUserAccount({
@@ -337,7 +344,8 @@ function UsersContent() {
             return (
               <div
                 key={u.id}
-                className={`bg-white dark:bg-surface rounded-md shadow-card p-4 border-l-4 ${
+                onClick={() => openEditModal(u, 'profile')}
+                className={`bg-white dark:bg-surface rounded-md shadow-card hover:shadow-elevated transition-shadow cursor-pointer p-4 border-l-4 ${
                   u.is_active ? 'border-navy' : 'border-light-grey opacity-65'
                 }`}
               >
@@ -414,13 +422,16 @@ function UsersContent() {
                     Partes activos asignados: <strong>{activeTasks}</strong>
                   </span>
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div
+                    className="flex flex-wrap items-center gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
                       type="button"
                       onClick={() => openEditModal(u, 'notifications')}
                       className="px-2.5 py-1.5 text-xs font-bold border border-magenta/40 text-magenta hover:bg-magenta/5 inline-flex items-center gap-1"
                     >
-                      <Bell size={13} /> Notificaciones
+                      <Bell size={13} /> Notificaciones y Push
                     </button>
 
                     <button
@@ -498,32 +509,73 @@ function UsersContent() {
               </button>
             </div>
 
-            {/* Pestañas dentro de la ficha de edición del usuario */}
+            {/* Pestañas + Resumen de información del usuario seleccionado */}
             {editingUser && (
-              <div className="grid grid-cols-2 border-b border-border bg-off-white flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setModalTab('profile')}
-                  className={`py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
-                    modalTab === 'profile'
-                      ? 'border-navy text-navy bg-white dark:bg-surface'
-                      : 'border-transparent text-mid-grey hover:text-charcoal'
-                  }`}
-                >
-                  <Pencil size={13} /> Datos y Rol
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModalTab('notifications')}
-                  className={`py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
-                    modalTab === 'notifications'
-                      ? 'border-magenta text-magenta bg-white dark:bg-surface'
-                      : 'border-transparent text-mid-grey hover:text-charcoal'
-                  }`}
-                >
-                  <Bell size={13} /> Notificaciones y Push
-                </button>
-              </div>
+              <>
+                <div className="px-5 py-2.5 bg-off-white/80 border-b border-border flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-dark-grey flex-shrink-0">
+                  <span>
+                    Estado:{' '}
+                    <strong className={editingUser.is_active ? 'text-success' : 'text-danger'}>
+                      {editingUser.is_active ? 'Activo' : 'Desactivado'}
+                    </strong>
+                  </span>
+                  <span>
+                    Teléfono: <strong>{editingUser.phone || 'Sin especificar'}</strong>
+                  </span>
+                  <span>
+                    Partes activos:{' '}
+                    <strong>
+                      {
+                        tasks.filter(
+                          (t) =>
+                            t.assigned_to === editingUser.id &&
+                            t.status !== 'completed' &&
+                            t.status !== 'cancelled'
+                        ).length
+                      }
+                    </strong>
+                  </span>
+                  <span>
+                    Conexión:{' '}
+                    <strong>
+                      {editingUser.is_active &&
+                      isUserRecentlyActive(editingUser, liveOnlineIds, profile.id)
+                        ? 'En línea ahora'
+                        : editingUser.last_seen_at
+                        ? new Date(editingUser.last_seen_at).toLocaleString('es-ES', {
+                            dateStyle: 'short',
+                            timeStyle: 'short',
+                          })
+                        : 'Sin registro'}
+                    </strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 border-b border-border bg-off-white flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setModalTab('profile')}
+                    className={`py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                      modalTab === 'profile'
+                        ? 'border-navy text-navy bg-white dark:bg-surface'
+                        : 'border-transparent text-mid-grey hover:text-charcoal'
+                    }`}
+                  >
+                    <Pencil size={13} /> Datos y Rol
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalTab('notifications')}
+                    className={`py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                      modalTab === 'notifications'
+                        ? 'border-magenta text-magenta bg-white dark:bg-surface'
+                        : 'border-transparent text-mid-grey hover:text-charcoal'
+                    }`}
+                  >
+                    <Bell size={13} /> Notificaciones y Push
+                  </button>
+                </div>
+              </>
             )}
 
             <form onSubmit={handleSave} className="flex flex-col flex-1 min-h-0">

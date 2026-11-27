@@ -58,7 +58,6 @@ const PRIORITY_OPTIONS: Array<{ value: TaskPriority; label: string }> = [
 export function NotificationPreferencesEditor({
   value,
   onChange,
-  isAdminView = false,
   readOnly = false,
 }: NotificationPreferencesEditorProps) {
   const disabled = readOnly;
@@ -69,7 +68,7 @@ export function NotificationPreferencesEditor({
     const preset = presetBuild();
     onChange({
       ...preset,
-      allow_user_override: value.allow_user_override,
+      allow_user_override: false,
     });
   };
 
@@ -108,11 +107,11 @@ export function NotificationPreferencesEditor({
   return (
     <div className="space-y-5">
       {readOnly && (
-        <div className="p-3 bg-warning/10 border-l-4 border-warning text-xs text-charcoal flex items-start gap-2">
-          <Lock size={15} className="text-warning flex-shrink-0 mt-0.5" />
+        <div className="p-3 bg-navy/5 border-l-4 border-navy text-xs text-charcoal flex items-start gap-2">
+          <Lock size={15} className="text-navy flex-shrink-0 mt-0.5" />
           <span>
-            Estas preferencias están fijadas por el <strong>Administrador</strong> para tu cuenta.
-            Si necesitas cambiar algún aviso, solicítalo al administrador.
+            Configuración asignada por el <strong>Administrador</strong>. Solo un Administrador
+            puede modificar tus notificaciones y avisos Push desde la pestaña de Usuarios.
           </span>
         </div>
       )}
@@ -518,27 +517,6 @@ export function NotificationPreferencesEditor({
           </>
         )}
       </div>
-
-      {/* 6. Bloqueo administrativo */}
-      {isAdminView && (
-        <label className="flex items-center gap-2.5 p-3 border border-navy/25 bg-navy/5 rounded-sm cursor-pointer">
-          <input
-            type="checkbox"
-            checked={value.allow_user_override}
-            onChange={(e) =>
-              onChange({
-                ...value,
-                allow_user_override: e.target.checked,
-              })
-            }
-            className="accent-navy w-4 h-4"
-          />
-          <span className="text-xs text-charcoal">
-            <strong>Permitir que el usuario modifique estas preferencias</strong> en su página
-            &ldquo;Mi Perfil&rdquo; (desmárcalo para que queden fijadas por Administración).
-          </span>
-        </label>
-      )}
     </div>
   );
 }

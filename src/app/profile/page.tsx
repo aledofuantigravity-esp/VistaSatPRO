@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Bell,
@@ -10,10 +11,9 @@ import {
   Monitor,
   Moon,
   RotateCcw,
-  Send,
+  Shield,
   Smartphone,
   Sun,
-  Trash2,
   User as UserIcon,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
@@ -25,18 +25,10 @@ import { useTheme, type ThemePreference } from '@/hooks/useTheme';
 import {
   changeOwnPassword,
   listPushSubscriptions,
-  removePushSubscription,
   resetServerDemoData,
-  savePushSubscription,
-  sendServerTestPush,
   updateProfile,
 } from '@/lib/data-service';
 import { normalizeNotificationPreferences } from '@/lib/notification-preferences';
-import {
-  getPushSupportStatus,
-  showLocalBrowserNotification,
-  subscribeToBrowserPush,
-} from '@/lib/push-client';
 import { validatePasswordStrength } from '@/lib/security';
 import {
   ROLE_LABELS,
@@ -94,15 +86,8 @@ function ProfileContentInner({
   );
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
-  const [savingNotifPrefs, setSavingNotifPrefs] = useState(false);
-  const [notifPrefsMsg, setNotifPrefsMsg] = useState<{
-    type: 'ok' | 'err';
-    text: string;
-  } | null>(null);
 
   const [subs, setSubs] = useState<PushSubscriptionRecord[]>([]);
-  const [pushLoading, setPushLoading] = useState(false);
-  const [pushFeedback, setPushFeedback] = useState<string | null>(null);
 
   // Cambio de contraseña
   const [currentPassword, setCurrentPassword] = useState('');
@@ -123,7 +108,7 @@ function ProfileContentInner({
   }, [loadSubs]);
 
   const isCoord = profile.role === 'admin' || profile.role === 'coordinator';
-  const pushSupport = getPushSupportStatus();
+  const isAdmin = profile.role === 'admin';
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,82 +123,6 @@ function ProfileContentInner({
       setSavedMsg('Datos personales guardados.');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleSaveNotifPrefs = async () => {
-    setSavingNotifPrefs(true);
-    setNotifPrefsMsg(null);
-    try {
-      await updateProfile(profile.id, {
-        notification_preferences: notifPrefs,
-      });
-      await refreshProfile();
-      setNotifPrefsMsg({
-        type: 'ok',
-        text: 'Preferencias de notificaciones y Web Push guardadas.',
-      });
-    } catch (err) {
-      setNotifPrefsMsg({
-        type: 'err',
-        text:
-          err instanceof Error
-            ? err.message
-            : 'No se pudieron guardar las preferencias.',
-      });
-    } finally {
-      setSavingNotifPrefs(false);
-    }
-  };
-
-  const handleEnablePush = async () => {
-    setPushLoading(true);
-    setPushFeedback(null);
-    try {
-      const sub = await subscribeToBrowserPush();
-      if (!sub) {
-        setPushFeedback(
-          'Permiso denegado o navegador no compatible. Verifica los ajustes del navegador.'
-        );
-        return;
-      }
-      const label = /iPhone|iPad/.test(navigator.userAgent)
-        ? 'iPhone / iPad Safari'
-        : /Android/.test(navigator.userAgent)
-        ? 'Smartphone Android'
-        : 'Navegador Escritorio';
-
-      await savePushSubscription(profile.id, sub, label);
-      await loadSubs();
-      await showLocalBrowserNotification(
-        'Notificaciones VistaSatPRO activas',
-        'Recibirás alertas instantáneas cuando te asignen o actualicen un parte.'
-      );
-      setPushFeedback('Dispositivo registrado correctamente para notificaciones Push.');
-    } catch (err) {
-      setPushFeedback(
-        err instanceof Error ? err.message : 'Error al activar notificaciones push.'
-      );
-    } finally {
-      setPushLoading(false);
-    }
-  };
-
-  const handleRemoveSub = async (id: string) => {
-    await removePushSubscription(id);
-    await loadSubs();
-  };
-
-  const handleSendTestPush = async () => {
-    const sent = await sendServerTestPush(profile.id);
-    if (sent > 0) {
-      setPushFeedback(`Push enviado desde el servidor a ${sent} dispositivo(s).`);
-    } else {
-      await showLocalBrowserNotification(
-        'VistaSatPRO — Prueba Local',
-        'El aviso del navegador funciona (activa Push arriba para pruebas reales en segundo plano).'
-      );
-      setPushFeedback('Mostrada notificación local (registra primero un dispositivo HTTPS para Push real).');
     }
   };
 
@@ -321,45 +230,30 @@ function ProfileContentInner({
         </Button>
       </form>
 
-      {/* Preferencias detalladas de notificaciones y Push */}
+      {/* Preferencias detalladas de notificaciones y Push (solo lectura en Mi Perfil) */}
       <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-4 border border-border/60">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
-          <Bell size={18} className="text-magenta" />
-          <h2 className="text-base font-bold text-charcoal">
-            Preferencias de Notificaciones y Push
-          </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+          <div className="flex items-center gap-2">
+            <Bell size={18} className="text-magenta" />
+            <h2 className="text-base font-bold text-charcoal">
+              Configuración de Notificaciones y Push
+            </h2>
+          </div>
+          {isAdmin && (
+            <Link
+              href="/users"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-navy text-white hover:bg-navy-dark rounded-sm"
+            >
+              <Shield size={13} /> Modificar en Usuarios
+            </Link>
+          )}
         </div>
 
         <NotificationPreferencesEditor
           value={notifPrefs}
           onChange={setNotifPrefs}
-          isAdminView={profile.role === 'admin'}
-          readOnly={!notifPrefs.allow_user_override && profile.role !== 'admin'}
+          readOnly
         />
-
-        {notifPrefsMsg && (
-          <div
-            className={`p-3 border-l-4 text-xs font-semibold ${
-              notifPrefsMsg.type === 'ok'
-                ? 'bg-success/10 border-success text-success'
-                : 'bg-danger/10 border-danger text-danger'
-            }`}
-          >
-            {notifPrefsMsg.text}
-          </div>
-        )}
-
-        {(notifPrefs.allow_user_override || profile.role === 'admin') && (
-          <Button
-            type="button"
-            variant="accent"
-            isLoading={savingNotifPrefs}
-            onClick={handleSaveNotifPrefs}
-            className="w-full sm:w-auto"
-          >
-            Guardar preferencias de avisos
-          </Button>
-        )}
       </div>
 
       {/* Seguridad — Cambiar contraseña */}
@@ -474,86 +368,40 @@ function ProfileContentInner({
         </div>
       </div>
 
-      {/* Notificaciones Push */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-4 border border-border/60">
+      {/* Dispositivos Push (solo lectura) */}
+      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-3 border border-border/60">
         <div className="flex items-center gap-2 border-b border-border pb-3">
-          <Bell size={18} className="text-magenta" />
-          <h2 className="text-base font-bold text-charcoal">Notificaciones Push (Móvil / PC)</h2>
+          <Smartphone size={18} className="text-magenta" />
+          <h2 className="text-base font-bold text-charcoal">
+            Dispositivos Push vinculados ({subs.length})
+          </h2>
         </div>
 
-        {pushSupport === 'ios_requires_install' ? (
-          <div className="p-3 bg-navy/5 border-l-4 border-navy text-xs text-dark-grey leading-relaxed">
-            <strong>Requisito iOS:</strong> Para recibir notificaciones Push en iPhone/iPad,
-            primero pulsa <em>Compartir → Añadir a pantalla de inicio</em> en Safari y abre
-            VistaSatPRO desde el icono instalado.
-          </div>
-        ) : pushSupport === 'unsupported' ? (
-          <p className="text-xs text-mid-grey">
-            Este navegador no soporta Web Push en segundo plano.
+        <p className="text-xs text-mid-grey leading-relaxed">
+          La activación, pruebas y revocación de avisos Push son administradas exclusivamente
+          por el Administrador desde la pestaña de Usuarios.
+        </p>
+
+        {subs.length === 0 ? (
+          <p className="text-xs text-mid-grey bg-off-white p-3 border border-border rounded-sm">
+            No hay dispositivos Push vinculados actualmente a tu cuenta.
           </p>
         ) : (
-          <div className="space-y-3">
-            <p className="text-xs text-dark-grey leading-relaxed">
-              Activa las notificaciones push en este dispositivo para recibir avisos al instante
-              incluso con la app cerrada (nunca te notificarás a ti mismo por tus propias acciones).
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="accent"
-                size="sm"
-                isLoading={pushLoading}
-                onClick={handleEnablePush}
-              >
-                <Bell size={15} /> Activar Push en este dispositivo
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handleSendTestPush}
-              >
-                <Send size={15} /> Probar Push
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {pushFeedback && (
-          <p className="text-xs font-semibold text-navy bg-navy/5 p-2.5 border-l-4 border-navy">
-            {pushFeedback}
-          </p>
-        )}
-
-        {subs.length > 0 && (
-          <div className="pt-2 space-y-2">
-            <p className="text-xs font-bold uppercase tracking-wider text-mid-grey">
-              Dispositivos vinculados ({subs.length})
-            </p>
+          <div className="space-y-2">
             {subs.map((sub) => (
               <div
                 key={sub.id}
-                className="flex items-center justify-between p-2.5 bg-off-white border border-border rounded-sm"
+                className="flex items-center gap-2.5 p-2.5 bg-off-white border border-border rounded-sm"
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Smartphone size={16} className="text-navy flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-charcoal truncate">
-                      {sub.device_label || 'Dispositivo registrado'}
-                    </p>
-                    <p className="text-[11px] text-mid-grey">
-                      Activo desde {new Date(sub.created_at).toLocaleDateString('es-ES')}
-                    </p>
-                  </div>
+                <Smartphone size={16} className="text-navy flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-charcoal truncate">
+                    {sub.device_label || 'Dispositivo registrado'}
+                  </p>
+                  <p className="text-[11px] text-mid-grey">
+                    Activo desde {new Date(sub.created_at).toLocaleDateString('es-ES')}
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveSub(sub.id)}
-                  className="p-2 text-mid-grey hover:text-danger"
-                  aria-label="Eliminar dispositivo"
-                >
-                  <Trash2 size={15} />
-                </button>
               </div>
             ))}
           </div>

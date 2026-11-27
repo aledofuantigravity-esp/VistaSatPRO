@@ -304,7 +304,7 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.goto('/users');
     await expect(page.getByRole('heading', { name: /Equipo y Usuarios/i })).toBeVisible();
 
-    // Abrir ficha de Javier Ruiz pulsando Editar y cambiar a la pestaña Notificaciones y Push
+    // Seleccionar usuario Javier Ruiz y abrir la pestaña Notificaciones y Push
     const techCard = page
       .locator('div.bg-white, div.dark\\:bg-surface')
       .filter({ hasText: 'Javier Ruiz' })
@@ -313,18 +313,14 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await techCard.getByRole('button', { name: /Editar/i }).click();
 
     await expect(page.getByRole('heading', { name: /Editar Usuario · Javier Ruiz/i })).toBeVisible();
-    await page.getByRole('button', { name: /Notificaciones y Push$/i }).click();
+    await page.getByRole('button', { name: /Notificaciones y Push$/i }).last().click();
     await page.getByRole('button', { name: /Solo Urgencias/i }).click();
-    await page
-      .getByLabel(/Permitir que el usuario modifique estas preferencias/i)
-      .uncheck();
     await page.getByRole('button', { name: /Guardar cambios/i }).click();
 
-    // Verificar en la tarjeta que muestra los nuevos badges
+    // Verificar en la tarjeta que muestra el nuevo resumen configurado por el Admin
     await expect(techCard.getByText(/Push: Solo Urgentes/i)).toBeVisible();
-    await expect(techCard.getByText(/Fijado por Admin/i)).toBeVisible();
 
-    // Iniciar sesión como Javier Ruiz y comprobar bloqueo en /profile
+    // Iniciar sesión como Javier Ruiz y comprobar que /profile es 100% solo lectura en notificaciones y Push
     await page.goto('/profile');
     await page
       .getByRole('main')
@@ -336,10 +332,16 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
     await page.goto('/profile');
     await expect(
-      page.getByText(/Estas preferencias están fijadas por el Administrador/i)
+      page.getByText(/Configuración asignada por el Administrador/i)
     ).toBeVisible();
     await expect(
       page.getByRole('checkbox', { name: /Mensajes en el chat interno por Push/i })
     ).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: /Activar Push en este dispositivo/i })
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: /Guardar preferencias de avisos/i })
+    ).toHaveCount(0);
   });
 });

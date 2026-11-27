@@ -263,10 +263,29 @@ export async function POST(request: Request) {
       }
 
       case 'update_profile': {
-        const { profileId, patch } = body as {
+        const { profileId, patch, actorId } = body as {
           profileId: string;
           patch: Partial<Profile>;
+          actorId?: string;
         };
+        if (
+          actorId &&
+          (patch.notification_preferences !== undefined ||
+            patch.notification_level !== undefined ||
+            patch.role !== undefined ||
+            patch.is_active !== undefined)
+        ) {
+          const actor = state.profiles.find((p) => p.id === actorId && p.is_active);
+          if (!actor || actor.role !== 'admin') {
+            return NextResponse.json(
+              {
+                error:
+                  'Solo un Administrador puede modificar preferencias de notificaciones, Push, rol o estado.',
+              },
+              { status: 403 }
+            );
+          }
+        }
         const idx = state.profiles.findIndex((p) => p.id === profileId);
         if (idx === -1) {
           return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 });

@@ -109,7 +109,7 @@ export const NOTIFICATION_PRESETS: Array<{
         end: '08:00',
         allow_urgent_override: true,
       },
-      allow_user_override: true,
+      allow_user_override: false,
     }),
   },
   {
@@ -185,7 +185,7 @@ function buildDefaultByRole(
       end: '08:00',
       allow_urgent_override: true,
     },
-    allow_user_override: true,
+    allow_user_override: false,
   };
 }
 
@@ -513,9 +513,6 @@ export function summarizeNotificationPreferences(
   const enabledTypes = Object.values(prefs.task_types).filter(Boolean).length;
   if (enabledTypes < 4) {
     extraBadges.push(`${enabledTypes}/4 tipos`);
-  }
-  if (!prefs.allow_user_override) {
-    extraBadges.push('Fijado por Admin');
   }
 
   return {
