@@ -45,7 +45,7 @@ export function InstallGuideSheet() {
 
       {/* Sheet inferior */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-lg shadow-elevated animate-slide-up"
+        className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-surface rounded-t-lg shadow-elevated animate-slide-up"
         style={{ paddingBottom: 'max(var(--safe-bottom), 24px)' }}
       >
         {/* Handle drag */}
@@ -92,7 +92,7 @@ export function InstallGuideSheet() {
                 Toca el botón Compartir
               </p>
               <div className="mt-1.5 inline-flex items-center gap-1.5 bg-off-white border border-border rounded-sm px-2.5 py-1.5">
-                <Share size={15} className="text-navy" />
+                <Share size={15} className="text-navy dark:text-sky-300" />
                 <span className="text-xs text-dark-grey font-medium">
                   barra inferior de Safari
                 </span>
@@ -110,7 +110,7 @@ export function InstallGuideSheet() {
                 Pulsa &ldquo;Añadir a pantalla de inicio&rdquo;
               </p>
               <div className="mt-1.5 inline-flex items-center gap-1.5 bg-off-white border border-border rounded-sm px-2.5 py-1.5">
-                <PlusSquare size={15} className="text-navy" />
+                <PlusSquare size={15} className="text-navy dark:text-sky-300" />
                 <span className="text-xs text-dark-grey font-medium">
                   desplázate en el menú de Safari
                 </span>
@@ -135,9 +135,9 @@ export function InstallGuideSheet() {
         </div>
 
         {/* Nota sobre notificaciones */}
-        <div className="mx-5 mb-4 p-3 bg-navy/5 border-l-4 border-navy rounded-r-sm">
+        <div className="mx-5 mb-4 p-3 bg-navy/5 dark:bg-sky-500/10 border-l-4 border-navy dark:border-sky-400 rounded-r-sm">
           <p className="text-xs text-dark-grey leading-relaxed">
-            <strong className="text-navy">¿Por qué instalarlo?</strong>{' '}
+            <strong className="text-navy dark:text-sky-300">¿Por qué instalarlo?</strong>{' '}
             Las notificaciones push en iPhone solo funcionan desde la app instalada en la pantalla de inicio.
           </p>
         </div>

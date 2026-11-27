@@ -311,7 +311,7 @@ function UsersContent() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-charcoal flex items-center gap-2">
-            <UsersIcon size={22} className="text-navy" /> Equipo y Usuarios
+            <UsersIcon size={22} className="text-navy dark:text-sky-300" /> Equipo y Usuarios
           </h1>
           <p className="text-xs text-mid-grey mt-0.5">
             Solo Administrador · {onlineCount} en línea ahora de {users.length} usuarios
@@ -557,7 +557,7 @@ function UsersContent() {
                     onClick={() => setModalTab('profile')}
                     className={`py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
                       modalTab === 'profile'
-                        ? 'border-navy text-navy bg-white dark:bg-surface'
+                        ? 'border-navy dark:border-sky-400 text-navy dark:text-sky-300 bg-white dark:bg-surface'
                         : 'border-transparent text-mid-grey hover:text-charcoal'
                     }`}
                   >
@@ -682,7 +682,7 @@ function UsersContent() {
                     <div className="border-t border-border pt-4 space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <p className="text-xs font-bold uppercase tracking-wider text-navy flex items-center gap-1.5">
+                          <p className="text-xs font-bold uppercase tracking-wider text-navy dark:text-sky-300 flex items-center gap-1.5">
                             <Smartphone size={14} className="text-magenta" /> Dispositivos Push
                             vinculados ({notifSubs.length})
                           </p>

@@ -294,7 +294,7 @@ function ProfileContentInner({
         className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-4 border border-border/60"
       >
         <div className="flex items-center gap-2 border-b border-border pb-3">
-          <UserIcon size={18} className="text-navy" />
+          <UserIcon size={18} className="text-navy dark:text-sky-300" />
           <h2 className="text-base font-bold text-charcoal">Datos Personales</h2>
         </div>
 
@@ -367,7 +367,7 @@ function ProfileContentInner({
         className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-4 border border-border/60"
       >
         <div className="flex items-center gap-2 border-b border-border pb-3">
-          <KeyRound size={18} className="text-navy" />
+          <KeyRound size={18} className="text-navy dark:text-sky-300" />
           <h2 className="text-base font-bold text-charcoal">Seguridad y Contraseña</h2>
         </div>
 
@@ -567,7 +567,7 @@ function ProfileContentInner({
                   className="flex items-center justify-between gap-2.5 p-2.5 bg-off-white border border-border rounded-sm"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <Smartphone size={16} className="text-navy flex-shrink-0" />
+                    <Smartphone size={16} className="text-navy dark:text-sky-300 flex-shrink-0" />
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-charcoal truncate flex items-center gap-1.5">
                         {sub.device_label || 'Dispositivo registrado'}
@@ -624,7 +624,7 @@ function ProfileContentInner({
         <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-3 border border-magenta/30">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-bold text-navy">Entorno de Prueba Simulado</h2>
+              <h2 className="text-sm font-bold text-navy dark:text-sky-300">Entorno de Prueba Simulado</h2>
               <p className="text-xs text-mid-grey mt-0.5">
                 Los cambios están compartidos en el servidor. Puedes restaurar los datos
                 iniciales en cualquier momento.

@@ -146,7 +146,7 @@ export default function LoginPage() {
             {/* Aviso cuando el entorno productivo no tiene backend configurado */}
             {!isSupabaseConfigured() && !isDemoMode && (
               <div className="mt-6 p-4 bg-warning/10 border-l-4 border-warning text-xs text-charcoal space-y-1">
-                <p className="font-bold text-navy flex items-center gap-1.5">
+                <p className="font-bold text-navy dark:text-sky-300 flex items-center gap-1.5">
                   <Lock size={14} /> Entorno privado en mantenimiento
                 </p>
                 <p className="text-mid-grey leading-relaxed">
@@ -161,7 +161,7 @@ export default function LoginPage() {
               <div className="mt-7 p-4 bg-white dark:bg-surface border border-border rounded-md shadow-card">
                 <div className="flex items-center gap-2 mb-2">
                   <Wrench size={15} className="text-magenta" />
-                  <span className="text-xs font-extrabold text-navy uppercase tracking-wider">
+                  <span className="text-xs font-extrabold text-navy dark:text-sky-300 uppercase tracking-wider">
                     Acceso rápido — Entorno de Prueba en Servidor
                   </span>
                 </div>
@@ -178,20 +178,20 @@ export default function LoginPage() {
                     className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 border border-border text-left transition-colors min-h-[46px] disabled:opacity-60"
                   >
                     <div className="flex items-center gap-2.5">
-                      <Wrench size={16} className="text-petrol" />
+                      <Wrench size={16} className="text-petrol dark:text-sky-400" />
                       <div>
                         <p className="text-xs font-bold text-charcoal">Javier Ruiz (Técnico)</p>
                         <p className="text-[11px] text-mid-grey">tecnico@vistalegre.com</p>
                       </div>
                     </div>
-                    <span className="text-xs font-bold text-navy">Entrar →</span>
+                    <span className="text-xs font-bold text-navy dark:text-sky-300">Entrar →</span>
                   </button>
 
                   <button
                     type="button"
                     disabled={authLoading}
                     onClick={() => signInDemoUser('user-coord-1')}
-                    className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 border border-border text-left transition-colors min-h-[46px] disabled:opacity-60"
+                    className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 dark:hover:bg-white/10 border border-border text-left transition-colors min-h-[46px] disabled:opacity-60"
                   >
                     <div className="flex items-center gap-2.5">
                       <UserCheck size={16} className="text-magenta" />
@@ -200,23 +200,23 @@ export default function LoginPage() {
                         <p className="text-[11px] text-mid-grey">coordinador@vistalegre.com</p>
                       </div>
                     </div>
-                    <span className="text-xs font-bold text-navy">Entrar →</span>
+                    <span className="text-xs font-bold text-navy dark:text-sky-300">Entrar →</span>
                   </button>
 
                   <button
                     type="button"
                     disabled={authLoading}
                     onClick={() => signInDemoUser('user-admin-1')}
-                    className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 border border-border text-left transition-colors min-h-[46px] disabled:opacity-60"
+                    className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 dark:hover:bg-white/10 border border-border text-left transition-colors min-h-[46px] disabled:opacity-60"
                   >
                     <div className="flex items-center gap-2.5">
-                      <ShieldCheck size={16} className="text-navy" />
+                      <ShieldCheck size={16} className="text-navy dark:text-sky-300" />
                       <div>
                         <p className="text-xs font-bold text-charcoal">Carlos Mendoza (Admin)</p>
                         <p className="text-[11px] text-mid-grey">admin@vistalegre.com</p>
                       </div>
                     </div>
-                    <span className="text-xs font-bold text-navy">Entrar →</span>
+                    <span className="text-xs font-bold text-navy dark:text-sky-300">Entrar →</span>
                   </button>
                 </div>
               </div>

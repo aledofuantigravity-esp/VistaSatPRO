@@ -105,7 +105,7 @@ function NotificationsContent() {
                   {n.actor ? ` · Por ${n.actor.full_name}` : ''}
                 </p>
               </div>
-              {n.task_id && <ChevronRight size={18} className="text-navy flex-shrink-0 mt-1" />}
+              {n.task_id && <ChevronRight size={18} className="text-navy dark:text-sky-300 flex-shrink-0 mt-1" />}
             </button>
           ))}
         </div>

@@ -180,8 +180,8 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   if (loading) {
     return (
       <div className="p-6 space-y-4">
-        <div className="h-28 bg-white rounded-md animate-pulse shadow-card" />
-        <div className="h-48 bg-white rounded-md animate-pulse shadow-card" />
+        <div className="h-28 bg-white dark:bg-surface rounded-md animate-pulse shadow-card" />
+        <div className="h-48 bg-white dark:bg-surface rounded-md animate-pulse shadow-card" />
       </div>
     );
   }
@@ -620,7 +620,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
               href={mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 py-2.5 px-3 bg-off-white border border-border text-xs font-bold text-navy hover:bg-navy/5 min-h-[44px]"
+              className="flex items-center justify-center gap-2 py-2.5 px-3 bg-off-white border border-border text-xs font-bold text-navy dark:text-sky-300 hover:bg-navy/5 dark:hover:bg-white/10 min-h-[44px]"
             >
               <MapPin size={16} className="text-magenta" />
               <span className="truncate">{fullAddress}</span>
@@ -629,7 +629,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           {phone && (
             <a
               href={`tel:${phone.replace(/\s+/g, '')}`}
-              className="flex items-center justify-center gap-2 py-2.5 px-3 bg-off-white border border-border text-xs font-bold text-navy hover:bg-navy/5 min-h-[44px]"
+              className="flex items-center justify-center gap-2 py-2.5 px-3 bg-off-white border border-border text-xs font-bold text-navy dark:text-sky-300 hover:bg-navy/5 dark:hover:bg-white/10 min-h-[44px]"
             >
               <Phone size={16} className="text-petrol" />
               <span>{phone}</span>
@@ -1036,12 +1036,12 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
                       </span>
                     )}
                     {isRestoredEv && (
-                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40">
                         Restaurado
                       </span>
                     )}
                     {isFieldEv && (
-                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300">
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40">
                         Modificado
                       </span>
                     )}
@@ -1071,7 +1071,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
                         {TASK_STATUS_META[item.old_value as TaskStatus]?.label || item.old_value}
                       </strong>{' '}
                       →{' '}
-                      <strong className="text-navy">
+                      <strong className="text-navy dark:text-sky-300">
                         {TASK_STATUS_META[item.new_value as TaskStatus]?.label || item.new_value}
                       </strong>
                     </>
@@ -1083,7 +1083,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
                           item.old_value}
                       </strong>{' '}
                       →{' '}
-                      <strong className="text-navy">
+                      <strong className="text-navy dark:text-sky-300">
                         {TASK_PRIORITY_META[item.new_value as TaskPriority]?.label ||
                           item.new_value}
                       </strong>
@@ -1395,10 +1395,10 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
                     key={st}
                     type="button"
                     onClick={() => handleStatusChange(st)}
-                    className={`flex items-center justify-between px-4 py-3 border text-sm font-bold min-h-[48px] ${
+                    className={`flex items-center justify-between px-4 py-3 border text-sm font-bold min-h-[48px] transition-colors ${
                       isCurrent
-                        ? 'border-navy bg-navy/5 text-navy'
-                        : 'border-border bg-white text-charcoal hover:bg-off-white'
+                        ? 'border-navy dark:border-sky-400 bg-navy/5 dark:bg-sky-500/15 text-navy dark:text-sky-200'
+                        : 'border-border bg-white dark:bg-bg-input text-charcoal hover:bg-off-white dark:hover:bg-white/10'
                     }`}
                   >
                     <span className="flex items-center gap-2.5">
