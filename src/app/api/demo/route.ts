@@ -388,9 +388,18 @@ export async function POST(request: Request) {
 
         const effectiveType: TaskType = payload.task_type || 'rma_incident';
         const actor = state.profiles.find((p) => p.id === actorId);
-        // Regla de negocio: si un técnico crea una tarea, siempre se le asigna automáticamente
-        const effectiveAssignedTo =
+        // Regla de negocio: si un técnico crea una tarea, siempre se le asigna automáticamente;
+        // si la crea Admin/Coordinador sin especificar técnico y solo hay 1 técnico activo, también se le asigna.
+        let effectiveAssignedTo: string | null =
           actor?.role === 'technician' ? actorId : payload.assigned_to || null;
+        if (!effectiveAssignedTo) {
+          const activeTechs = state.profiles.filter(
+            (p) => p.role === 'technician' && p.is_active
+          );
+          if (activeTechs.length === 1) {
+            effectiveAssignedTo = activeTechs[0].id;
+          }
+        }
 
         const year = new Date().getFullYear();
         const code = `VS-${year}-${String(state.seqCounter).padStart(4, '0')}`;

@@ -625,9 +625,23 @@ export async function createTask(
 ): Promise<Task> {
   const effectiveType: TaskType = input.task_type || 'rma_incident';
   const supabase = getSupabaseBrowserClient();
-  // Si quien crea el parte es técnico, siempre se autoasigna a él
-  const effectiveAssignedTo =
+  // Si quien crea el parte es técnico, siempre se autoasigna a él.
+  // Si no es técnico y no indicó técnico asignado, comprobamos si solo existe 1 técnico activo en la app.
+  const initialAssignedTo =
     actor.role === 'technician' ? actor.id : input.assigned_to || null;
+  let effectiveAssignedTo: string | null = initialAssignedTo;
+
+  if (!effectiveAssignedTo && supabase) {
+    const { data: activeTechs } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'technician')
+      .eq('is_active', true);
+    if (activeTechs && activeTechs.length === 1) {
+      effectiveAssignedTo = activeTechs[0].id;
+    }
+  }
+
   const initialStatus: TaskStatus = effectiveAssignedTo ? 'assigned' : 'pending';
   const normalizedInput = {
     ...input,

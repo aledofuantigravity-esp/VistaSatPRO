@@ -108,8 +108,12 @@ function NewTaskContent() {
       profile?.role === 'technician' ? Promise.resolve([]) : listProfiles(),
     ]);
     const activeCusts = custs.filter((c) => c.is_active);
+    const activeTechs = profs.filter((p) => p.role === 'technician' && p.is_active);
     setCustomers(activeCusts);
-    setTechnicians(profs.filter((p) => p.role === 'technician' && p.is_active));
+    setTechnicians(activeTechs);
+    if (activeTechs.length === 1) {
+      setAssignedTo(activeTechs[0].id);
+    }
 
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -254,7 +258,11 @@ function NewTaskContent() {
           equipment_sn: taskType === 'task' ? undefined : equipmentSn.trim() || undefined,
           problem_desc: problemDesc.trim(),
           priority,
-          assigned_to: isTechnician ? profile.id : assignedTo || null,
+          assigned_to: isTechnician
+            ? profile.id
+            : technicians.length === 1
+            ? technicians[0].id
+            : assignedTo || null,
           due_date: !isTechnician && dueDate ? new Date(dueDate).toISOString() : null,
           scheduled_date:
             taskType === 'installation' && scheduledDate
@@ -290,9 +298,10 @@ function NewTaskContent() {
   const displayCustomerName = selectedCustomer
     ? selectedCustomer.name
     : `${manualCustomerName.trim()} (nuevo cliente)`;
+  const singleTechnician = !isTechnician && technicians.length === 1 ? technicians[0] : null;
   const selectedTech = isTechnician
     ? profile
-    : technicians.find((t) => t.id === assignedTo);
+    : singleTechnician || technicians.find((t) => t.id === assignedTo);
 
   const typeMeta = TASK_TYPE_META[taskType];
 
@@ -885,6 +894,20 @@ function NewTaskContent() {
                   <p className="text-sm text-charcoal mt-0.5">
                     Esta tarea se asignará automáticamente a{' '}
                     <strong>{profile.full_name}</strong> con estado <strong>Asignada</strong>.
+                  </p>
+                </div>
+              </div>
+            ) : singleTechnician ? (
+              <div className="p-4 bg-navy/5 dark:bg-sky-500/10 border-l-4 border-navy dark:border-sky-400 flex items-start gap-3">
+                <UserCheck size={20} className="text-navy dark:text-sky-300 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold uppercase text-navy dark:text-sky-300">
+                    Asignación automática (único técnico activo)
+                  </p>
+                  <p className="text-sm text-charcoal mt-0.5">
+                    Al haber un único técnico activo en la aplicación, este parte se asignará
+                    automáticamente a <strong>{singleTechnician.full_name}</strong> con estado{' '}
+                    <strong>Asignada</strong>.
                   </p>
                 </div>
               </div>

@@ -455,4 +455,162 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     expect(pdfContent.startsWith('%PDF-')).toBe(true);
     expect(pdfContent).toContain('/Subtype /Image');
   });
+
+  test('10. Panel General diferenciado (Admin vs Técnico), KPIs clicables, tiempo medio por tipo y móvil sin scroll horizontal', async ({
+    page,
+  }) => {
+    // 1. Vista Administrador (Carlos Mendoza)
+    await page.goto('/login');
+    const adminBtn = page.getByRole('button', { name: /Carlos Mendoza/i });
+    await expect(adminBtn).toBeEnabled({ timeout: 25_000 });
+    await adminBtn.click();
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Hola, Carlos Mendoza' })).toBeVisible();
+
+    // No debe mostrarse la comparativa de Top 5 técnicos
+    await expect(page.getByText(/Top 5 Técnicos/i)).toHaveCount(0);
+
+    // Bloque estadístico de tiempo medio de cierre por tipo de parte
+    const avgSection = page
+      .locator('section')
+      .filter({
+        has: page.getByRole('heading', { name: /Tiempo Medio de Cierre por Tipo de Parte/i }),
+      });
+    await expect(avgSection).toBeVisible();
+    await expect(avgSection.getByText('Incidencias RMA', { exact: true })).toBeVisible();
+    await expect(avgSection.getByText('Incidencias CXC', { exact: true })).toBeVisible();
+    await expect(avgSection.getByText('Instalaciones', { exact: true })).toBeVisible();
+    await expect(avgSection.getByText('Tareas', { exact: true })).toBeVisible();
+
+    // Las 4 gráficas en escritorio
+    await expect(page.getByRole('heading', { name: 'Evolución Últimos 14 Días' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Distribución por Tipo de Parte' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Partes por Estado' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Salud SLA y Prioridades' })).toBeVisible();
+
+    // KPIs interactivos clicables (Pendientes, En Curso, Urgentes / Alta)
+    await page.getByRole('button', { name: /Pendientes \/ Asignados/i }).click();
+    await expect(
+      page.getByRole('region', { name: /Partes Pendientes \/ Asignados/i })
+    ).toBeVisible();
+
+    await page.getByRole('button', { name: /En Curso \/ Camino/i }).click();
+    await expect(
+      page.getByRole('region', { name: /Partes En Curso \/ En Camino/i })
+    ).toBeVisible();
+
+    await page.getByRole('button', { name: /Urgentes \/ Alta/i }).first().click();
+    const urgentRegion = page.getByRole('region', {
+      name: /Partes Urgentes y Prioridad Alta/i,
+    });
+    await expect(urgentRegion).toBeVisible();
+
+    // Navegar desde el drill-down a /tasks con el filtro aplicado
+    await urgentRegion.getByRole('link', { name: /Ver en Tareas/i }).first().click();
+    await expect(page).toHaveURL(/\/tasks\?preset=urgent_high/);
+    await expect(
+      page.getByText(/Filtro rápido desde Panel General: Urgentes y Prioridad Alta/i)
+    ).toBeVisible();
+
+    await page.goto('/dashboard');
+    await expect(page.getByRole('heading', { name: 'Partes Aún No Cerrados' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Instalaciones con Fecha Asignada' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Instalaciones Pendientes de Fecha' })
+    ).toBeVisible();
+
+    // Comprobar en smartphone (390x844) cero scroll horizontal en Admin
+    await page.setViewportSize({ width: 390, height: 844 });
+    const adminNoOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
+    );
+    expect(adminNoOverflow).toBe(true);
+
+    // 2. Vista Técnico (Javier Ruiz)
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/profile');
+    await page
+      .getByRole('main')
+      .getByRole('button', { name: 'Cerrar sesión', exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
+
+    await page.getByRole('button', { name: /Javier Ruiz/i }).click();
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Hola, Javier Ruiz' })).toBeVisible();
+
+    // El técnico no ve las gráficas ejecutivas, ve directamente sus bloques prioritarios
+    await expect(page.getByText(/Tiempo Medio de Cierre por Tipo de Parte/i)).toHaveCount(0);
+    await expect(
+      page.getByRole('heading', { name: 'Mis Partes Aún No Cerrados' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Mis Instalaciones con Fecha Asignada' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Mis Instalaciones Sin Fecha Asignada' })
+    ).toBeVisible();
+
+    // Comprobar en smartphone (390x844) cero scroll horizontal en Técnico
+    await page.setViewportSize({ width: 390, height: 844 });
+    const techNoOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
+    );
+    expect(techNoOverflow).toBe(true);
+  });
+
+  test('11. Autoasignación automática al crear parte cuando solo hay un técnico activo', async ({
+    page,
+  }) => {
+    await page.goto('/login');
+    const adminBtn = page.getByRole('button', { name: /Carlos Mendoza/i });
+    await expect(adminBtn).toBeEnabled({ timeout: 25_000 });
+    await adminBtn.click();
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+
+    // Desactivar temporalmente a Marta Soler para dejar solo a Javier Ruiz como único técnico activo
+    await page.goto('/users');
+    const martaCard = page
+      .locator('div.bg-white, div.dark\\:bg-surface')
+      .filter({ hasText: 'Marta Soler' })
+      .filter({ hasText: 'marta.soler@vistalegre.com' })
+      .first();
+    await martaCard.getByRole('button', { name: /Desactivar/i }).click();
+    await expect(martaCard.getByRole('button', { name: /^Activar$/i })).toBeVisible();
+
+    try {
+      await page.goto('/tasks/new');
+      await page.locator('select').first().selectOption({ index: 1 });
+      await page.getByRole('button', { name: /Siguiente/i }).click();
+      await page
+        .getByPlaceholder(/Describe síntomas/i)
+        .fill('Parte con autoasignación a técnico único.');
+      await page.getByRole('button', { name: /Siguiente/i }).click();
+
+      await expect(
+        page.getByText(/Asignación automática \(único técnico activo\)/i)
+      ).toBeVisible();
+      await expect(page.getByText(/Javier Ruiz/).first()).toBeVisible();
+
+      await page.getByRole('button', { name: /Crear Tarea/i }).click();
+      await expect(page).toHaveURL(/\/tasks\/task-/);
+      await expect(page.getByText('Asignada').first()).toBeVisible();
+      await expect(page.locator('select').first()).toHaveValue('user-tech-1');
+    } finally {
+      // Restaurar a Marta Soler para no afectar al resto del entorno demo
+      await page.goto('/users');
+      const restoreCard = page
+        .locator('div.bg-white, div.dark\\:bg-surface')
+        .filter({ hasText: 'Marta Soler' })
+        .filter({ hasText: 'marta.soler@vistalegre.com' })
+        .first();
+      const activateBtn = restoreCard.getByRole('button', { name: /^Activar$/i });
+      if ((await activateBtn.count()) > 0) {
+        await activateBtn.click();
+        await expect(restoreCard.getByRole('button', { name: /Desactivar/i })).toBeVisible();
+      }
+    }
+  });
 });

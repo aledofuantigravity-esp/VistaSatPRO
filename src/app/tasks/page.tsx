@@ -23,6 +23,7 @@ import { TaskCard } from '@/components/ui/TaskCard';
 import { useAuth } from '@/hooks/useAuth';
 import { downloadCsv } from '@/lib/csv';
 import { listProfiles, listTasks, restoreTask } from '@/lib/data-service';
+import { isOpenTask, type DashboardKpiFilter } from '@/lib/dashboard-helpers';
 import { getSlaStatus } from '@/lib/sla';
 import {
   resolveTaskType,
@@ -54,6 +55,14 @@ interface SavedFilterPreset {
 const ACTIVE_FILTERS_KEY = 'vistasat_tasks_filters_v1';
 const SAVED_PRESETS_KEY = 'vistasat_tasks_saved_filters_v1';
 
+const KPI_PRESET_LABELS: Record<DashboardKpiFilter, string> = {
+  pending: 'Pendientes / Asignados',
+  in_progress: 'En Curso / En Camino',
+  urgent_high: 'Urgentes y Prioridad Alta',
+  sla_risk: 'SLA en Riesgo (Vencidos / Hoy)',
+  completed: 'Completados',
+};
+
 export default function TasksPage() {
   return (
     <AppShell>
@@ -78,6 +87,7 @@ function TasksContent() {
   const [techFilter, setTechFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [kpiPreset, setKpiPreset] = useState<DashboardKpiFilter | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -101,7 +111,30 @@ function TasksContent() {
         // Silencioso
       }
 
-      const urlFilter = new URLSearchParams(window.location.search).get('filter');
+      const params = new URLSearchParams(window.location.search);
+      const urlPreset = params.get('preset');
+      const urlScope = params.get('scope');
+      if (
+        urlPreset === 'pending' ||
+        urlPreset === 'in_progress' ||
+        urlPreset === 'urgent_high' ||
+        urlPreset === 'sla_risk' ||
+        urlPreset === 'completed'
+      ) {
+        setTab(urlScope === 'mine' || !isCoord ? 'mine' : 'all');
+        setTypeFilter('all');
+        setStatusFilter('all');
+        setPriorityFilter('all');
+        setTechFilter('all');
+        setDateFrom('');
+        setDateTo('');
+        setSearch('');
+        setKpiPreset(urlPreset);
+        setFiltersHydrated(true);
+        return;
+      }
+
+      const urlFilter = params.get('filter');
       if (
         urlFilter === 'mine' ||
         urlFilter === 'unassigned' ||
@@ -134,7 +167,7 @@ function TasksContent() {
     };
     const t = setTimeout(hydrate, 0);
     return () => clearTimeout(t);
-  }, []);
+  }, [isCoord]);
 
   // Persistir filtros activos en localStorage
   useEffect(() => {
@@ -202,6 +235,28 @@ function TasksContent() {
       if (tab === 'unassigned' && (t.assigned_to !== null || t.status !== 'pending')) return false;
       if (tab === 'overdue' && getSlaStatus(t)?.state !== 'overdue') return false;
 
+      if (kpiPreset === 'pending' && t.status !== 'pending' && t.status !== 'assigned') {
+        return false;
+      }
+      if (kpiPreset === 'in_progress' && t.status !== 'in_progress' && t.status !== 'en_route') {
+        return false;
+      }
+      if (
+        kpiPreset === 'urgent_high' &&
+        (!isOpenTask(t) || (t.priority !== 'urgent' && t.priority !== 'high'))
+      ) {
+        return false;
+      }
+      if (kpiPreset === 'sla_risk') {
+        const slaState = getSlaStatus(t)?.state;
+        if (!isOpenTask(t) || (slaState !== 'overdue' && slaState !== 'due_today')) {
+          return false;
+        }
+      }
+      if (kpiPreset === 'completed' && t.status !== 'completed') {
+        return false;
+      }
+
       if (typeFilter !== 'all' && resolveTaskType(t) !== typeFilter) return false;
       if (statusFilter !== 'all' && t.status !== statusFilter) return false;
       if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
@@ -237,6 +292,7 @@ function TasksContent() {
     activeTasks,
     trashedTasks,
     tab,
+    kpiPreset,
     typeFilter,
     profile?.id,
     statusFilter,
@@ -284,6 +340,7 @@ function TasksContent() {
 
   const technicians = profiles.filter((p) => p.role === 'technician' && p.is_active);
   const hasActiveFilterCriteria =
+    Boolean(kpiPreset) ||
     typeFilter !== 'all' ||
     statusFilter !== 'all' ||
     priorityFilter !== 'all' ||
@@ -293,6 +350,7 @@ function TasksContent() {
     Boolean(search.trim());
 
   const clearFilters = () => {
+    setKpiPreset(null);
     setTypeFilter('all');
     setStatusFilter('all');
     setPriorityFilter('all');
@@ -411,7 +469,10 @@ function TasksContent() {
         <div className="flex gap-2">
           {isCoord && (
             <button
-              onClick={() => setTab('all')}
+              onClick={() => {
+                setKpiPreset(null);
+                setTab('all');
+              }}
               className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
                 tab === 'all'
                   ? 'bg-navy text-white'
@@ -422,7 +483,10 @@ function TasksContent() {
             </button>
           )}
           <button
-            onClick={() => setTab('mine')}
+            onClick={() => {
+              setKpiPreset(null);
+              setTab('mine');
+            }}
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
               tab === 'mine'
                 ? 'bg-navy text-white'
@@ -432,7 +496,10 @@ function TasksContent() {
             Mis Tareas ({activeTasks.filter((t) => t.assigned_to === profile.id).length})
           </button>
           <button
-            onClick={() => setTab('unassigned')}
+            onClick={() => {
+              setKpiPreset(null);
+              setTab('unassigned');
+            }}
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
               tab === 'unassigned'
                 ? 'bg-navy text-white'
@@ -443,7 +510,10 @@ function TasksContent() {
             {activeTasks.filter((t) => t.assigned_to === null && t.status === 'pending').length})
           </button>
           <button
-            onClick={() => setTab('overdue')}
+            onClick={() => {
+              setKpiPreset(null);
+              setTab('overdue');
+            }}
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap inline-flex items-center gap-1 ${
               tab === 'overdue'
                 ? 'bg-danger text-white'
@@ -453,7 +523,10 @@ function TasksContent() {
             <Clock size={13} /> Vencidos ({overdueTasks.length})
           </button>
           <button
-            onClick={() => setTab('trash')}
+            onClick={() => {
+              setKpiPreset(null);
+              setTab('trash');
+            }}
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap inline-flex items-center gap-1.5 ${
               tab === 'trash'
                 ? 'bg-danger text-white'
@@ -481,6 +554,21 @@ function TasksContent() {
           </button>
         </div>
       </div>
+
+      {kpiPreset && (
+        <div className="flex items-center justify-between gap-2 p-2.5 bg-navy/5 dark:bg-sky-500/15 border border-navy/25 dark:border-sky-400/30 rounded-sm text-xs">
+          <span className="font-bold text-navy dark:text-sky-300">
+            Filtro rápido desde Panel General: {KPI_PRESET_LABELS[kpiPreset]}
+          </span>
+          <button
+            type="button"
+            onClick={() => setKpiPreset(null)}
+            className="inline-flex items-center gap-1 px-2 py-1 font-bold text-mid-grey hover:text-charcoal bg-white dark:bg-surface border border-border rounded-xs"
+          >
+            <X size={13} /> Quitar filtro
+          </button>
+        </div>
+      )}
 
       {/* Buscador + Botón filtros + Guardar favorito */}
       <div className="flex flex-wrap gap-2">
