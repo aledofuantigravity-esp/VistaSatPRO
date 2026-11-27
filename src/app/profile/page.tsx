@@ -170,16 +170,22 @@ function ProfileContentInner({
       if (count > 0) {
         setPushFeedback({
           type: 'ok',
-          text: `Notificación Push de prueba enviada a ${count} dispositivo(s) vinculados.`,
+          text: `Notificación Push real enviada a ${count} dispositivo(s) vinculados.`,
         });
-      } else {
+      } else if (isDemoMode) {
         await showLocalBrowserNotification(
           'VistaSatPRO — Prueba Local',
-          'Notificación verificada en este dispositivo.'
+          'Notificación verificada en modo prueba.'
         );
         setPushFeedback({
           type: 'ok',
-          text: 'Prueba local mostrada. En producción con VAPID llegará también con la app cerrada.',
+          text: 'Prueba local mostrada (entorno demo).',
+        });
+      } else {
+        await loadSubs();
+        setPushFeedback({
+          type: 'err',
+          text: 'El servidor Push rechazó la suscripción antigua de este dispositivo. Pulsa "Activar / Re-vincular este dispositivo" para renovarla con las claves actuales.',
         });
       }
     } catch (err) {

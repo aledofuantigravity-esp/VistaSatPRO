@@ -124,15 +124,14 @@ export async function POST(request: Request) {
           sent++;
         } catch (err: unknown) {
           const statusCode = (err as { statusCode?: number })?.statusCode;
-          if (statusCode === 410 || statusCode === 404) {
+          if (statusCode === 410 || statusCode === 404 || statusCode === 403 || statusCode === 401) {
             await supabaseAdmin
               .from('push_subscriptions')
               .update({ is_active: false })
               .eq('id', sub.id);
-          } else {
-            console.error('[Push/testSelf] Error enviando Web Push:', statusCode, err);
-            captureMonitoringError(err, { route: '/api/push/send', scope: 'testSelf', statusCode });
           }
+          console.error('[Push/testSelf] Error enviando Web Push:', statusCode, err);
+          captureMonitoringError(err, { route: '/api/push/send', scope: 'testSelf', statusCode });
         }
       }
       return NextResponse.json({ ok: true, pushCount: sent });
@@ -241,19 +240,7 @@ export async function POST(request: Request) {
 
       if (!decision.inApp && !decision.push) continue;
 
-      if (decision.inApp) {
-        const { error: insertErr } = await supabaseAdmin.from('notifications').insert({
-          recipient_id: candidate.id,
-          actor_id: actorId,
-          task_id: taskId,
-          type,
-          title,
-          body,
-          push_sent: vapidReady && decision.push,
-        });
-        if (!insertErr) inAppCount++;
-      }
-
+      let pushedForCandidate = false;
       if (decision.push && vapidReady) {
         const { data: subs } = await supabaseAdmin
           .from('push_subscriptions')
@@ -272,24 +259,37 @@ export async function POST(request: Request) {
               { TTL: 86400, urgency: 'high' }
             );
             pushCount++;
+            pushedForCandidate = true;
           } catch (err: unknown) {
             const statusCode = (err as { statusCode?: number })?.statusCode;
-            if (statusCode === 410 || statusCode === 404) {
+            if (statusCode === 410 || statusCode === 404 || statusCode === 403 || statusCode === 401) {
               await supabaseAdmin
                 .from('push_subscriptions')
                 .update({ is_active: false })
                 .eq('id', sub.id);
-            } else {
-              console.error('[Push] Error enviando Web Push:', statusCode, err);
-              captureMonitoringError(err, {
-                route: '/api/push/send',
-                scope: 'delivery',
-                statusCode,
-                recipientId: candidate.id,
-              });
             }
+            console.error('[Push] Error enviando Web Push:', statusCode, err);
+            captureMonitoringError(err, {
+              route: '/api/push/send',
+              scope: 'delivery',
+              statusCode,
+              recipientId: candidate.id,
+            });
           }
         }
+      }
+
+      if (decision.inApp) {
+        const { error: insertErr } = await supabaseAdmin.from('notifications').insert({
+          recipient_id: candidate.id,
+          actor_id: actorId,
+          task_id: taskId,
+          type,
+          title,
+          body,
+          push_sent: pushedForCandidate,
+        });
+        if (!insertErr) inAppCount++;
       }
     }
 

@@ -78,13 +78,37 @@ export function detectDeviceLabel(): string {
   return `${os} · ${browser}${isStandalone ? ' (PWA)' : ''}`;
 }
 
+function uint8ArraysEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function subscriptionMatchesVapidKey(
+  subscription: PushSubscription,
+  vapidPublicKey: string
+): boolean {
+  const existingKeyBuffer = subscription.options?.applicationServerKey;
+  if (!existingKeyBuffer) return false;
+  const existingBytes = new Uint8Array(existingKeyBuffer);
+  const expectedBytes = urlBase64ToUint8Array(vapidPublicKey);
+  return uint8ArraysEqual(existingBytes, expectedBytes);
+}
+
 export async function getCurrentDevicePushEndpoint(): Promise<string | null> {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
   try {
     const reg = await navigator.serviceWorker.getRegistration('/sw.js');
     if (!reg || !reg.pushManager) return null;
     const sub = await reg.pushManager.getSubscription();
-    return sub?.endpoint || null;
+    if (!sub) return null;
+    const vapidKey = await resolveVapidPublicKey();
+    if (vapidKey && !subscriptionMatchesVapidKey(sub, vapidKey)) {
+      return null;
+    }
+    return sub.endpoint || null;
   } catch {
     return null;
   }
@@ -138,7 +162,9 @@ export async function subscribeToBrowserPush(options?: {
     registration = await navigator.serviceWorker.ready;
 
     let subscription = await registration.pushManager.getSubscription();
-    if (subscription && options?.forceResubscribe) {
+    const keyMismatch =
+      Boolean(subscription) && !subscriptionMatchesVapidKey(subscription!, vapidPublicKey);
+    if (subscription && (options?.forceResubscribe || keyMismatch)) {
       try {
         await subscription.unsubscribe();
       } catch {
