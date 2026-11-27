@@ -26,6 +26,7 @@ import { listProfiles, listTasks, restoreTask } from '@/lib/data-service';
 import { isOpenTask, type DashboardKpiFilter } from '@/lib/dashboard-helpers';
 import { getSlaStatus } from '@/lib/sla';
 import {
+  normalizeTaskStatus,
   resolveTaskType,
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -56,11 +57,11 @@ const ACTIVE_FILTERS_KEY = 'vistasat_tasks_filters_v1';
 const SAVED_PRESETS_KEY = 'vistasat_tasks_saved_filters_v1';
 
 const KPI_PRESET_LABELS: Record<DashboardKpiFilter, string> = {
-  pending: 'Pendientes / Asignados',
-  in_progress: 'En Curso / En Camino',
+  pending: 'Pendientes',
+  in_progress: 'En Proceso',
   urgent_high: 'Urgentes y Prioridad Alta',
   sla_risk: 'SLA en Riesgo (Vencidos / Hoy)',
-  completed: 'Completados',
+  completed: 'Completadas',
 };
 
 export default function TasksPage() {
@@ -232,13 +233,19 @@ function TasksContent() {
     const source = tab === 'trash' ? trashedTasks : activeTasks;
     return source.filter((t) => {
       if (tab === 'mine' && t.assigned_to !== profile?.id) return false;
-      if (tab === 'unassigned' && (t.assigned_to !== null || t.status !== 'pending')) return false;
-      if (tab === 'overdue' && getSlaStatus(t)?.state !== 'overdue') return false;
-
-      if (kpiPreset === 'pending' && t.status !== 'pending' && t.status !== 'assigned') {
+      if (
+        tab === 'unassigned' &&
+        (t.assigned_to !== null || normalizeTaskStatus(t.status) !== 'pending')
+      ) {
         return false;
       }
-      if (kpiPreset === 'in_progress' && t.status !== 'in_progress' && t.status !== 'en_route') {
+      if (tab === 'overdue' && getSlaStatus(t)?.state !== 'overdue') return false;
+
+      const normalizedStatus = normalizeTaskStatus(t.status);
+      if (kpiPreset === 'pending' && normalizedStatus !== 'pending') {
+        return false;
+      }
+      if (kpiPreset === 'in_progress' && normalizedStatus !== 'in_progress') {
         return false;
       }
       if (
@@ -253,12 +260,12 @@ function TasksContent() {
           return false;
         }
       }
-      if (kpiPreset === 'completed' && t.status !== 'completed') {
+      if (kpiPreset === 'completed' && normalizedStatus !== 'completed') {
         return false;
       }
 
       if (typeFilter !== 'all' && resolveTaskType(t) !== typeFilter) return false;
-      if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+      if (statusFilter !== 'all' && normalizedStatus !== statusFilter) return false;
       if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
       if (techFilter !== 'all') {
         if (techFilter === 'unassigned' && t.assigned_to !== null) return false;

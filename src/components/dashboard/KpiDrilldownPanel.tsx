@@ -32,16 +32,16 @@ const KPI_META: Record<
   }
 > = {
   pending: {
-    titleCoord: 'Partes Pendientes / Asignados',
-    titleTech: 'Mis Partes Pendientes / Asignados',
-    subtitle: 'Partes abiertos pendientes de iniciar desplazamiento o intervención.',
+    titleCoord: 'Partes Pendientes',
+    titleTech: 'Mis Partes Pendientes',
+    subtitle: 'Partes abiertos pendientes de iniciar intervención.',
     icon: <Clock size={18} className="text-petrol dark:text-sky-300" />,
     accentClass: 'border-petrol/40 dark:border-sky-400/40',
   },
   in_progress: {
-    titleCoord: 'Partes En Curso / En Camino',
-    titleTech: 'Mis Partes En Curso / En Camino',
-    subtitle: 'Intervenciones activas actualmente en ruta o ejecución en cliente.',
+    titleCoord: 'Partes En Proceso',
+    titleTech: 'Mis Partes En Proceso',
+    subtitle: 'Intervenciones activas actualmente en curso.',
     icon: <Wrench size={18} className="text-navy dark:text-sky-300" />,
     accentClass: 'border-navy/40 dark:border-sky-400/40',
   },

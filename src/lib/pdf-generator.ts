@@ -3,8 +3,8 @@ import {
   type Attachment,
   type Task,
   type TaskHistoryItem,
+  getTaskStatusLabel,
   resolveTaskType,
-  TASK_STATUS_META,
   TASK_PRIORITY_META,
   TASK_TYPE_META,
 } from '@/types/database';
@@ -68,7 +68,7 @@ export function generateTaskPDF(
   doc.setFontSize(14);
   doc.text(task.code, pageWidth - 14, 16, { align: 'right' });
 
-  const statusLabel = TASK_STATUS_META[task.status]?.label ?? task.status;
+  const statusLabel = getTaskStatusLabel(task.status);
   const priorityLabel = TASK_PRIORITY_META[task.priority]?.label ?? task.priority;
   const typeLabel = TASK_TYPE_META[taskType]?.label ?? taskType;
   doc.setFont('helvetica', 'normal');
@@ -777,7 +777,7 @@ export function downloadReportPDF(input: ReportPdfInput): void {
       ensureSpace(7);
       doc.text(t.code, 14, y);
       doc.text((t.customer?.name || 'Cliente').slice(0, 30), 42, y);
-      doc.text(TASK_STATUS_META[t.status]?.label || t.status, 112, y);
+      doc.text(getTaskStatusLabel(t.status), 112, y);
       doc.text((t.assignee?.full_name || 'Sin asignar').slice(0, 22), 145, y);
       doc.text(new Date(t.created_at).toLocaleDateString('es-ES'), pageWidth - 14, y, {
         align: 'right',

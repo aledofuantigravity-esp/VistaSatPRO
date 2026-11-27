@@ -28,7 +28,8 @@ import {
   type TaskStatus,
   type TaskType,
   type UserRole,
-  TASK_STATUS_META,
+  getTaskStatusLabel,
+  normalizeTaskStatus,
 } from '@/types/database';
 
 function isOnline(): boolean {
@@ -484,7 +485,10 @@ export async function listTasks(
         captureMonitoringError(legacy.error, { scope: 'listTasks.legacy' });
         throw new Error(legacy.error.message);
       }
-      return (legacy.data || []) as Task[];
+      return ((legacy.data || []) as Task[]).map((row) => ({
+        ...row,
+        status: normalizeTaskStatus(row.status),
+      }));
     }
     captureMonitoringError(error, { scope: 'listTasks' });
     throw new Error(error.message);
@@ -494,6 +498,7 @@ export async function listTasks(
     const { attachments: rawAtts, ...rest } = row;
     return {
       ...rest,
+      status: normalizeTaskStatus(rest.status),
       attachment_count: Array.isArray(rawAtts) ? rawAtts.length : 0,
     };
   });
@@ -514,7 +519,7 @@ export async function getTaskDetail(taskId: string): Promise<{
       comments?: TaskComment[];
     }>(`resource=task_detail&taskId=${encodeURIComponent(taskId)}`);
     return {
-      task: res.task,
+      task: res.task ? { ...res.task, status: normalizeTaskStatus(res.task.status) } : null,
       history: res.history,
       attachments: res.attachments,
       comments: res.comments || [],
@@ -565,6 +570,7 @@ export async function getTaskDetail(taskId: string): Promise<{
   if (taskRes.error) return { task: null, history: [], attachments: [], comments: [] };
 
   const taskData = taskRes.data as Task;
+  taskData.status = normalizeTaskStatus(taskData.status);
   const rawAttachments = (attRes.data || []) as Attachment[];
 
   // Firmar URLs temporales de bucket privado `task-attachments` (1 hora)
@@ -642,7 +648,7 @@ export async function createTask(
     }
   }
 
-  const initialStatus: TaskStatus = effectiveAssignedTo ? 'assigned' : 'pending';
+  const initialStatus: TaskStatus = 'pending';
   const normalizedInput = {
     ...input,
     task_type: effectiveType,
@@ -767,7 +773,7 @@ export async function updateTaskStatus(
     actorId: actor.id,
     type: 'status_changed',
     title: `Estado actualizado en ${data.code}`,
-    body: `${actor.full_name} cambió el estado a "${TASK_STATUS_META[newStatus].label}".`,
+    body: `${actor.full_name} cambió el estado a "${getTaskStatusLabel(newStatus)}".`,
   });
 
   return {};

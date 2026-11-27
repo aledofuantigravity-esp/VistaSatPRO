@@ -20,6 +20,7 @@ import { listCustomers, listProfiles, listTasks } from '@/lib/data-service';
 import { downloadReportPDF } from '@/lib/pdf-generator';
 import {
   TASK_STATUS_META,
+  normalizeTaskStatus,
   type Customer,
   type Profile,
   type Task,
@@ -91,7 +92,7 @@ function ReportsContent() {
         if (techFilter !== 'unassigned' && t.assigned_to !== techFilter) return false;
       }
       if (customerFilter !== 'all' && t.customer_id !== customerFilter) return false;
-      if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+      if (statusFilter !== 'all' && normalizeTaskStatus(t.status) !== statusFilter) return false;
       return true;
     });
   }, [tasks, dateFrom, dateTo, techFilter, customerFilter, statusFilter]);

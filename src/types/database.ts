@@ -47,10 +47,7 @@ export type AttachmentKind = 'photo' | 'installation_order' | 'physical_work_ord
 
 export type TaskStatus =
   | 'pending'
-  | 'assigned'
-  | 'en_route'
   | 'in_progress'
-  | 'on_hold'
   | 'completed'
   | 'cancelled';
 
@@ -246,33 +243,12 @@ export const TASK_STATUS_META: Record<
     textClass: 'text-dark-grey dark:text-slate-200',
     borderHex: '#666666',
   },
-  assigned: {
-    label: 'Asignada',
-    color: '#004876',
-    bgClass: 'bg-petrol/15 dark:bg-sky-500/20',
-    textClass: 'text-petrol dark:text-sky-300',
-    borderHex: '#004876',
-  },
-  en_route: {
-    label: 'En Camino',
-    color: '#002169',
-    bgClass: 'bg-navy/15 dark:bg-indigo-500/25',
-    textClass: 'text-navy dark:text-indigo-200',
-    borderHex: '#002169',
-  },
   in_progress: {
     label: 'En Proceso',
     color: '#004876',
     bgClass: 'bg-petrol/20 dark:bg-cyan-500/20',
     textClass: 'text-petrol dark:text-cyan-300',
     borderHex: '#004876',
-  },
-  on_hold: {
-    label: 'En Espera',
-    color: '#5E3654',
-    bgClass: 'bg-plum/15 dark:bg-purple-500/25',
-    textClass: 'text-plum dark:text-purple-200',
-    borderHex: '#5E3654',
   },
   completed: {
     label: 'Completada',
@@ -289,6 +265,25 @@ export const TASK_STATUS_META: Record<
     borderHex: '#353740',
   },
 };
+
+/**
+ * Normaliza cualquier estado (incluidos valores históricos) a uno de los 4 estados vigentes.
+ */
+export function normalizeTaskStatus(status: string | null | undefined): TaskStatus {
+  if (status === 'in_progress' || status === 'en_route' || status === 'on_hold') {
+    return 'in_progress';
+  }
+  if (status === 'completed') return 'completed';
+  if (status === 'cancelled') return 'cancelled';
+  return 'pending';
+}
+
+/**
+ * Devuelve la etiqueta legible de cualquier estado de parte o registro histórico.
+ */
+export function getTaskStatusLabel(status: string | null | undefined): string {
+  return TASK_STATUS_META[normalizeTaskStatus(status)].label;
+}
 
 export const TASK_PRIORITY_META: Record<
   TaskPriority,

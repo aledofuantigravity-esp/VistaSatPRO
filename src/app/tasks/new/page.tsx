@@ -893,7 +893,7 @@ function NewTaskContent() {
                   </p>
                   <p className="text-sm text-charcoal mt-0.5">
                     Esta tarea se asignará automáticamente a{' '}
-                    <strong>{profile.full_name}</strong> con estado <strong>Asignada</strong>.
+                    <strong>{profile.full_name}</strong> con estado <strong>Pendiente</strong>.
                   </p>
                 </div>
               </div>
@@ -907,7 +907,7 @@ function NewTaskContent() {
                   <p className="text-sm text-charcoal mt-0.5">
                     Al haber un único técnico activo en la aplicación, este parte se asignará
                     automáticamente a <strong>{singleTechnician.full_name}</strong> con estado{' '}
-                    <strong>Asignada</strong>.
+                    <strong>Pendiente</strong>.
                   </p>
                 </div>
               </div>

@@ -213,8 +213,8 @@ export default function DashboardPage() {
         }`}
       >
         <KPICard
-          label={isCoord ? 'Pendientes / Asignados' : 'Mis Pendientes'}
-          sublabel="Por iniciar o asignados"
+          label={isCoord ? 'Pendientes' : 'Mis Pendientes'}
+          sublabel="Por iniciar"
           value={loading ? '…' : String(metrics.pendingCount)}
           icon={<Clock size={18} />}
           colorClass="bg-petrol"
@@ -223,8 +223,8 @@ export default function DashboardPage() {
         />
 
         <KPICard
-          label="En Curso / Camino"
-          sublabel="En ruta o ejecutando"
+          label="En Proceso"
+          sublabel="Actualmente en curso"
           value={loading ? '…' : String(metrics.inProgressCount)}
           icon={<Wrench size={18} />}
           colorClass="bg-navy"
@@ -271,7 +271,7 @@ export default function DashboardPage() {
             />
 
             <KPICard
-              label="Completados"
+              label="Completadas"
               sublabel={
                 loading
                   ? '…'
@@ -301,7 +301,7 @@ export default function DashboardPage() {
           />
         ) : (
           <KPICard
-            label="Completados"
+            label="Completadas"
             sublabel={
               loading
                 ? '…'

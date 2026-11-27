@@ -33,7 +33,7 @@ export const NOTIFICATION_EVENT_META: Array<{
   {
     key: 'status_changed',
     label: 'Cambios de estado',
-    description: 'En camino, en curso, en espera, completado o cancelado.',
+    description: 'Pendiente, en proceso, completada o cancelada.',
   },
   {
     key: 'priority_changed',

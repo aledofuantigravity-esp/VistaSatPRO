@@ -24,6 +24,7 @@ import {
 } from '@/lib/dashboard-helpers';
 import { getSlaStatus } from '@/lib/sla';
 import {
+  normalizeTaskStatus,
   resolveTaskType,
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -156,24 +157,14 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
     };
   }, [tasks, typeScope, isDark]);
 
-  // 3. Partes por Estado (Barras horizontales limpias sin rotación de etiquetas)
+  // 3. Partes por Estado (Barras horizontales limpias con los 4 estados únicos)
   const statusData = useMemo(() => {
-    const statuses: TaskStatus[] = [
-      'pending',
-      'assigned',
-      'en_route',
-      'in_progress',
-      'on_hold',
-      'completed',
-      'cancelled',
-    ];
+    const statuses: TaskStatus[] = ['pending', 'in_progress', 'completed', 'cancelled'];
     return statuses.map((st) => ({
       name: TASK_STATUS_META[st].label,
-      count: tasks.filter((t) => t.status === st).length,
+      count: tasks.filter((t) => normalizeTaskStatus(t.status) === st).length,
       color:
-        isDark && st === 'en_route'
-          ? '#818CF8'
-          : isDark && st === 'cancelled'
+        isDark && st === 'cancelled'
           ? '#64748B'
           : TASK_STATUS_META[st].color,
     }));

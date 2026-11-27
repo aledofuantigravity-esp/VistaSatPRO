@@ -54,6 +54,7 @@ import {
 import { downloadTaskPDF } from '@/lib/pdf-generator';
 import { getSlaStatus, toDatetimeLocalValue } from '@/lib/sla';
 import {
+  getTaskStatusLabel,
   resolveTaskType,
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -249,7 +250,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const handleSelfAssign = async () => {
     await updateTaskFields(
       task.id,
-      { assigned_to: profile.id, status: 'assigned' },
+      { assigned_to: profile.id },
       profile
     );
     showTempMessage('Parte asignado a tu lista.');
@@ -313,7 +314,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     }
     try {
       await updateTaskStatus(task.id, 'completed', profile);
-      showTempMessage('Tarea cerrada como Completada.');
+      showTempMessage('Parte cerrado automáticamente en estado Completada.');
       await load();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'No se pudo cerrar la tarea.';
@@ -336,8 +337,8 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       setShowFinishInstallModal(false);
       showTempMessage(
         hasExistingPhysical
-          ? 'Instalación finalizada correctamente.'
-          : 'Instalación finalizada sin parte de trabajo físico adjunto.'
+          ? 'Instalación finalizada y marcada como Completada.'
+          : 'Instalación cerrada como Completada sin parte de trabajo físico adjunto.'
       );
       await load();
     } catch (err) {
@@ -363,7 +364,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       await updateTaskFields(task.id, { physical_work_order_attached: true }, profile);
       await updateTaskStatus(task.id, 'completed', profile);
       setShowFinishInstallModal(false);
-      showTempMessage('Parte de trabajo físico adjuntado e instalación finalizada.');
+      showTempMessage('Parte de trabajo físico adjuntado e instalación Completada.');
       await load();
     } catch (err) {
       setFinishInstallError(
@@ -1068,11 +1069,11 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
                     <>
                       Estado:{' '}
                       <strong>
-                        {TASK_STATUS_META[item.old_value as TaskStatus]?.label || item.old_value}
+                        {getTaskStatusLabel(item.old_value)}
                       </strong>{' '}
                       →{' '}
                       <strong className="text-navy dark:text-sky-300">
-                        {TASK_STATUS_META[item.new_value as TaskStatus]?.label || item.new_value}
+                        {getTaskStatusLabel(item.new_value)}
                       </strong>
                     </>
                   ) : item.event_type === 'priority_changed' ? (

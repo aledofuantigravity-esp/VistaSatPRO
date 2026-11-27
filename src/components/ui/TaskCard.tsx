@@ -4,10 +4,15 @@ import Link from 'next/link';
 import { Calendar, Camera, Clock, MapPin, Phone, User, Wrench, ChevronRight } from 'lucide-react';
 import { PriorityBadge, StatusBadge, TaskTypeBadge } from './Badge';
 import { getSlaStatus } from '@/lib/sla';
-import { resolveTaskType, TASK_STATUS_META, type Task } from '@/types/database';
+import {
+  normalizeTaskStatus,
+  resolveTaskType,
+  TASK_STATUS_META,
+  type Task,
+} from '@/types/database';
 
 export function TaskCard({ task }: { task: Task }) {
-  const statusColor = TASK_STATUS_META[task.status]?.borderHex || '#002169';
+  const statusColor = TASK_STATUS_META[normalizeTaskStatus(task.status)]?.borderHex || '#002169';
   const address = [task.site_address || task.customer?.address, task.site_city || task.customer?.city]
     .filter(Boolean)
     .join(', ');

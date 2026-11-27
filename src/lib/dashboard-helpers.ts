@@ -1,5 +1,6 @@
 import { getSlaStatus } from '@/lib/sla';
 import {
+  normalizeTaskStatus,
   resolveTaskType,
   TASK_TYPE_META,
   type Task,
@@ -149,7 +150,8 @@ export function getScheduledDateTag(
 }
 
 export function isOpenTask(task: Task): boolean {
-  return task.status !== 'completed' && task.status !== 'cancelled';
+  const st = normalizeTaskStatus(task.status);
+  return st !== 'completed' && st !== 'cancelled';
 }
 
 /**
@@ -203,12 +205,12 @@ export function getUnscheduledInstallations(tasks: Task[]): Task[] {
 export function filterTasksByKpi(tasks: Task[], kpi: DashboardKpiFilter): Task[] {
   if (kpi === 'pending') {
     return sortOpenTasksByPriorityAndAge(
-      tasks.filter((t) => t.status === 'pending' || t.status === 'assigned')
+      tasks.filter((t) => normalizeTaskStatus(t.status) === 'pending')
     );
   }
   if (kpi === 'in_progress') {
     return sortOpenTasksByPriorityAndAge(
-      tasks.filter((t) => t.status === 'in_progress' || t.status === 'en_route')
+      tasks.filter((t) => normalizeTaskStatus(t.status) === 'in_progress')
     );
   }
   if (kpi === 'urgent_high') {
@@ -236,7 +238,7 @@ export function filterTasksByKpi(tasks: Task[], kpi: DashboardKpiFilter): Task[]
       });
   }
   return tasks
-    .filter((t) => t.status === 'completed')
+    .filter((t) => normalizeTaskStatus(t.status) === 'completed')
     .sort(
       (a, b) =>
         new Date(b.completed_at || b.updated_at).getTime() -
@@ -249,11 +251,9 @@ export function filterTasksByKpi(tasks: Task[], kpi: DashboardKpiFilter): Task[]
  */
 export function computeDashboardMetrics(tasks: Task[]): DashboardMetrics {
   const active = tasks.filter(isOpenTask);
-  const pendingOrAssigned = tasks.filter(
-    (t) => t.status === 'pending' || t.status === 'assigned'
-  );
+  const pendingList = tasks.filter((t) => normalizeTaskStatus(t.status) === 'pending');
   const inProgress = tasks.filter(
-    (t) => t.status === 'in_progress' || t.status === 'en_route'
+    (t) => normalizeTaskStatus(t.status) === 'in_progress'
   );
   const urgentHigh = active.filter(
     (t) => t.priority === 'urgent' || t.priority === 'high'
@@ -277,7 +277,7 @@ export function computeDashboardMetrics(tasks: Task[]): DashboardMetrics {
       ? Math.round(((withDueDateActive - overdueCount) / withDueDateActive) * 100)
       : null;
 
-  const completed = tasks.filter((t) => t.status === 'completed');
+  const completed = tasks.filter((t) => normalizeTaskStatus(t.status) === 'completed');
   const resolvedDurations = completed
     .filter((t) => Boolean(t.completed_at))
     .map((t) =>
@@ -300,7 +300,7 @@ export function computeDashboardMetrics(tasks: Task[]): DashboardMetrics {
     tasks.length > 0 ? Math.round((completed.length / tasks.length) * 100) : 0;
 
   const unassignedCount = active.filter(
-    (t) => !t.assigned_to && t.status === 'pending'
+    (t) => !t.assigned_to && normalizeTaskStatus(t.status) === 'pending'
   ).length;
   const scheduledInstallationsCount = getScheduledInstallations(tasks).length;
   const unscheduledInstallationsCount = getUnscheduledInstallations(tasks).length;
@@ -308,7 +308,7 @@ export function computeDashboardMetrics(tasks: Task[]): DashboardMetrics {
   return {
     total: tasks.length,
     activeCount: active.length,
-    pendingCount: pendingOrAssigned.length,
+    pendingCount: pendingList.length,
     inProgressCount: inProgress.length,
     urgentHighCount: urgentHigh.length,
     overdueCount,

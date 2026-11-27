@@ -490,15 +490,15 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByRole('heading', { name: 'Partes por Estado' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Salud SLA y Prioridades' })).toBeVisible();
 
-    // KPIs interactivos clicables (Pendientes, En Curso, Urgentes / Alta)
-    await page.getByRole('button', { name: /Pendientes \/ Asignados/i }).click();
+    // KPIs interactivos clicables (Pendientes, En Proceso, Urgentes / Alta)
+    await page.getByRole('button', { name: /Pendientes.*Por iniciar/i }).click();
     await expect(
-      page.getByRole('region', { name: /Partes Pendientes \/ Asignados/i })
+      page.getByRole('region', { name: /^Partes Pendientes$/i })
     ).toBeVisible();
 
-    await page.getByRole('button', { name: /En Curso \/ Camino/i }).click();
+    await page.getByRole('button', { name: /En Proceso.*Actualmente en curso/i }).click();
     await expect(
-      page.getByRole('region', { name: /Partes En Curso \/ En Camino/i })
+      page.getByRole('region', { name: /^Partes En Proceso$/i })
     ).toBeVisible();
 
     await page.getByRole('button', { name: /Urgentes \/ Alta/i }).first().click();
@@ -598,8 +598,25 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
 
       await page.getByRole('button', { name: /Crear Tarea/i }).click();
       await expect(page).toHaveURL(/\/tasks\/task-/);
-      await expect(page.getByText('Asignada').first()).toBeVisible();
+      await expect(page.getByText('Pendiente').first()).toBeVisible();
       await expect(page.locator('select').first()).toHaveValue('user-tech-1');
+
+      // Comprobar que solo existen exactamente los 4 estados en el selector
+      await page.getByRole('button', { name: /Cambiar Estado/i }).click();
+      await expect(page.getByRole('heading', { name: 'Actualizar Estado del Parte' })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Asignada/i })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /^En Camino/i })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /^En Espera/i })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /^Pendiente/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^En Proceso/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Completada/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Cancelada/i })).toBeVisible();
+      await page.getByRole('button', { name: /En Proceso/i }).click();
+      await expect(page.getByText('En Proceso').first()).toBeVisible();
+
+      // Al pulsar Cerrar Parte pasa automáticamente a Completada
+      await page.getByRole('button', { name: /Cerrar Parte/i }).click();
+      await expect(page.getByText('Completada').first()).toBeVisible();
     } finally {
       // Restaurar a Marta Soler para no afectar al resto del entorno demo
       await page.goto('/users');

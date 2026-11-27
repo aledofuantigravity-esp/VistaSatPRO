@@ -2,6 +2,7 @@ import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
   TASK_TYPE_META,
+  normalizeTaskStatus,
   type TaskPriority,
   type TaskStatus,
   type TaskType,
@@ -24,7 +25,7 @@ export function TaskTypeBadge({ taskType }: { taskType?: TaskType | null }) {
 }
 
 export function StatusBadge({ status }: { status: TaskStatus }) {
-  const meta = TASK_STATUS_META[status];
+  const meta = TASK_STATUS_META[normalizeTaskStatus(status)];
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-xs font-bold uppercase tracking-wide ${meta.bgClass} ${meta.textClass}`}

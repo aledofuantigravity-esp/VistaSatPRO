@@ -16,8 +16,9 @@ import {
 } from '@/lib/server-demo-db';
 import {
   TASK_PRIORITY_META,
-  TASK_STATUS_META,
   TASK_TYPE_META,
+  getTaskStatusLabel,
+  normalizeTaskStatus,
   type Attachment,
   type AttachmentKind,
   type Customer,
@@ -418,7 +419,7 @@ export async function POST(request: Request) {
           equipment_sn: payload.equipment_sn || null,
           problem_desc: payload.problem_desc,
           priority: payload.priority,
-          status: effectiveAssignedTo ? 'assigned' : 'pending',
+          status: 'pending',
           assigned_to: effectiveAssignedTo,
           assigned_at: effectiveAssignedTo ? nowIso : null,
           resolution_notes: null,
@@ -500,9 +501,12 @@ export async function POST(request: Request) {
         }
         const prev = state.tasks[idx];
         const actor = state.profiles.find((p) => p.id === actorId);
-        if (prev.status === status) return NextResponse.json({ ok: true });
+        const normalizedStatus = normalizeTaskStatus(status);
+        if (normalizeTaskStatus(prev.status) === normalizedStatus) {
+          return NextResponse.json({ ok: true });
+        }
         if (
-          status === 'completed' &&
+          normalizedStatus === 'completed' &&
           (prev.task_type || 'rma_incident') === 'cxc_incident' &&
           !prev.equipment_sn?.trim()
         ) {
@@ -514,9 +518,9 @@ export async function POST(request: Request) {
 
         state.tasks[idx] = {
           ...prev,
-          status,
+          status: normalizedStatus,
           completed_at:
-            status === 'completed' ? prev.completed_at || nowIso : prev.completed_at,
+            normalizedStatus === 'completed' ? prev.completed_at || nowIso : prev.completed_at,
           updated_at: nowIso,
         };
 
@@ -526,8 +530,8 @@ export async function POST(request: Request) {
           actor_id: actorId,
           event_type: 'status_changed',
           field_name: 'status',
-          old_value: prev.status,
-          new_value: status,
+          old_value: normalizeTaskStatus(prev.status),
+          new_value: normalizedStatus,
           note: null,
           metadata: {},
           created_at: nowIso,
@@ -538,9 +542,9 @@ export async function POST(request: Request) {
           actorId,
           type: 'status_changed',
           title: `Estado actualizado en ${prev.code}`,
-          body: `${actor?.full_name || 'Usuario'} cambió el estado a "${
-            TASK_STATUS_META[status].label
-          }".`,
+          body: `${actor?.full_name || 'Usuario'} cambió el estado a "${getTaskStatusLabel(
+            normalizedStatus
+          )}".`,
         });
 
         saveServerDemoDb(state);
@@ -617,9 +621,9 @@ export async function POST(request: Request) {
 
         if (patch.assigned_to !== undefined && patch.assigned_to !== prev.assigned_to) {
           next.assigned_at = patch.assigned_to ? nowIso : null;
-          if (patch.assigned_to && prev.status === 'pending' && !patch.status) {
-            next.status = 'assigned';
-          }
+        }
+        if (patch.status) {
+          next.status = normalizeTaskStatus(patch.status);
         }
         if (patch.status === 'completed' && !next.completed_at) {
           next.completed_at = nowIso;
