@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { hydrateTasks } from '@/lib/demo-seed';
-import { isSupabaseConfigured } from '@/lib/supabase/config';
+import { validatePasswordStrength } from '@/lib/security';
+import { isDemoModeAllowed } from '@/lib/supabase/config';
 import {
   dispatchServerDemoNotifications,
   getServerDemoDb,
@@ -28,7 +29,7 @@ import {
 } from '@/types/database';
 
 export async function GET(request: Request) {
-  if (isSupabaseConfigured()) {
+  if (!isDemoModeAllowed()) {
     return NextResponse.json({ error: 'Not Found' }, { status: 404 });
   }
   const { searchParams } = new URL(request.url);
@@ -197,7 +198,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (isSupabaseConfigured()) {
+  if (!isDemoModeAllowed()) {
     return NextResponse.json({ error: 'Not Found' }, { status: 404 });
   }
   try {
@@ -1149,9 +1150,10 @@ export async function POST(request: Request) {
         if (state.passwords[key] !== currentPassword) {
           return NextResponse.json({ error: 'La contraseña actual no es correcta.' }, { status: 400 });
         }
-        if (!newPassword || newPassword.length < 8) {
+        const check = validatePasswordStrength(newPassword);
+        if (!check.valid) {
           return NextResponse.json(
-            { error: 'La nueva contraseña debe tener al menos 8 caracteres.' },
+            { error: check.error || 'La nueva contraseña no cumple los requisitos de seguridad.' },
             { status: 400 }
           );
         }

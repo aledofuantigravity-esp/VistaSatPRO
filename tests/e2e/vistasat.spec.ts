@@ -251,4 +251,44 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByRole('link', { name: /Clientes/i }).last()).toBeVisible();
     await expect(page.getByRole('link', { name: /Mi Perfil/i }).last()).toBeVisible();
   });
+
+  test('6. Seguridad HTTP, CSP sin errores, /api/health minimizado y política de contraseñas', async ({
+    page,
+    request,
+  }) => {
+    const cspErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (
+        msg.type() === 'error' &&
+        /Content Security Policy|Refused to execute|Refused to frame/i.test(msg.text())
+      ) {
+        cspErrors.push(msg.text());
+      }
+    });
+
+    const healthRes = await request.get('/api/health');
+    expect(healthRes.status()).toBe(200);
+    const healthJson = (await healthRes.json()) as Record<string, unknown>;
+    expect(healthJson.status).toBe('ok');
+    expect(healthJson).not.toHaveProperty('supabaseConfigured');
+    expect(healthJson).not.toHaveProperty('pushConfigured');
+
+    const loginRes = await page.goto('/login');
+    expect(loginRes).not.toBeNull();
+    const headers = loginRes!.headers();
+    expect(headers['x-frame-options']).toBe('DENY');
+    expect(headers['x-content-type-options']).toBe('nosniff');
+    expect(headers['cross-origin-opener-policy']).toBe('same-origin');
+    expect(headers['cross-origin-resource-policy']).toBe('same-origin');
+    expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    expect(headers['content-security-policy']).toContain("object-src 'none'");
+
+    await loginAsCoordinator(page);
+    await page.goto('/profile');
+    await expect(
+      page.getByRole('button', { name: /Cerrar sesión en todos los dispositivos/i })
+    ).toBeVisible();
+    await expect(page.getByText(/mín\. 10, letras y números/i)).toBeVisible();
+    expect(cspErrors).toEqual([]);
+  });
 });

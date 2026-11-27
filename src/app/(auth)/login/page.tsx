@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, ShieldCheck, UserCheck, Wrench } from 'lucide-react';
+import { Eye, EyeOff, Lock, ShieldCheck, UserCheck, Wrench } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { isSupabaseConfigured } from '@/lib/supabase/config';
 import { InstallBanner } from '@/components/pwa/InstallBanner';
 import { InstallGuideSheet } from '@/components/pwa/InstallGuideSheet';
 import { Button } from '@/components/ui/Button';
@@ -142,6 +143,19 @@ export default function LoginPage() {
               </Button>
             </form>
 
+            {/* Aviso cuando el entorno productivo no tiene backend configurado */}
+            {!isSupabaseConfigured() && !isDemoMode && (
+              <div className="mt-6 p-4 bg-warning/10 border-l-4 border-warning text-xs text-charcoal space-y-1">
+                <p className="font-bold text-navy flex items-center gap-1.5">
+                  <Lock size={14} /> Entorno privado en mantenimiento
+                </p>
+                <p className="text-mid-grey leading-relaxed">
+                  El acceso rápido de pruebas está deshabilitado en producción por seguridad.
+                  Contacta con el administrador si necesitas activar las credenciales de servicio.
+                </p>
+              </div>
+            )}
+
             {/* Acceso rápido Demo cuando no hay credenciales Supabase configuradas */}
             {isDemoMode && (
               <div className="mt-7 p-4 bg-white dark:bg-surface border border-border rounded-md shadow-card">
@@ -208,9 +222,14 @@ export default function LoginPage() {
               </div>
             )}
 
-            <p className="text-center text-xs text-light-grey mt-7">
-              VistaSatPRO · PWA Instalable · Vistalegre Solutions
-            </p>
+            <div className="mt-7 pt-4 border-t border-border/60 text-center space-y-1">
+              <p className="text-xs font-semibold text-mid-grey">
+                Portal interno de gestión técnica · Vistalegre Solutions
+              </p>
+              <p className="text-[11px] text-light-grey leading-relaxed">
+                Uso exclusivo para personal autorizado de asistencia técnica. Conexión cifrada TLS.
+              </p>
+            </div>
           </div>
         </div>
       </main>

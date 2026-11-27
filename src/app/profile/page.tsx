@@ -35,6 +35,7 @@ import {
   showLocalBrowserNotification,
   subscribeToBrowserPush,
 } from '@/lib/push-client';
+import { validatePasswordStrength } from '@/lib/security';
 import {
   ROLE_LABELS,
   type NotificationLevel,
@@ -50,7 +51,7 @@ export default function ProfilePage() {
 }
 
 function ProfileContent() {
-  const { profile, isDemoMode, signOut, refreshProfile } = useAuth();
+  const { profile, isDemoMode, signOut, signOutAllDevices, refreshProfile } = useAuth();
   if (!profile) return null;
   return (
     <ProfileContentInner
@@ -58,6 +59,7 @@ function ProfileContent() {
       profile={profile}
       isDemoMode={isDemoMode}
       signOut={signOut}
+      signOutAllDevices={signOutAllDevices}
       refreshProfile={refreshProfile}
     />
   );
@@ -67,11 +69,13 @@ function ProfileContentInner({
   profile,
   isDemoMode,
   signOut,
+  signOutAllDevices,
   refreshProfile,
 }: {
   profile: NonNullable<ReturnType<typeof useAuth>['profile']>;
   isDemoMode: boolean;
   signOut: () => Promise<void>;
+  signOutAllDevices: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }) {
   const { isInstalled, isIOSBrowser, canInstall, triggerInstall } = usePWAInstall();
@@ -185,10 +189,11 @@ function ProfileContentInner({
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPassMsg(null);
-    if (newPassword.length < 8) {
+    const check = validatePasswordStrength(newPassword);
+    if (!check.valid) {
       setPassMsg({
         type: 'err',
-        text: 'La nueva contraseña debe tener al menos 8 caracteres.',
+        text: check.error || 'La nueva contraseña no cumple los requisitos.',
       });
       return;
     }
@@ -329,16 +334,16 @@ function ProfileContentInner({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-semibold text-dark-grey mb-1">
-              Nueva contraseña * (mín. 8)
+              Nueva contraseña * (mín. 10, letras y números)
             </label>
             <input
               type="password"
               required
-              minLength={8}
+              minLength={10}
               autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="••••••••••"
               className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
             />
           </div>
@@ -349,11 +354,11 @@ function ProfileContentInner({
             <input
               type="password"
               required
-              minLength={8}
+              minLength={10}
               autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="••••••••••"
               className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
             />
           </div>
@@ -539,9 +544,14 @@ function ProfileContentInner({
       )}
 
       {/* Cerrar sesión */}
-      <Button variant="danger" className="w-full" onClick={signOut}>
-        <LogOut size={16} /> Cerrar sesión
-      </Button>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Button variant="secondary" className="w-full" onClick={signOutAllDevices}>
+          <KeyRound size={16} /> Cerrar sesión en todos los dispositivos
+        </Button>
+        <Button variant="danger" className="w-full" onClick={signOut}>
+          <LogOut size={16} /> Cerrar sesión
+        </Button>
+      </div>
     </div>
   );
 }

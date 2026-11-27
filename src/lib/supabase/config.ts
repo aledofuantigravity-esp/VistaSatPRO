@@ -16,3 +16,20 @@ export function isVapidConfigured(): boolean {
   const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   return Boolean(pub && pub.length > 20 && !pub.startsWith('BEl62i...'));
 }
+
+/**
+ * En producción de Vercel (`VERCEL_ENV === 'production'`), el modo demo queda bloqueado
+ * salvo habilitación explícita con `ALLOW_DEMO_MODE=true`.
+ */
+export function isDemoModeAllowed(): boolean {
+  if (isSupabaseConfigured()) return false;
+  const vercelEnv =
+    process.env.VERCEL_ENV ?? process.env.NEXT_PUBLIC_VERCEL_ENV ?? '';
+  const allowExplicit =
+    process.env.ALLOW_DEMO_MODE === 'true' ||
+    process.env.NEXT_PUBLIC_ALLOW_DEMO_MODE === 'true';
+  if (vercelEnv === 'production' && !allowExplicit) {
+    return false;
+  }
+  return true;
+}

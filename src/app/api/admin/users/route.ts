@@ -4,10 +4,21 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
 import { captureMonitoringError } from '@/lib/monitoring';
+import { validatePasswordStrength } from '@/lib/security';
 
 const createUserSchema = z.object({
   email: z.string().trim().email('Correo electrónico inválido'),
-  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(128),
+  password: z
+    .string()
+    .superRefine((val, ctx) => {
+      const check = validatePasswordStrength(val);
+      if (!check.valid) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: check.error || 'Contraseña poco segura.',
+        });
+      }
+    }),
   full_name: z.string().trim().min(2, 'Nombre demasiado corto').max(120),
   phone: z.string().trim().max(30).optional(),
   role: z.enum(['admin', 'coordinator', 'technician']).default('technician'),

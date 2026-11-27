@@ -22,6 +22,7 @@ import {
   updateProfile,
 } from '@/lib/data-service';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import { validatePasswordStrength } from '@/lib/security';
 import { ROLE_LABELS, type Profile, type Task, type UserRole } from '@/types/database';
 
 export default function UsersPage() {
@@ -157,9 +158,12 @@ function UsersContent() {
     e.preventDefault();
     setFormError(null);
 
-    if (!editingUser && password.length < 8) {
-      setFormError('La contraseña inicial debe tener al menos 8 caracteres.');
-      return;
+    if (!editingUser) {
+      const check = validatePasswordStrength(password);
+      if (!check.valid) {
+        setFormError(check.error || 'La contraseña inicial no cumple los requisitos.');
+        return;
+      }
     }
 
     setSaving(true);
@@ -417,15 +421,15 @@ function UsersContent() {
               {!editingUser && (
                 <div>
                   <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
-                    Contraseña inicial * (mín. 8 caracteres)
+                    Contraseña inicial * (mín. 10 chars, letras y números)
                   </label>
                   <input
                     type="text"
                     required
-                    minLength={8}
+                    minLength={10}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Clave temporal para entregar al usuario"
+                    placeholder="Clave temporal segura para entregar al usuario"
                     className="w-full px-3 py-2.5 bg-bg-input border border-border"
                   />
                 </div>

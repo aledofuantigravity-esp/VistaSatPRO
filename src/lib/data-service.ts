@@ -2,6 +2,7 @@ import { getSupabaseBrowserClient } from './supabase/client';
 import { isSupabaseConfigured } from './supabase/config';
 import { loadDemoState, saveDemoState } from './demo-store';
 import { captureMonitoringError } from './monitoring';
+import { validatePasswordStrength } from './security';
 import {
   enqueueOfflineAction,
   getPendingOfflineActions,
@@ -143,8 +144,9 @@ export async function changeOwnPassword(
   newPassword: string,
   profile: Profile
 ): Promise<void> {
-  if (newPassword.length < 8) {
-    throw new Error('La nueva contraseña debe tener al menos 8 caracteres.');
+  const passCheck = validatePasswordStrength(newPassword);
+  if (!passCheck.valid) {
+    throw new Error(passCheck.error || 'La nueva contraseña no cumple los requisitos.');
   }
 
   const supabase = getSupabaseBrowserClient();

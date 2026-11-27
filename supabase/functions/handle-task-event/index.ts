@@ -63,15 +63,30 @@ async function sendWebPushToUser(
   return sent;
 }
 
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 Deno.serve(async (req) => {
   try {
-    if (INTERNAL_WEBHOOK_SECRET) {
-      const provided =
-        req.headers.get('x-webhook-secret') ||
-        req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-      if (provided !== INTERNAL_WEBHOOK_SECRET) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-      }
+    if (!INTERNAL_WEBHOOK_SECRET) {
+      return new Response(
+        JSON.stringify({ error: 'INTERNAL_WEBHOOK_SECRET not configured' }),
+        { status: 503 }
+      );
+    }
+
+    const provided =
+      req.headers.get('x-webhook-secret') ||
+      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
+      '';
+    if (!provided || !constantTimeEqual(provided, INTERNAL_WEBHOOK_SECRET)) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
     }
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);

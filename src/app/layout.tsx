@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { headers } from 'next/headers';
 import { Montserrat } from 'next/font/google';
 import './globals.css';
 import { ServiceWorkerRegistration } from '@/components/pwa/ServiceWorkerRegistration';
@@ -70,13 +71,22 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Leer x-nonce fuerza renderizado dinámico por petición para aplicar CSP con nonce único
+  const reqHeaders = await headers();
+  const nonce = reqHeaders.get('x-nonce') || undefined;
+
   return (
-    <html lang="es" className={montserrat.variable} suppressHydrationWarning>
+    <html
+      lang="es"
+      className={montserrat.variable}
+      data-csp-nonce={nonce ? 'active' : undefined}
+      suppressHydrationWarning
+    >
       <body className="font-montserrat antialiased bg-off-white text-charcoal transition-colors">
         <ThemeProvider>
           <AuthProvider>

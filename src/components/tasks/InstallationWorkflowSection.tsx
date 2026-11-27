@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Calendar,
   CheckSquare,
@@ -19,6 +19,7 @@ import {
   updateTaskFields,
   uploadTaskAttachment,
 } from '@/lib/data-service';
+import { isSafePreviewUrl } from '@/lib/security';
 import { toDatetimeLocalValue } from '@/lib/sla';
 import type { Attachment, Profile, Task } from '@/types/database';
 
@@ -56,6 +57,34 @@ export function InstallationWorkflowSection({
 
   const [uploadingOrder, setUploadingOrder] = useState(false);
   const [previewOrder, setPreviewOrder] = useState<Attachment | null>(null);
+  const [safePdfObjectUrl, setSafePdfObjectUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const rawUrl = previewOrder?.public_url;
+    let revoked = false;
+    let objectUrl: string | null = null;
+
+    if (!rawUrl || !rawUrl.startsWith('data:application/pdf')) {
+      return;
+    }
+
+    fetch(rawUrl)
+      .then((res) => res.blob())
+      .then((blob) => {
+        if (revoked) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSafePdfObjectUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!revoked) setSafePdfObjectUrl(null);
+      });
+
+    return () => {
+      revoked = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setSafePdfObjectUrl(null);
+    };
+  }, [previewOrder]);
 
   const handleSaveScheduledDate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -382,13 +411,25 @@ export function InstallationWorkflowSection({
             </div>
 
             <div className="flex-1 bg-off-white overflow-auto flex items-center justify-center p-2">
-              {previewOrder.mime_type === 'application/pdf' ||
-              previewOrder.file_name.toLowerCase().endsWith('.pdf') ? (
-                <iframe
-                  src={previewOrder.public_url}
-                  title={previewOrder.file_name}
-                  className="w-full h-full border-0 bg-white"
-                />
+              {!isSafePreviewUrl(previewOrder.public_url) ? (
+                <p className="text-sm text-danger font-semibold p-4">
+                  URL de documento bloqueada por seguridad.
+                </p>
+              ) : previewOrder.mime_type === 'application/pdf' ||
+                previewOrder.file_name.toLowerCase().endsWith('.pdf') ? (
+                previewOrder.public_url.startsWith('data:') && !safePdfObjectUrl ? (
+                  <p className="text-xs text-mid-grey p-4">Cargando documento PDF...</p>
+                ) : (
+                  <iframe
+                    src={
+                      previewOrder.public_url.startsWith('data:')
+                        ? safePdfObjectUrl || undefined
+                        : previewOrder.public_url
+                    }
+                    title={previewOrder.file_name}
+                    className="w-full h-full border-0 bg-white"
+                  />
+                )
               ) : (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img

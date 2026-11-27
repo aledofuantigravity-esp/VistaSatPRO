@@ -2,16 +2,62 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { isSupabaseConfigured } from '@/lib/supabase/config';
 
-/**
- * Proxy SSR (Next.js 16): refresca cookies de sesión de Supabase Auth
- * y aplica control de acceso por estado activo y rol antes de servir rutas protegidas.
- */
-export async function proxy(request: NextRequest) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.next();
+function buildCspHeader(nonce: string, isHttps: boolean): string {
+  const isProd = process.env.NODE_ENV === 'production';
+  const scriptSrc = isProd
+    ? `'self' 'nonce-${nonce}' 'strict-dynamic'`
+    : `'self' 'unsafe-inline' 'unsafe-eval'`;
+
+  const directives = [
+    "default-src 'self'",
+    `script-src ${scriptSrc}`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob: https://*.supabase.co",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://*.ingest.de.sentry.io",
+    "frame-src 'self' https://*.supabase.co blob:",
+    "worker-src 'self'",
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ];
+
+  if (isProd && isHttps) {
+    directives.push('upgrade-insecure-requests');
   }
 
-  let supabaseResponse = NextResponse.next({ request });
+  return directives.join('; ');
+}
+
+/**
+ * Proxy SSR (Next.js 16): inyecta CSP estricta con nonce por petición,
+ * refresca cookies de sesión de Supabase Auth y aplica control de acceso por estado activo y rol.
+ */
+export async function proxy(request: NextRequest) {
+  const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  const isHttps =
+    forwardedProto === 'https' || request.nextUrl.protocol === 'https:';
+  const cspHeader = buildCspHeader(nonce, isHttps);
+
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-nonce', nonce);
+  requestHeaders.set('Content-Security-Policy', cspHeader);
+
+  const withCsp = (res: NextResponse) => {
+    res.headers.set('Content-Security-Policy', cspHeader);
+    return res;
+  };
+
+  if (!isSupabaseConfigured()) {
+    return withCsp(NextResponse.next({ request: { headers: requestHeaders } }));
+  }
+
+  let supabaseResponse = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,7 +69,9 @@ export async function proxy(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = NextResponse.next({
+            request: { headers: requestHeaders },
+          });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );
@@ -50,7 +98,7 @@ export async function proxy(request: NextRequest) {
   if (!user && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
-    return NextResponse.redirect(url);
+    return withCsp(NextResponse.redirect(url));
   }
 
   if (user && (isProtected || pathname === '/login')) {
@@ -64,19 +112,19 @@ export async function proxy(request: NextRequest) {
       await supabase.auth.signOut();
       const url = request.nextUrl.clone();
       url.pathname = '/login';
-      return NextResponse.redirect(url);
+      return withCsp(NextResponse.redirect(url));
     }
 
     if (pathname === '/login') {
       const url = request.nextUrl.clone();
       url.pathname = '/dashboard';
-      return NextResponse.redirect(url);
+      return withCsp(NextResponse.redirect(url));
     }
 
     if (pathname.startsWith('/users') && prof?.role !== 'admin') {
       const url = request.nextUrl.clone();
       url.pathname = '/dashboard';
-      return NextResponse.redirect(url);
+      return withCsp(NextResponse.redirect(url));
     }
 
     if (
@@ -86,11 +134,11 @@ export async function proxy(request: NextRequest) {
     ) {
       const url = request.nextUrl.clone();
       url.pathname = '/dashboard';
-      return NextResponse.redirect(url);
+      return withCsp(NextResponse.redirect(url));
     }
   }
 
-  return supabaseResponse;
+  return withCsp(supabaseResponse);
 }
 
 export const config = {

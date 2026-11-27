@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { sendNotification, setVapidDetails } from 'web-push';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
-import { isVapidConfigured } from '@/lib/supabase/config';
+import { isSupabaseConfigured, isVapidConfigured } from '@/lib/supabase/config';
 import { captureMonitoringError } from '@/lib/monitoring';
+import { timingSafeEqualSecret } from '@/lib/server-security';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,16 +11,24 @@ export const dynamic = 'force-dynamic';
  * GET / POST /api/sla/check
  * Comprueba partes activos con fecha límite (`due_date`) que vencen hoy o ya están vencidos
  * y notifica una vez al día al técnico asignado vía in-app + Web Push.
- * Protegido mediante `INTERNAL_WEBHOOK_SECRET` o `CRON_SECRET`.
+ * Protegido de forma obligatoria (fail-closed) mediante `CRON_SECRET` o `INTERNAL_WEBHOOK_SECRET`.
  */
 async function runSlaCheck(request: Request) {
   try {
     const expectedSecret = process.env.CRON_SECRET || process.env.INTERNAL_WEBHOOK_SECRET;
-    if (expectedSecret) {
+    if (!expectedSecret) {
+      if (process.env.NODE_ENV === 'production' || isSupabaseConfigured()) {
+        return NextResponse.json(
+          { error: 'CRON_SECRET / INTERNAL_WEBHOOK_SECRET no configurado en el servidor.' },
+          { status: 503 }
+        );
+      }
+    } else {
       const provided =
         request.headers.get('x-webhook-secret') ||
-        request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-      if (provided !== expectedSecret) {
+        request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
+        '';
+      if (!provided || !timingSafeEqualSecret(provided, expectedSecret)) {
         return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
       }
     }

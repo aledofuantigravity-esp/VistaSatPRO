@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import { isSupabaseConfigured } from '@/lib/supabase/config';
+import { isDemoModeAllowed } from '@/lib/supabase/config';
 import {
   getDemoSessionUserId,
   setDemoSessionUserId,
@@ -29,6 +29,7 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signInDemoUser: (userId: string) => Promise<void>;
   signOut: () => Promise<void>;
+  signOutAllDevices: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
 
@@ -57,13 +58,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const router = useRouter();
-  const isDemoMode = !isSupabaseConfigured();
+  const isDemoMode = isDemoModeAllowed();
 
   const loadCurrentUser = useCallback(async () => {
     await Promise.resolve();
     const supabase = getSupabaseBrowserClient();
 
     if (!supabase) {
+      if (!isDemoModeAllowed()) {
+        setProfile(null);
+        setIsLoading(false);
+        return;
+      }
       const uid = getDemoSessionUserId();
       if (!uid) {
         setProfile(null);
@@ -235,6 +241,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
+      if (!isDemoModeAllowed()) {
+        return { error: 'El modo prueba está deshabilitado en producción.' };
+      }
       try {
         const res = await fetch('/api/demo', {
           method: 'POST',
@@ -264,6 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInDemoUser = async (userId: string) => {
+    if (!isDemoModeAllowed()) return;
     const res = await fetch(
       `/api/demo?resource=profile&userId=${encodeURIComponent(userId)}`,
       { cache: 'no-store' }
@@ -293,6 +303,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
+  const signOutAllDevices = async () => {
+    if (profile?.id) {
+      await sendPresenceHeartbeat(profile.id, false);
+    }
+    await purgeClientSessionData();
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setDemoSessionUserId(null);
+      setProfile(null);
+      router.push('/login');
+      return;
+    }
+    await supabase.auth.signOut({ scope: 'global' });
+    setProfile(null);
+    router.push('/login');
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -303,6 +331,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signIn,
         signInDemoUser,
         signOut,
+        signOutAllDevices,
         refreshProfile: loadCurrentUser,
       }}
     >
