@@ -3,23 +3,11 @@ import { sendNotification, setVapidDetails } from 'web-push';
 import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
-import { isVapidConfigured } from '@/lib/supabase/config';
 import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
 import { captureMonitoringError } from '@/lib/monitoring';
 import { evaluateUserNotificationDelivery } from '@/lib/notification-preferences';
+import { getServerVapidConfig } from '@/lib/vapid-server';
 import type { Profile, TaskPriority, TaskType } from '@/types/database';
-
-if (
-  isVapidConfigured() &&
-  process.env.VAPID_PRIVATE_KEY?.trim() &&
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()
-) {
-  setVapidDetails(
-    (process.env.VAPID_SUBJECT || 'mailto:soporte@vistasat.pro').trim(),
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY.trim(),
-    process.env.VAPID_PRIVATE_KEY.trim()
-  );
-}
 
 const pushPayloadSchema = z.union([
   z.object({
@@ -91,8 +79,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Payload de notificación inválido' }, { status: 400 });
     }
 
-    const vapidReady =
-      isVapidConfigured() && Boolean(process.env.VAPID_PRIVATE_KEY);
+    const vapidCfg = getServerVapidConfig();
+    if (vapidCfg) {
+      setVapidDetails(vapidCfg.subject, vapidCfg.publicKey, vapidCfg.privateKey);
+    }
+    const vapidReady = Boolean(vapidCfg);
 
     // 2. Modo prueba de Push hacia los dispositivos del propio usuario
     if ('testSelf' in parsed.data && parsed.data.testSelf === true) {

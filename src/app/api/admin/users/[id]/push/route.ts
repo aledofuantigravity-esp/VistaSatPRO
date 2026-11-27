@@ -3,9 +3,9 @@ import { sendNotification, setVapidDetails } from 'web-push';
 import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
-import { isVapidConfigured } from '@/lib/supabase/config';
 import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
 import { captureMonitoringError } from '@/lib/monitoring';
+import { getServerVapidConfig } from '@/lib/vapid-server';
 
 async function requireAdminSession() {
   const supabaseServer = await getSupabaseServerClient();
@@ -92,22 +92,15 @@ export async function POST(
     const auth = await requireAdminSession();
     if ('error' in auth && auth.error) return auth.error;
 
-    if (
-      !isVapidConfigured() ||
-      !process.env.VAPID_PRIVATE_KEY ||
-      !process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-    ) {
+    const vapidCfg = getServerVapidConfig();
+    if (!vapidCfg) {
       return NextResponse.json(
         { ok: true, sent: 0, message: 'VAPID no configurado en el servidor.' },
         { status: 200 }
       );
     }
 
-    setVapidDetails(
-      process.env.VAPID_SUBJECT || 'mailto:soporte@vistasat.pro',
-      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-      process.env.VAPID_PRIVATE_KEY
-    );
+    setVapidDetails(vapidCfg.subject, vapidCfg.publicKey, vapidCfg.privateKey);
 
     const { id: targetId } = await params;
     const { data: subs } = await auth.supabaseAdmin

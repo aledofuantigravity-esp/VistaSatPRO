@@ -33,19 +33,31 @@ export function getPushSupportStatus(): PushSupportStatus {
 }
 
 async function resolveVapidPublicKey(): Promise<string | null> {
-  if (isVapidConfigured() && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()) {
-    return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY.trim();
-  }
-  if (!isSupabaseConfigured()) {
+  if (isSupabaseConfigured()) {
     try {
-      const res = await fetch('/api/demo?resource=vapid_public_key', { cache: 'no-store' });
-      const data = (await res.json()) as { publicKey?: string };
-      return data.publicKey || null;
+      const res = await fetch('/api/push/vapid-key', { cache: 'no-store' });
+      if (res.ok) {
+        const data = (await res.json()) as { publicKey?: string | null };
+        if (data.publicKey && data.publicKey.trim().length > 20) {
+          return data.publicKey.trim();
+        }
+      }
     } catch {
-      return null;
+      // Fallback a la variable compilada si el endpoint no responde
     }
+    if (isVapidConfigured() && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()) {
+      return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY.trim();
+    }
+    return null;
   }
-  return null;
+
+  try {
+    const res = await fetch('/api/demo?resource=vapid_public_key', { cache: 'no-store' });
+    const data = (await res.json()) as { publicKey?: string };
+    return data.publicKey || null;
+  } catch {
+    return null;
+  }
 }
 
 export function detectDeviceLabel(): string {

@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { sendNotification, setVapidDetails } from 'web-push';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
-import { isSupabaseConfigured, isVapidConfigured } from '@/lib/supabase/config';
+import { isSupabaseConfigured } from '@/lib/supabase/config';
 import { captureMonitoringError } from '@/lib/monitoring';
 import { timingSafeEqualSecret } from '@/lib/server-security';
 import { evaluateUserNotificationDelivery } from '@/lib/notification-preferences';
+import { getServerVapidConfig } from '@/lib/vapid-server';
 import type { Profile, TaskPriority, TaskType } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
@@ -102,17 +103,11 @@ async function runSlaCheck(request: Request) {
       >
     >;
 
-    const vapidReady =
-      isVapidConfigured() &&
-      Boolean(process.env.VAPID_PRIVATE_KEY) &&
-      Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
+    const vapidCfg = getServerVapidConfig();
+    const vapidReady = Boolean(vapidCfg);
 
-    if (vapidReady) {
-      setVapidDetails(
-        process.env.VAPID_SUBJECT || 'mailto:soporte@vistasat.pro',
-        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-        process.env.VAPID_PRIVATE_KEY!
-      );
+    if (vapidCfg) {
+      setVapidDetails(vapidCfg.subject, vapidCfg.publicKey, vapidCfg.privateKey);
     }
 
     let notified = 0;
