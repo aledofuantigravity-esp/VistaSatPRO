@@ -33,8 +33,8 @@ export function getPushSupportStatus(): PushSupportStatus {
 }
 
 async function resolveVapidPublicKey(): Promise<string | null> {
-  if (isVapidConfigured() && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
-    return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  if (isVapidConfigured() && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()) {
+    return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY.trim();
   }
   if (!isSupabaseConfigured()) {
     try {

@@ -40,45 +40,86 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const [latestToast, setLatestToast] = useState<AppNotification | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const hasInitializedRef = useRef(false);
   const revisionRef = useRef<number | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     await Promise.resolve();
     if (!userId) {
       setNotifications([]);
       return;
     }
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
       const data = await listNotifications(userId);
       setNotifications(data);
-      if (seenIdsRef.current.size === 0) {
+      if (!hasInitializedRef.current) {
+        hasInitializedRef.current = true;
         data.forEach((n) => seenIdsRef.current.add(n.id));
       } else {
         const newestUnread = data.find((n) => !n.is_read && !seenIdsRef.current.has(n.id));
         data.forEach((n) => seenIdsRef.current.add(n.id));
         if (newestUnread) {
           setLatestToast(newestUnread);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('vistasat:notification-received', { detail: newestUnread })
+            );
+          }
         }
       }
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, [userId]);
 
   useEffect(() => {
     seenIdsRef.current.clear();
+    hasInitializedRef.current = false;
     const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
   }, [load]);
 
-  // Suscripción en tiempo real (Supabase Realtime o polling ligero en servidor simulado)
+  // Escuchar eventos PUSH_RECEIVED del Service Worker + refresco al volver a la app
+  useEffect(() => {
+    if (!userId || typeof window === 'undefined') return;
+
+    const handleVisibleOrFocus = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        void load(true);
+      }
+    };
+
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'PUSH_RECEIVED') {
+        void load(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibleOrFocus);
+    window.addEventListener('focus', handleVisibleOrFocus);
+    window.addEventListener('online', handleVisibleOrFocus);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibleOrFocus);
+      window.removeEventListener('focus', handleVisibleOrFocus);
+      window.removeEventListener('online', handleVisibleOrFocus);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
+    };
+  }, [userId, load]);
+
+  // Suscripción en tiempo real (Supabase Realtime + respaldo ligero o servidor simulado)
   useEffect(() => {
     if (!userId) return;
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
-      const handleDemo = () => void load();
+      const handleDemo = () => void load(true);
       window.addEventListener('vistasat:demo-updated', handleDemo);
 
       const interval = setInterval(async () => {
@@ -117,12 +158,20 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
           filter: `recipient_id=eq.${userId}`,
         },
         () => {
-          void load();
+          void load(true);
         }
       )
       .subscribe();
 
+    // Respaldo ligero cada 12s si la app está en primer plano (cubre desconexiones móviles de WebSocket)
+    const fallbackInterval = setInterval(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        void load(true);
+      }
+    }, 12_000);
+
     return () => {
+      clearInterval(fallbackInterval);
       void supabase.removeChannel(channel);
     };
   }, [userId, instanceId, load]);

@@ -67,13 +67,13 @@ export const NOTIFICATION_PRESETS: Array<{
   {
     id: 'technician_standard',
     label: 'Técnico Estándar',
-    description: 'Asignados y sin asignar. Push en asignaciones, chat y SLA.',
+    description: 'Asignados y sin asignar. In-App y Push activos en todos los eventos.',
     build: () => buildDefaultByRole('technician', 'assigned_or_created'),
   },
   {
     id: 'coordinator_ops',
     label: 'Coordinación Completa',
-    description: 'Todo el equipo en app; Push en altas sin asignar, chat, urgencias y SLA.',
+    description: 'Todo el equipo en app y Push activo en todos los eventos.',
     build: () => buildDefaultByRole('coordinator', 'all'),
   },
   {
@@ -142,11 +142,10 @@ const PRIORITY_RANK: Record<TaskPriority, number> = {
 };
 
 function buildDefaultByRole(
-  role: UserRole,
+  _role: UserRole,
   legacyLevel: NotificationLevel
 ): NotificationPreferences {
-  const isCoordOrAdmin = role === 'admin' || role === 'coordinator';
-
+  void _role;
   const scope: NotificationPreferences['scope'] =
     legacyLevel === 'none'
       ? 'none'
@@ -166,9 +165,9 @@ function buildDefaultByRole(
       task_created: { in_app: enabled, push: enabled },
       task_assigned: { in_app: enabled, push: enabled },
       comment_added: { in_app: enabled, push: enabled },
-      status_changed: { in_app: enabled, push: isCoordOrAdmin ? false : enabled },
+      status_changed: { in_app: enabled, push: enabled },
       priority_changed: { in_app: enabled, push: enabled },
-      task_updated: { in_app: enabled, push: false },
+      task_updated: { in_app: enabled, push: enabled },
       sla_alert: { in_app: enabled, push: enabled },
     },
     task_types: {

@@ -154,12 +154,20 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);
     const handler = () => void load();
+    const notifHandler = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ task_id?: string | null }>).detail;
+      if (!detail?.task_id || detail.task_id === taskId) {
+        void load();
+      }
+    };
     window.addEventListener('vistasat:demo-updated', handler);
+    window.addEventListener('vistasat:notification-received', notifHandler);
     return () => {
       clearTimeout(t);
       window.removeEventListener('vistasat:demo-updated', handler);
+      window.removeEventListener('vistasat:notification-received', notifHandler);
     };
-  }, [load]);
+  }, [load, taskId]);
 
   if (!profile) return null;
   const isCoord = profile.role === 'admin' || profile.role === 'coordinator';

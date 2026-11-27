@@ -11,13 +11,13 @@ import type { Profile, TaskPriority, TaskType } from '@/types/database';
 
 if (
   isVapidConfigured() &&
-  process.env.VAPID_PRIVATE_KEY &&
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  process.env.VAPID_PRIVATE_KEY?.trim() &&
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()
 ) {
   setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:soporte@vistasat.pro',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
+    (process.env.VAPID_SUBJECT || 'mailto:soporte@vistasat.pro').trim(),
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY.trim(),
+    process.env.VAPID_PRIVATE_KEY.trim()
   );
 }
 
@@ -129,6 +129,9 @@ export async function POST(request: Request) {
               .from('push_subscriptions')
               .update({ is_active: false })
               .eq('id', sub.id);
+          } else {
+            console.error('[Push/testSelf] Error enviando Web Push:', statusCode, err);
+            captureMonitoringError(err, { route: '/api/push/send', scope: 'testSelf', statusCode });
           }
         }
       }
@@ -276,6 +279,14 @@ export async function POST(request: Request) {
                 .from('push_subscriptions')
                 .update({ is_active: false })
                 .eq('id', sub.id);
+            } else {
+              console.error('[Push] Error enviando Web Push:', statusCode, err);
+              captureMonitoringError(err, {
+                route: '/api/push/send',
+                scope: 'delivery',
+                statusCode,
+                recipientId: candidate.id,
+              });
             }
           }
         }

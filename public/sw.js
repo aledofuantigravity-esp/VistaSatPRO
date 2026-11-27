@@ -1,8 +1,8 @@
-// Service Worker v5 — VistaSatPRO
+// Service Worker v6 — VistaSatPRO
 // Estrategia limpia compatible con Next.js App Router (sin interceptar RSC, /api/ ni URLs firmadas)
 
-const STATIC_CACHE = 'vistasat-static-v5';
-const MEDIA_CACHE = 'vistasat-media-v5';
+const STATIC_CACHE = 'vistasat-static-v6';
+const MEDIA_CACHE = 'vistasat-media-v6';
 const OFFLINE_URL = '/offline.html';
 
 const STATIC_ASSETS = [
@@ -133,7 +133,7 @@ self.addEventListener('push', (event) => {
     body: body || 'Tienes una actualización en un parte de trabajo.',
     icon: '/icons/icon-192.png',
     badge: '/icons/badge-72.png?v=2',
-    tag: taskId ? `task-${taskId}` : `generic-${Date.now()}`,
+    tag: taskId ? `task-${taskId}-${Date.now()}` : `generic-${Date.now()}`,
     renotify: true,
     requireInteraction: type === 'sla_alert',
     data: {
@@ -145,7 +145,24 @@ self.addEventListener('push', (event) => {
     vibrate: [200, 100, 200],
   };
 
-  event.waitUntil(self.registration.showNotification(title || 'VistaSatPRO', options));
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title || 'VistaSatPRO', options),
+      self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage({
+              type: 'PUSH_RECEIVED',
+              taskId: taskId || null,
+              title: title || 'VistaSatPRO',
+              body: options.body,
+            });
+          });
+        })
+        .catch(() => undefined),
+    ])
+  );
 });
 
 // ─── NOTIFICATION CLICK ───────────────────────────────────────────────────────
