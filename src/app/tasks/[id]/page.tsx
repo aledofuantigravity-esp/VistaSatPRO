@@ -108,7 +108,6 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [editSiteContactPhone, setEditSiteContactPhone] = useState('');
   const [editSiteAddress, setEditSiteAddress] = useState('');
   const [editSiteCity, setEditSiteCity] = useState('');
-  const [editEstimatedDuration, setEditEstimatedDuration] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
 
   // Borrado lógico y restauración
@@ -275,9 +274,6 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     setEditSiteContactPhone(task.site_contact_phone || '');
     setEditSiteAddress(task.site_address || '');
     setEditSiteCity(task.site_city || '');
-    setEditEstimatedDuration(
-      task.estimated_duration != null ? String(task.estimated_duration) : ''
-    );
     setEditDueDate(toDatetimeLocalValue(task.due_date));
     setShowEditModal(true);
   };
@@ -322,12 +318,6 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     }
     if (editSiteCity.trim() !== (task.site_city || '')) {
       patch.site_city = editSiteCity.trim() || null;
-    }
-    const parsedDuration = editEstimatedDuration.trim()
-      ? Math.max(1, parseInt(editEstimatedDuration, 10) || 0)
-      : null;
-    if (parsedDuration !== (task.estimated_duration ?? null)) {
-      patch.estimated_duration = parsedDuration;
     }
     if (isCoord) {
       const nextDueIso = editDueDate.trim() ? new Date(editDueDate).toISOString() : null;
@@ -1109,33 +1099,19 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {isCoord && (
                 <div>
                   <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                    Duración estimada (minutos)
+                    Fecha límite SLA
                   </label>
                   <input
-                    type="number"
-                    min={1}
-                    value={editEstimatedDuration}
-                    onChange={(e) => setEditEstimatedDuration(e.target.value)}
+                    type="datetime-local"
+                    value={editDueDate}
+                    onChange={(e) => setEditDueDate(e.target.value)}
                     className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
                   />
                 </div>
-                {isCoord && (
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                      Fecha límite SLA
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={editDueDate}
-                      onChange={(e) => setEditDueDate(e.target.value)}
-                      className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
-                    />
-                  </div>
-                )}
-              </div>
+              )}
 
               <p className="text-[11px] text-mid-grey">
                 Todos los cambios quedarán registrados con tu nombre y fecha en el historial
