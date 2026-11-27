@@ -318,7 +318,7 @@ export const TASK_TYPE_META: Record<
   cxc_incident: {
     label: 'Incidencia CXC',
     shortLabel: 'CXC',
-    description: 'Nº de serie obligatorio, contadores B/N y color, y piezas a sustituir.',
+    description: 'Contadores B/N y color, piezas a sustituir y nº de serie obligatorio al cerrar.',
     bgClass: 'bg-magenta/15 dark:bg-magenta/25',
     textClass: 'text-magenta dark:text-pink-300',
     borderColor: '#CF095E',

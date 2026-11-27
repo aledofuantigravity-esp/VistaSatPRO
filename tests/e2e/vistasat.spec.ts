@@ -164,17 +164,16 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     const instPdf = await instPdfPromise;
     expect(instPdf.suggestedFilename()).toContain('_parte_instalacion.pdf');
 
-    // B) Incidencia CXC (Nº de serie obligatorio, copias B/N y color, botón + piezas)
+    // B) Incidencia CXC (Nº de serie NO obligatorio al crear, SÍ obligatorio al cerrar; copias B/N y color; botón + piezas)
     await page.goto('/tasks/new');
     await page.getByRole('button', { name: /Incidencia CXC/i }).click();
     await page.locator('select').first().selectOption({ index: 1 });
     await page.getByRole('button', { name: /Siguiente/i }).click();
 
     await page.getByPlaceholder(/Describe la incidencia CXC/i).fill('Fallo unidad imagen CXC.');
-    // Sin nº de serie, Siguiente debe seguir deshabilitado
-    await expect(page.getByRole('button', { name: /Siguiente/i })).toBeDisabled();
+    // Debe permitir avanzar SIN nº de serie al crear
+    await expect(page.getByRole('button', { name: /Siguiente/i })).toBeEnabled();
 
-    await page.getByPlaceholder(/SN-CXC-90412/i).fill('SN-CXC-E2E-001');
     await page.getByPlaceholder('Ej. 45200').fill('12500');
     await page.getByPlaceholder('Ej. 18400').fill('4300');
     await page.getByPlaceholder('Pieza 1').fill('Tambor negro CXC');
@@ -185,9 +184,22 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
 
     await expect(page).toHaveURL(/\/tasks\/task-/);
-    await expect(page.getByText('S/N: SN-CXC-E2E-001')).toBeVisible();
     await expect(page.getByText('Tambor negro CXC')).toBeVisible();
     await expect(page.getByText('Tóner amarillo CXC')).toBeVisible();
+
+    // Intentar cerrar sin nº de serie debe bloquearlo
+    await page.getByRole('button', { name: /Cerrar Incidencia/i }).click();
+    await expect(
+      page.getByText(/obligatorio introducir y guardar primero el Nº de Serie/i).first()
+    ).toBeVisible();
+
+    // Rellenar nº de serie en la pantalla de detalle y ahora sí cerrar
+    await page.getByPlaceholder(/SN-CXC-90412/i).fill('SN-CXC-E2E-001');
+    await page.getByRole('button', { name: /Guardar datos CXC/i }).click();
+    await expect(page.getByText('S/N: SN-CXC-E2E-001')).toBeVisible();
+
+    await page.getByRole('button', { name: /Cerrar Incidencia/i }).click();
+    await expect(page.getByText('Completada').first()).toBeVisible();
 
     // C) Tarea general
     await page.goto('/tasks/new');
@@ -199,5 +211,44 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
     await expect(page).toHaveURL(/\/tasks\/task-/);
     await expect(page.getByText('Revisar stock almacén E2E.')).toBeVisible();
+  });
+
+  test('5. Sección Instalaciones (sin fecha vs con fecha) y menú Más en móvil', async ({
+    page,
+  }) => {
+    await loginAsCoordinator(page);
+
+    // Crear una instalación sin fecha acordada para probar el flujo completo en /installations
+    await page.goto('/tasks/new?type=installation');
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByPlaceholder(/Ricoh IM C3500/i).fill('Equipo Sin Fecha E2E');
+    await page.getByPlaceholder(/solicitud de instalación/i).fill('Pendiente acordar fecha E2E.');
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+
+    await page.goto('/installations');
+    await expect(page.getByRole('heading', { name: 'Instalaciones' })).toBeVisible();
+    await expect(
+      page.getByText(/Pendientes de asignar fecha de instalación/i)
+    ).toBeVisible();
+    await expect(page.getByText(/Instalaciones con fecha de instalación/i)).toBeVisible();
+    await expect(page.getByText('Equipo Sin Fecha E2E')).toBeVisible();
+
+    // Asignar fecha desde /installations
+    await page.getByRole('button', { name: /Asignar fecha/i }).first().click();
+    await page.locator('input[type="datetime-local"]').fill('2027-01-15T10:30');
+    await page.getByRole('button', { name: /Guardar fecha/i }).click();
+    await expect(page.getByText(/Fecha acordada asignada/i)).toBeVisible();
+
+    // Verificar en vista móvil que está el botón Más y muestra las tarjetas ocultas
+    await page.setViewportSize({ width: 390, height: 844 });
+    const moreBtn = page.getByRole('button', { name: 'Más opciones' });
+    await expect(moreBtn).toBeVisible();
+    await moreBtn.click();
+    await expect(page.getByText('Más secciones')).toBeVisible();
+    await expect(page.getByRole('link', { name: /Clientes/i }).last()).toBeVisible();
+    await expect(page.getByRole('link', { name: /Mi Perfil/i }).last()).toBeVisible();
   });
 });

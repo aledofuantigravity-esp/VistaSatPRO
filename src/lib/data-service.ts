@@ -500,10 +500,6 @@ export async function createTask(
   actor: Profile
 ): Promise<Task> {
   const effectiveType: TaskType = input.task_type || 'rma_incident';
-  if (effectiveType === 'cxc_incident' && !input.equipment_sn?.trim()) {
-    throw new Error('El nº de serie es obligatorio para una Incidencia CXC.');
-  }
-
   const supabase = getSupabaseBrowserClient();
   // Si quien crea el parte es técnico, siempre se autoasigna a él
   const effectiveAssignedTo =

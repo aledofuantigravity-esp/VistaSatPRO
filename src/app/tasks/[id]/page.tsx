@@ -94,6 +94,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   // Edición universal del parte
   const [showEditModal, setShowEditModal] = useState(false);
@@ -191,12 +192,30 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
 
   const handleStatusChange = async (newStatus: TaskStatus) => {
     setShowStatusSheet(false);
-    const res = await updateTaskStatus(task.id, newStatus, profile);
-    if (res.offlineQueued) {
-      showTempMessage('Sin conexión: cambio guardado en cola offline para sincronizar.');
-    } else {
-      showTempMessage(`Estado actualizado a "${TASK_STATUS_META[newStatus].label}".`);
-      await load();
+    setCloseError(null);
+    if (
+      newStatus === 'completed' &&
+      resolveTaskType(task) === 'cxc_incident' &&
+      !task.equipment_sn?.trim()
+    ) {
+      const msg =
+        'Para cerrar una Incidencia CXC es obligatorio introducir y guardar primero el Nº de Serie.';
+      setCloseError(msg);
+      showTempMessage(msg);
+      return;
+    }
+    try {
+      const res = await updateTaskStatus(task.id, newStatus, profile);
+      if (res.offlineQueued) {
+        showTempMessage('Sin conexión: cambio guardado en cola offline para sincronizar.');
+      } else {
+        showTempMessage(`Estado actualizado a "${TASK_STATUS_META[newStatus].label}".`);
+        await load();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'No se pudo cambiar el estado.';
+      setCloseError(msg);
+      showTempMessage(msg);
     }
   };
 
@@ -252,9 +271,23 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   };
 
   const handleCloseTask = async () => {
-    await updateTaskStatus(task.id, 'completed', profile);
-    showTempMessage('Parte cerrado como Completada.');
-    await load();
+    setCloseError(null);
+    if (resolveTaskType(task) === 'cxc_incident' && !task.equipment_sn?.trim()) {
+      const msg =
+        'Para cerrar una Incidencia CXC es obligatorio introducir y guardar primero el Nº de Serie.';
+      setCloseError(msg);
+      showTempMessage(msg);
+      return;
+    }
+    try {
+      await updateTaskStatus(task.id, 'completed', profile);
+      showTempMessage('Tarea cerrada como Completada.');
+      await load();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'No se pudo cerrar la tarea.';
+      setCloseError(msg);
+      showTempMessage(msg);
+    }
   };
 
   const isDeleted = Boolean(task.deleted_at);
@@ -290,8 +323,8 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       setEditError('El cliente y la descripción son obligatorios.');
       return;
     }
-    if (taskType === 'cxc_incident' && !editEquipmentSn.trim()) {
-      setEditError('El nº de serie es obligatorio en una Incidencia CXC.');
+    if (taskType === 'cxc_incident' && task.status === 'completed' && !editEquipmentSn.trim()) {
+      setEditError('El nº de serie es obligatorio cuando la Incidencia CXC está cerrada.');
       return;
     }
 
@@ -806,6 +839,12 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           </div>
         )}
 
+        {closeError && (
+          <div className="p-3 bg-danger/10 border-l-4 border-danger text-xs font-bold text-danger">
+            {closeError}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {!isDeleted && (
             <Button
@@ -1024,11 +1063,11 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                    Nº de Serie {taskType === 'cxc_incident' ? '*' : ''}
+                    Nº de Serie {taskType === 'cxc_incident' ? '(obligatorio al cerrar)' : ''}
                   </label>
                   <input
                     type="text"
-                    required={taskType === 'cxc_incident'}
+                    required={taskType === 'cxc_incident' && task.status === 'completed'}
                     value={editEquipmentSn}
                     onChange={(e) => setEditEquipmentSn(e.target.value)}
                     placeholder="Ej. SN-12345"

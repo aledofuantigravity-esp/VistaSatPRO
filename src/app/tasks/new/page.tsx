@@ -112,7 +112,18 @@ function NewTaskContent() {
     setTechnicians(profs.filter((p) => p.role === 'technician' && p.is_active));
 
     if (typeof window !== 'undefined') {
-      const preselectedCust = new URLSearchParams(window.location.search).get('customerId');
+      const params = new URLSearchParams(window.location.search);
+      const preselectedType = params.get('type');
+      if (
+        preselectedType === 'installation' ||
+        preselectedType === 'rma_incident' ||
+        preselectedType === 'cxc_incident' ||
+        preselectedType === 'task'
+      ) {
+        setTaskType(preselectedType);
+      }
+
+      const preselectedCust = params.get('customerId');
       if (preselectedCust) {
         const match = activeCusts.find((c) => c.id === preselectedCust);
         if (match) {
@@ -191,18 +202,12 @@ function NewTaskContent() {
       qty: Math.max(1, parseInt(r.qty, 10) || 1),
     }));
 
-  const step2Valid =
-    problemDesc.trim().length > 0 &&
-    (taskType !== 'cxc_incident' || equipmentSn.trim().length > 0);
+  const step2Valid = problemDesc.trim().length > 0;
 
   const handleSubmit = async () => {
     setError(null);
     if ((!customerId && !manualCustomerName.trim()) || !problemDesc.trim()) {
       setError('Indica un cliente y la descripción.');
-      return;
-    }
-    if (taskType === 'cxc_incident' && !equipmentSn.trim()) {
-      setError('El nº de serie es obligatorio en una Incidencia CXC.');
       return;
     }
 
@@ -653,9 +658,9 @@ function NewTaskContent() {
             {taskType === 'cxc_incident' && (
               <>
                 <div className="p-3 bg-magenta/10 border-l-4 border-magenta text-xs text-charcoal">
-                  <strong>Incidencia CXC:</strong> El nº de serie es obligatorio. Indica las
-                  copias actuales en B/N y color y añade todas las piezas necesarias con el botón{' '}
-                  <strong>+</strong>.
+                  <strong>Incidencia CXC:</strong> El nº de serie es opcional al crear la
+                  incidencia, pero será <strong>obligatorio en la ficha para poder cerrarla</strong>.
+                  Indica las copias actuales en B/N y color y añade piezas con el botón <strong>+</strong>.
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -672,15 +677,14 @@ function NewTaskContent() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase text-danger mb-1">
-                      Nº de Serie * (Obligatorio)
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      Nº de Serie (obligatorio al cerrar)
                     </label>
                     <input
                       type="text"
-                      required
                       value={equipmentSn}
                       onChange={(e) => setEquipmentSn(e.target.value)}
-                      placeholder="Ej. SN-CXC-90412"
+                      placeholder="Ej. SN-CXC-90412 (opcional al crear)"
                       className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
                     />
                   </div>

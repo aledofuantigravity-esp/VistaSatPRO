@@ -40,6 +40,7 @@ export async function proxy(request: NextRequest) {
   const isProtected =
     pathname.startsWith('/dashboard') ||
     pathname.startsWith('/tasks') ||
+    pathname.startsWith('/installations') ||
     pathname.startsWith('/customers') ||
     pathname.startsWith('/users') ||
     pathname.startsWith('/reports') ||

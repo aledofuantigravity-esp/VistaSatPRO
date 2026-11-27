@@ -330,13 +330,6 @@ export async function POST(request: Request) {
         };
 
         const effectiveType: TaskType = payload.task_type || 'rma_incident';
-        if (effectiveType === 'cxc_incident' && !payload.equipment_sn?.trim()) {
-          return NextResponse.json(
-            { error: 'El nº de serie es obligatorio para una Incidencia CXC.' },
-            { status: 400 }
-          );
-        }
-
         const actor = state.profiles.find((p) => p.id === actorId);
         // Regla de negocio: si un técnico crea una tarea, siempre se le asigna automáticamente
         const effectiveAssignedTo =
@@ -442,6 +435,16 @@ export async function POST(request: Request) {
         const prev = state.tasks[idx];
         const actor = state.profiles.find((p) => p.id === actorId);
         if (prev.status === status) return NextResponse.json({ ok: true });
+        if (
+          status === 'completed' &&
+          (prev.task_type || 'rma_incident') === 'cxc_incident' &&
+          !prev.equipment_sn?.trim()
+        ) {
+          return NextResponse.json(
+            { error: 'Para cerrar una Incidencia CXC es obligatorio indicar el nº de serie.' },
+            { status: 400 }
+          );
+        }
 
         state.tasks[idx] = {
           ...prev,
@@ -535,6 +538,16 @@ export async function POST(request: Request) {
         const prev = state.tasks[idx];
         const actor = state.profiles.find((p) => p.id === actorId);
         const next: Task = { ...prev, ...patch, updated_at: nowIso };
+        if (
+          next.status === 'completed' &&
+          (next.task_type || 'rma_incident') === 'cxc_incident' &&
+          !next.equipment_sn?.trim()
+        ) {
+          return NextResponse.json(
+            { error: 'Para cerrar una Incidencia CXC es obligatorio indicar el nº de serie.' },
+            { status: 400 }
+          );
+        }
 
         if (patch.assigned_to !== undefined && patch.assigned_to !== prev.assigned_to) {
           next.assigned_at = patch.assigned_to ? nowIso : null;

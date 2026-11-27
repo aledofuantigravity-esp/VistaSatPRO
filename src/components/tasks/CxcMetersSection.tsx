@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Gauge, Save } from 'lucide-react';
+import { AlertTriangle, Gauge, Save } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { updateTaskFields } from '@/lib/data-service';
 import type { Profile, Task } from '@/types/database';
@@ -21,6 +21,7 @@ export function CxcMetersSection({
   onChanged,
   onFeedback,
 }: CxcMetersSectionProps) {
+  const [serialInput, setSerialInput] = useState(task.equipment_sn || '');
   const [bwInput, setBwInput] = useState(
     task.meter_bw != null ? String(task.meter_bw) : ''
   );
@@ -29,22 +30,25 @@ export function CxcMetersSection({
   );
   const [saving, setSaving] = useState(false);
 
+  const missingSerial = !task.equipment_sn?.trim();
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
+      const nextSn = serialInput.trim() || null;
       const nextBw = bwInput.trim() === '' ? null : Math.max(0, parseInt(bwInput, 10) || 0);
       const nextColor =
         colorInput.trim() === '' ? null : Math.max(0, parseInt(colorInput, 10) || 0);
       await updateTaskFields(
         task.id,
-        { meter_bw: nextBw, meter_color: nextColor },
+        { equipment_sn: nextSn, meter_bw: nextBw, meter_color: nextColor },
         currentUser
       );
-      onFeedback('Contadores de copias B/N y Color actualizados.');
+      onFeedback('Nº de serie y contadores de copias actualizados.');
       await onChanged();
     } catch (err) {
-      onFeedback(err instanceof Error ? err.message : 'No se pudieron guardar los contadores.');
+      onFeedback(err instanceof Error ? err.message : 'No se pudieron guardar los datos CXC.');
     } finally {
       setSaving(false);
     }
@@ -54,14 +58,43 @@ export function CxcMetersSection({
     <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
-          <Gauge size={16} className="text-magenta" /> Lectura de Copias (Incidencia CXC)
+          <Gauge size={16} className="text-magenta" /> Nº de Serie y Lectura de Copias (CXC)
         </h2>
-        <span className="text-xs font-bold px-2.5 py-1 bg-magenta/10 text-magenta rounded-xs">
-          S/N: {task.equipment_sn || 'Pendiente'}
+        <span
+          className={`text-xs font-bold px-2.5 py-1 rounded-xs ${
+            missingSerial
+              ? 'bg-danger/15 text-danger'
+              : 'bg-magenta/10 text-magenta'
+          }`}
+        >
+          S/N: {task.equipment_sn || 'Pendiente (obligatorio al cerrar)'}
         </span>
       </div>
 
-      <form onSubmit={handleSave} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+      {missingSerial && task.status !== 'completed' && !isDeleted && (
+        <div className="p-2.5 bg-amber-50 dark:bg-amber-500/10 border-l-4 border-amber-500 text-xs text-charcoal flex items-center gap-2">
+          <AlertTriangle size={15} className="text-amber-600 flex-shrink-0" />
+          <span>
+            Introduce y guarda el <strong>Nº de Serie</strong> del equipo para poder cerrar esta
+            incidencia CXC.
+          </span>
+        </div>
+      )}
+
+      <form onSubmit={handleSave} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+        <div>
+          <label className="block text-xs font-bold uppercase text-danger mb-1">
+            Nº de Serie * (para cerrar)
+          </label>
+          <input
+            type="text"
+            disabled={isDeleted}
+            value={serialInput}
+            onChange={(e) => setSerialInput(e.target.value)}
+            placeholder="Ej. SN-CXC-90412"
+            className="w-full px-3 py-2.5 bg-bg-input border border-border text-sm font-bold text-charcoal disabled:opacity-60"
+          />
+        </div>
         <div>
           <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
             Copias B/N actuales
@@ -92,7 +125,7 @@ export function CxcMetersSection({
         </div>
         {!isDeleted && (
           <Button type="submit" size="sm" variant="primary" isLoading={saving}>
-            <Save size={14} /> Guardar copias
+            <Save size={14} /> Guardar datos CXC
           </Button>
         )}
       </form>

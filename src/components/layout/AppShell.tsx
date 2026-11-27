@@ -7,18 +7,21 @@ import {
   BarChart3,
   Bell,
   Building2,
+  CalendarClock,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
   CloudOff,
   Home,
   LogOut,
+  Menu,
   Moon,
   PlusCircle,
   Search,
   Sun,
   User,
   Users,
+  X,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -41,6 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [pendingQueueCount, setPendingQueueCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
 
   const redirectedRef = useRef(false);
 
@@ -91,6 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const desktopLinks = [
     { href: '/dashboard', label: 'Panel General', icon: Home, show: true },
     { href: '/tasks', label: isCoord ? 'Todas las Tareas' : 'Mis Tareas', icon: ClipboardList, show: true },
+    { href: '/installations', label: 'Instalaciones', icon: CalendarClock, show: true },
     { href: '/tasks/new', label: 'Nueva Tarea', icon: PlusCircle, show: true },
     { href: '/customers', label: 'Clientes', icon: Building2, show: true },
     { href: '/users', label: 'Equipo y Roles', icon: Users, show: isAdmin },
@@ -103,14 +108,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { href: '/dashboard', label: 'Inicio', icon: Home },
     { href: '/tasks', label: 'Tareas', icon: ClipboardList },
     { href: '/tasks/new', label: 'Nueva', icon: PlusCircle },
-    { href: '/notifications', label: 'Avisos', icon: Bell, badge: unreadCount },
-    { href: '/profile', label: 'Perfil', icon: User },
+    { href: '/installations', label: 'Instal.', icon: CalendarClock },
   ];
+
+  const moreLinks = [
+    { href: '/customers', label: 'Clientes', icon: Building2, show: true },
+    { href: '/notifications', label: 'Notificaciones', icon: Bell, badge: unreadCount, show: true },
+    { href: '/reports', label: 'Informes', icon: BarChart3, show: isCoord },
+    { href: '/users', label: 'Equipo y Roles', icon: Users, show: isAdmin },
+    { href: '/profile', label: 'Mi Perfil', icon: User, show: true },
+  ].filter((l) => l.show);
 
   const isActive = (href: string) =>
     href === '/tasks'
       ? pathname === '/tasks' || (pathname.startsWith('/tasks/') && pathname !== '/tasks/new')
       : pathname === href || pathname.startsWith(`${href}/`);
+
+  const isMoreActive = moreLinks.some((item) => isActive(item.href));
 
   return (
     <div className="min-h-dvh bg-off-white flex flex-col lg:flex-row">
@@ -301,7 +315,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <nav
         className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-surface border-t border-border shadow-nav grid"
         style={{
-          gridTemplateColumns: `repeat(${mobileTabs.length}, minmax(0, 1fr))`,
+          gridTemplateColumns: `repeat(${mobileTabs.length + 1}, minmax(0, 1fr))`,
           paddingBottom: 'var(--safe-bottom)',
         }}
       >
@@ -312,6 +326,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               key={tab.href}
               href={tab.href}
+              onClick={() => setMoreMenuOpen(false)}
               className={`flex flex-col items-center justify-center py-2 min-h-[60px] relative transition-colors ${
                 active ? 'text-navy dark:text-white font-bold' : 'text-mid-grey font-medium'
               }`}
@@ -319,19 +334,108 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {active && (
                 <span className="absolute top-0 left-3 right-3 h-0.5 bg-magenta" />
               )}
-              <div className="relative">
-                <Icon size={21} strokeWidth={active ? 2.4 : 1.9} />
-                {tab.badge && tab.badge > 0 ? (
-                  <span className="absolute -top-1.5 -right-2.5 bg-magenta text-white text-[10px] font-bold px-1 min-w-[16px] h-4 rounded-full flex items-center justify-center">
-                    {tab.badge > 9 ? '9+' : tab.badge}
-                  </span>
-                ) : null}
-              </div>
+              <Icon size={21} strokeWidth={active ? 2.4 : 1.9} />
               <span className="text-[11px] mt-1 leading-none">{tab.label}</span>
             </Link>
           );
         })}
+
+        <button
+          type="button"
+          onClick={() => setMoreMenuOpen((prev) => !prev)}
+          className={`flex flex-col items-center justify-center py-2 min-h-[60px] relative transition-colors ${
+            moreMenuOpen || isMoreActive
+              ? 'text-navy dark:text-white font-bold'
+              : 'text-mid-grey font-medium'
+          }`}
+          aria-label="Más opciones"
+        >
+          {(moreMenuOpen || isMoreActive) && (
+            <span className="absolute top-0 left-3 right-3 h-0.5 bg-magenta" />
+          )}
+          <div className="relative">
+            {moreMenuOpen ? <X size={21} strokeWidth={2.4} /> : <Menu size={21} strokeWidth={1.9} />}
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-2.5 bg-magenta text-white text-[10px] font-bold px-1 min-w-[16px] h-4 rounded-full flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </div>
+          <span className="text-[11px] mt-1 leading-none">Más</span>
+        </button>
       </nav>
+
+      {/* Menú "Más" móvil con todas las tarjetas restantes */}
+      {moreMenuOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-40 bg-charcoal/70 flex items-end"
+          onClick={() => setMoreMenuOpen(false)}
+        >
+          <div
+            className="w-full bg-white dark:bg-surface rounded-t-lg shadow-elevated p-5 space-y-4"
+            style={{ paddingBottom: 'max(var(--safe-bottom), 20px)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div>
+                <p className="text-sm font-extrabold text-charcoal">Más secciones</p>
+                <p className="text-xs text-mid-grey">
+                  {profile.full_name} · {ROLE_LABELS[profile.role]}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMoreMenuOpen(false)}
+                className="p-1.5 text-mid-grey hover:text-charcoal"
+                aria-label="Cerrar menú más"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {moreLinks.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMoreMenuOpen(false)}
+                    className={`p-3.5 rounded-md border flex items-center gap-3 transition-colors relative ${
+                      active
+                        ? 'bg-navy text-white border-navy'
+                        : 'bg-off-white text-charcoal border-border hover:border-navy'
+                    }`}
+                  >
+                    <Icon
+                      size={19}
+                      className={active ? 'text-magenta' : 'text-navy dark:text-sky-300'}
+                    />
+                    <span className="text-xs font-bold truncate">{item.label}</span>
+                    {item.badge && item.badge > 0 ? (
+                      <span className="ml-auto bg-magenta text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                        {item.badge > 99 ? '99+' : item.badge}
+                      </span>
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                void signOut();
+              }}
+              className="w-full py-3 bg-danger/10 text-danger border border-danger/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded-sm"
+            >
+              <LogOut size={15} /> Cerrar sesión
+            </button>
+          </div>
+        </div>
+      )}
 
       <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
       <NotificationToast notification={latestToast} onDismiss={dismissToast} />

@@ -78,8 +78,10 @@ WHERE id = 'task-attachments';
 CREATE OR REPLACE FUNCTION public.validate_task_before_insert()
 RETURNS TRIGGER AS $$
 BEGIN
-  IF NEW.task_type = 'cxc_incident' AND (NEW.equipment_sn IS NULL OR btrim(NEW.equipment_sn) = '') THEN
-    RAISE EXCEPTION 'El nº de serie es obligatorio en una Incidencia CXC.';
+  IF NEW.task_type = 'cxc_incident'
+     AND NEW.status = 'completed'
+     AND (NEW.equipment_sn IS NULL OR btrim(NEW.equipment_sn) = '') THEN
+    RAISE EXCEPTION 'Para cerrar una Incidencia CXC es obligatorio indicar el nº de serie.';
   END IF;
   RETURN NEW;
 END;
@@ -107,8 +109,9 @@ BEGIN
 
   IF NEW.task_type = 'cxc_incident'
      AND NEW.deleted_at IS NULL
+     AND NEW.status = 'completed'
      AND (NEW.equipment_sn IS NULL OR btrim(NEW.equipment_sn) = '') THEN
-    RAISE EXCEPTION 'El nº de serie es obligatorio en una Incidencia CXC.';
+    RAISE EXCEPTION 'Para cerrar una Incidencia CXC es obligatorio indicar el nº de serie.';
   END IF;
 
   IF auth.uid() IS NOT NULL AND public.current_user_role() = 'technician' THEN
