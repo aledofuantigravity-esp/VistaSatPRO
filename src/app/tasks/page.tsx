@@ -18,19 +18,22 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
-import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
+import { PriorityBadge, StatusBadge, TaskTypeBadge } from '@/components/ui/Badge';
 import { TaskCard } from '@/components/ui/TaskCard';
 import { useAuth } from '@/hooks/useAuth';
 import { downloadCsv } from '@/lib/csv';
 import { listProfiles, listTasks, restoreTask } from '@/lib/data-service';
 import { getSlaStatus } from '@/lib/sla';
 import {
+  resolveTaskType,
   TASK_PRIORITY_META,
   TASK_STATUS_META,
+  TASK_TYPE_META,
   type Profile,
   type Task,
   type TaskPriority,
   type TaskStatus,
+  type TaskType,
 } from '@/types/database';
 
 type TaskTab = 'mine' | 'unassigned' | 'overdue' | 'all' | 'trash';
@@ -39,6 +42,7 @@ interface SavedFilterPreset {
   id: string;
   name: string;
   tab: TaskTab;
+  typeFilter?: TaskType | 'all';
   statusFilter: TaskStatus | 'all';
   priorityFilter: TaskPriority | 'all';
   techFilter: string;
@@ -67,6 +71,7 @@ function TasksContent() {
   const isCoord = profile?.role === 'admin' || profile?.role === 'coordinator';
 
   const [tab, setTab] = useState<TaskTab>(() => (isCoord ? 'all' : 'mine'));
+  const [typeFilter, setTypeFilter] = useState<TaskType | 'all'>('all');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | 'all'>('all');
@@ -114,6 +119,7 @@ function TasksContent() {
         if (rawActive) {
           const parsed = JSON.parse(rawActive) as Partial<SavedFilterPreset>;
           if (parsed.tab) setTab(parsed.tab);
+          if (parsed.typeFilter) setTypeFilter(parsed.typeFilter);
           if (parsed.statusFilter) setStatusFilter(parsed.statusFilter);
           if (parsed.priorityFilter) setPriorityFilter(parsed.priorityFilter);
           if (parsed.techFilter) setTechFilter(parsed.techFilter);
@@ -138,6 +144,7 @@ function TasksContent() {
         ACTIVE_FILTERS_KEY,
         JSON.stringify({
           tab,
+          typeFilter,
           statusFilter,
           priorityFilter,
           techFilter,
@@ -149,7 +156,7 @@ function TasksContent() {
     } catch {
       // Silencioso
     }
-  }, [filtersHydrated, tab, statusFilter, priorityFilter, techFilter, dateFrom, dateTo, search]);
+  }, [filtersHydrated, tab, typeFilter, statusFilter, priorityFilter, techFilter, dateFrom, dateTo, search]);
 
   const profileId = profile?.id;
   const profileRole = profile?.role;
@@ -195,6 +202,7 @@ function TasksContent() {
       if (tab === 'unassigned' && (t.assigned_to !== null || t.status !== 'pending')) return false;
       if (tab === 'overdue' && getSlaStatus(t)?.state !== 'overdue') return false;
 
+      if (typeFilter !== 'all' && resolveTaskType(t) !== typeFilter) return false;
       if (statusFilter !== 'all' && t.status !== statusFilter) return false;
       if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
       if (techFilter !== 'all') {
@@ -229,6 +237,7 @@ function TasksContent() {
     activeTasks,
     trashedTasks,
     tab,
+    typeFilter,
     profile?.id,
     statusFilter,
     priorityFilter,
@@ -275,6 +284,7 @@ function TasksContent() {
 
   const technicians = profiles.filter((p) => p.role === 'technician' && p.is_active);
   const hasActiveFilterCriteria =
+    typeFilter !== 'all' ||
     statusFilter !== 'all' ||
     priorityFilter !== 'all' ||
     techFilter !== 'all' ||
@@ -283,6 +293,7 @@ function TasksContent() {
     Boolean(search.trim());
 
   const clearFilters = () => {
+    setTypeFilter('all');
     setStatusFilter('all');
     setPriorityFilter('all');
     setTechFilter('all');
@@ -299,6 +310,7 @@ function TasksContent() {
       id: `preset-${Date.now()}`,
       name: clean,
       tab,
+      typeFilter,
       statusFilter,
       priorityFilter,
       techFilter,
@@ -319,6 +331,7 @@ function TasksContent() {
 
   const applyPreset = (p: SavedFilterPreset) => {
     setTab(p.tab);
+    setTypeFilter(p.typeFilter || 'all');
     setStatusFilter(p.statusFilter);
     setPriorityFilter(p.priorityFilter);
     setTechFilter(p.techFilter);
@@ -387,7 +400,7 @@ function TasksContent() {
           )}
           <Link href="/tasks/new">
             <Button variant="accent" size="sm">
-              <Plus size={16} /> Nuevo Parte
+              <Plus size={16} /> Nueva Tarea
             </Button>
           </Link>
         </div>
@@ -567,7 +580,24 @@ function TasksContent() {
 
       {/* Panel de filtros */}
       {showFilters && (
-        <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 border border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 border border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div>
+            <label className="block text-[11px] font-bold uppercase text-mid-grey mb-1">
+              Tipo de tarea
+            </label>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as TaskType | 'all')}
+              className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
+            >
+              <option value="all">Todos los tipos</option>
+              {Object.entries(TASK_TYPE_META).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="block text-[11px] font-bold uppercase text-mid-grey mb-1">
               Estado
@@ -686,7 +716,7 @@ function TasksContent() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-navy text-white text-xs uppercase tracking-wider">
-                <th className="p-3">Código</th>
+                <th className="p-3">Código / Tipo</th>
                 <th className="p-3">Cliente</th>
                 <th className="p-3">Equipo</th>
                 <th className="p-3">Estado</th>
@@ -701,9 +731,12 @@ function TasksContent() {
                 return (
                   <tr key={t.id} className="hover:bg-off-white transition-colors">
                     <td className="p-3 font-bold text-navy dark:text-sky-300">
-                      <Link href={`/tasks/${t.id}`} className="hover:underline">
-                        {t.code}
-                      </Link>
+                      <div className="flex flex-col gap-1 items-start">
+                        <Link href={`/tasks/${t.id}`} className="hover:underline">
+                          {t.code}
+                        </Link>
+                        <TaskTypeBadge taskType={resolveTaskType(t)} />
+                      </div>
                     </td>
                     <td className="p-3 font-semibold text-charcoal">{t.customer?.name}</td>
                     <td className="p-3 text-dark-grey">{t.equipment_ref || '—'}</td>

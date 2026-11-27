@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { Camera, Clock, MapPin, Phone, User, Wrench, ChevronRight } from 'lucide-react';
-import { PriorityBadge, StatusBadge } from './Badge';
+import { Calendar, Camera, Clock, MapPin, Phone, User, Wrench, ChevronRight } from 'lucide-react';
+import { PriorityBadge, StatusBadge, TaskTypeBadge } from './Badge';
 import { getSlaStatus } from '@/lib/sla';
-import { TASK_STATUS_META, type Task } from '@/types/database';
+import { resolveTaskType, TASK_STATUS_META, type Task } from '@/types/database';
 
 export function TaskCard({ task }: { task: Task }) {
   const statusColor = TASK_STATUS_META[task.status]?.borderHex || '#002169';
@@ -16,6 +16,7 @@ export function TaskCard({ task }: { task: Task }) {
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
     : null;
   const sla = getSlaStatus(task);
+  const taskType = resolveTaskType(task);
 
   return (
     <div
@@ -29,6 +30,7 @@ export function TaskCard({ task }: { task: Task }) {
               <span className="text-xs font-extrabold tracking-wider text-navy dark:text-sky-300 uppercase">
                 {task.code}
               </span>
+              <TaskTypeBadge taskType={taskType} />
               {sla && (
                 <span
                   className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-extrabold uppercase rounded-xs ${sla.badgeClass}`}
@@ -49,10 +51,26 @@ export function TaskCard({ task }: { task: Task }) {
           <PriorityBadge priority={task.priority} />
         </div>
 
+        {taskType === 'installation' && task.scheduled_date && (
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol dark:text-sky-300 mb-1">
+            <Calendar size={13} className="flex-shrink-0" />
+            <span>
+              Acordada:{' '}
+              {new Date(task.scheduled_date).toLocaleString('es-ES', {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              })}
+            </span>
+          </div>
+        )}
+
         {task.equipment_ref && (
           <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol dark:text-sky-300 mb-1.5">
             <Wrench size={13} className="flex-shrink-0" />
-            <span className="truncate">{task.equipment_ref}</span>
+            <span className="truncate">
+              {task.equipment_ref}
+              {taskType === 'cxc_incident' && task.equipment_sn ? ` · S/N ${task.equipment_sn}` : ''}
+            </span>
           </div>
         )}
 

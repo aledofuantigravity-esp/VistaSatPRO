@@ -150,7 +150,7 @@ export default function DashboardPage() {
             </Link>
             <Link href="/tasks/new">
               <Button variant="accent" size="sm">
-                <PlusCircle size={16} /> Nuevo Parte
+                <PlusCircle size={16} /> Nueva Tarea
               </Button>
             </Link>
           </div>
@@ -163,7 +163,7 @@ export default function DashboardPage() {
             </Link>
             <Link href="/tasks/new">
               <Button variant="accent" size="sm">
-                <PlusCircle size={16} /> Nuevo Parte
+                <PlusCircle size={16} /> Nueva Tarea
               </Button>
             </Link>
           </div>

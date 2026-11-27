@@ -3,7 +3,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Check, UserCheck } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Calendar,
+  Check,
+  ClipboardCheck,
+  FileUp,
+  Layers,
+  PackagePlus,
+  Plus,
+  Trash2,
+  UserCheck,
+  Wrench,
+} from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
@@ -12,13 +25,24 @@ import {
   createTask,
   listCustomers,
   listProfiles,
+  uploadTaskAttachment,
 } from '@/lib/data-service';
 import {
   TASK_PRIORITY_META,
+  TASK_TYPE_META,
   type Customer,
+  type MaterialItem,
   type Profile,
   type TaskPriority,
+  type TaskType,
 } from '@/types/database';
+
+interface DraftPieceRow {
+  id: string;
+  name: string;
+  ref: string;
+  qty: string;
+}
 
 export default function NewTaskPage() {
   return (
@@ -28,11 +52,19 @@ export default function NewTaskPage() {
   );
 }
 
+const TASK_TYPE_ORDER: TaskType[] = [
+  'installation',
+  'rma_incident',
+  'cxc_incident',
+  'task',
+];
+
 function NewTaskContent() {
   const { profile } = useAuth();
   const router = useRouter();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [taskType, setTaskType] = useState<TaskType>('rma_incident');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [technicians, setTechnicians] = useState<Profile[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -47,11 +79,22 @@ function NewTaskContent() {
   const [siteAddress, setSiteAddress] = useState('');
   const [siteCity, setSiteCity] = useState('');
 
-  // Paso 2: Equipo y avería
+  // Paso 2: Campos comunes y específicos según tipo
   const [equipmentRef, setEquipmentRef] = useState('');
   const [equipmentSn, setEquipmentSn] = useState('');
   const [problemDesc, setProblemDesc] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('medium');
+
+  // Instalación
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [orderFile, setOrderFile] = useState<File | null>(null);
+
+  // Incidencia CXC (copias y piezas con botón +)
+  const [meterBw, setMeterBw] = useState('');
+  const [meterColor, setMeterColor] = useState('');
+  const [cxcPieces, setCxcPieces] = useState<DraftPieceRow[]>([
+    { id: 'piece-1', name: '', ref: '', qty: '1' },
+  ]);
 
   // Paso 3: Asignación
   const [assignedTo, setAssignedTo] = useState('');
@@ -105,17 +148,69 @@ function NewTaskContent() {
     }
   };
 
+  const addCxcPieceRow = () => {
+    setCxcPieces((prev) => [
+      ...prev,
+      { id: `piece-${Date.now()}-${prev.length + 1}`, name: '', ref: '', qty: '1' },
+    ]);
+  };
+
+  const updateCxcPieceRow = (id: string, field: keyof DraftPieceRow, value: string) => {
+    setCxcPieces((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const removeCxcPieceRow = (id: string) => {
+    setCxcPieces((prev) => (prev.length <= 1 ? prev : prev.filter((r) => r.id !== id)));
+  };
+
+  const handleOrderFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    if (!file) return;
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      setError('El pedido de instalación debe ser PDF o imagen (JPG, PNG, WEBP).');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('El pedido de instalación supera el máximo permitido de 10 MB.');
+      e.target.value = '';
+      return;
+    }
+    setError(null);
+    setOrderFile(file);
+  };
+
+  const normalizedMaterials: MaterialItem[] = cxcPieces
+    .filter((r) => r.name.trim().length > 0)
+    .map((r) => ({
+      id: r.id,
+      name: r.name.trim(),
+      ref: r.ref.trim() || undefined,
+      qty: Math.max(1, parseInt(r.qty, 10) || 1),
+    }));
+
+  const step2Valid =
+    problemDesc.trim().length > 0 &&
+    (taskType !== 'cxc_incident' || equipmentSn.trim().length > 0);
+
   const handleSubmit = async () => {
     setError(null);
     if ((!customerId && !manualCustomerName.trim()) || !problemDesc.trim()) {
-      setError('Indica un cliente (o sus datos manuales) y la descripción del problema.');
+      setError('Indica un cliente y la descripción.');
       return;
     }
+    if (taskType === 'cxc_incident' && !equipmentSn.trim()) {
+      setError('El nº de serie es obligatorio en una Incidencia CXC.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       let resolvedCustomerId = customerId;
 
-      // Si no se seleccionó ningún cliente existente, se crea automáticamente con los datos introducidos
       if (!resolvedCustomerId) {
         const createdCustomer = await createCustomer({
           name: manualCustomerName.trim(),
@@ -134,26 +229,56 @@ function NewTaskContent() {
         setCustomers((prev) => [...prev, createdCustomer]);
       }
 
+      const parsedBw =
+        taskType === 'cxc_incident' && meterBw.trim() !== ''
+          ? Math.max(0, parseInt(meterBw, 10) || 0)
+          : null;
+      const parsedColor =
+        taskType === 'cxc_incident' && meterColor.trim() !== ''
+          ? Math.max(0, parseInt(meterColor, 10) || 0)
+          : null;
+
       const created = await createTask(
         {
+          task_type: taskType,
           customer_id: resolvedCustomerId,
           site_contact_name: siteContactName || undefined,
           site_contact_phone: siteContactPhone || undefined,
           site_address: siteAddress || undefined,
           site_city: siteCity || undefined,
-          equipment_ref: equipmentRef || undefined,
-          equipment_sn: equipmentSn || undefined,
+          equipment_ref: taskType === 'task' ? undefined : equipmentRef || undefined,
+          equipment_sn: taskType === 'task' ? undefined : equipmentSn.trim() || undefined,
           problem_desc: problemDesc.trim(),
           priority,
           assigned_to: isTechnician ? profile.id : assignedTo || null,
           estimated_duration: estimatedDuration ? parseInt(estimatedDuration, 10) : null,
           due_date: !isTechnician && dueDate ? new Date(dueDate).toISOString() : null,
+          scheduled_date:
+            taskType === 'installation' && scheduledDate
+              ? new Date(scheduledDate).toISOString()
+              : null,
+          merchandise_check_done: taskType === 'installation' ? null : undefined,
+          meter_bw: parsedBw,
+          meter_color: parsedColor,
+          materials_used: taskType === 'cxc_incident' ? normalizedMaterials : undefined,
         },
         profile
       );
+
+      // Si es Instalación y adjuntó pedido, subirlo automáticamente
+      if (taskType === 'installation' && orderFile) {
+        await uploadTaskAttachment(
+          created.id,
+          orderFile,
+          `Pedido de instalación: ${orderFile.name}`,
+          profile,
+          { kind: 'installation_order' }
+        );
+      }
+
       router.push(`/tasks/${created.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error creando el parte');
+      setError(err instanceof Error ? err.message : 'Error creando la tarea');
       setSubmitting(false);
     }
   };
@@ -166,33 +291,60 @@ function NewTaskContent() {
     ? profile
     : technicians.find((t) => t.id === assignedTo);
 
+  const typeMeta = TASK_TYPE_META[taskType];
+
+  const getTypeIcon = (type: TaskType) => {
+    switch (type) {
+      case 'installation':
+        return <PackagePlus size={18} />;
+      case 'cxc_incident':
+        return <Layers size={18} />;
+      case 'task':
+        return <ClipboardCheck size={18} />;
+      default:
+        return <Wrench size={18} />;
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-5">
       <div className="flex items-center gap-3">
-        <Link href="/tasks" className="p-2 bg-white border border-border text-navy">
+        <Link href="/tasks" className="p-2 bg-white dark:bg-surface border border-border text-navy dark:text-sky-300">
           <ArrowLeft size={18} />
         </Link>
         <div>
-          <h1 className="text-xl font-bold text-charcoal">Nuevo Parte de Trabajo</h1>
-          <p className="text-xs text-mid-grey">Paso {step} de 3 · Código correlativo automático</p>
+          <h1 className="text-xl font-bold text-charcoal">Nueva Tarea</h1>
+          <p className="text-xs text-mid-grey">
+            Paso {step} de 3 · {typeMeta.label} · Código correlativo automático
+          </p>
         </div>
       </div>
 
       {/* Indicador de pasos */}
       <div className="grid grid-cols-3 gap-2">
         {[
-          { n: 1, label: '1. Cliente' },
-          { n: 2, label: '2. Avería' },
+          { n: 1, label: '1. Tipo y Cliente' },
+          {
+            n: 2,
+            label:
+              taskType === 'installation'
+                ? '2. Instalación'
+                : taskType === 'cxc_incident'
+                ? '2. Datos CXC'
+                : taskType === 'task'
+                ? '2. Tarea'
+                : '2. Avería RMA',
+          },
           { n: 3, label: '3. Asignación' },
         ].map((item) => (
           <div
             key={item.n}
             className={`py-2 px-3 text-xs font-bold text-center border-b-4 ${
               step === item.n
-                ? 'border-magenta bg-white text-navy'
+                ? 'border-magenta bg-white dark:bg-surface text-navy dark:text-white'
                 : step > item.n
-                ? 'border-success bg-white text-success'
-                : 'border-border bg-white/60 text-mid-grey'
+                ? 'border-success bg-white dark:bg-surface text-success'
+                : 'border-border bg-white/60 dark:bg-surface/60 text-mid-grey'
             }`}
           >
             {item.label}
@@ -204,14 +356,53 @@ function NewTaskContent() {
       <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-4">
         {step === 1 && (
           <>
+            {/* Selector de Tipo de Tarea */}
             <div>
+              <label className="block text-sm font-bold text-charcoal mb-2">
+                Tipo de tarea *
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {TASK_TYPE_ORDER.map((tType) => {
+                  const meta = TASK_TYPE_META[tType];
+                  const active = taskType === tType;
+                  return (
+                    <button
+                      key={tType}
+                      type="button"
+                      onClick={() => setTaskType(tType)}
+                      className={`p-3 border-2 text-left transition-all rounded-sm flex items-start gap-2.5 ${
+                        active
+                          ? 'border-magenta bg-navy/5 dark:bg-white/10'
+                          : 'border-border bg-off-white/60 hover:border-navy/40'
+                      }`}
+                    >
+                      <span
+                        className={`p-2 rounded-sm flex-shrink-0 ${
+                          active ? 'bg-navy text-white' : 'bg-white dark:bg-surface text-navy dark:text-sky-300 border border-border'
+                        }`}
+                      >
+                        {getTypeIcon(tType)}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-charcoal">{meta.label}</p>
+                        <p className="text-[11px] text-mid-grey leading-snug mt-0.5">
+                          {meta.description}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-border">
               <label className="block text-sm font-bold text-charcoal mb-1.5">
                 Cliente existente (opcional)
               </label>
               <select
                 value={customerId}
                 onChange={(e) => handleSelectCustomer(e.target.value)}
-                className="w-full px-3 py-3 bg-bg-input border border-border"
+                className="w-full px-3 py-3 bg-bg-input border border-border text-charcoal"
               >
                 <option value="">
                   — Sin seleccionar (crear nuevo cliente manualmente) —
@@ -225,8 +416,8 @@ function NewTaskContent() {
             </div>
 
             {!customerId && (
-              <div className="p-3.5 bg-navy/5 border-l-4 border-magenta space-y-3">
-                <p className="text-xs font-bold uppercase text-navy">
+              <div className="p-3.5 bg-navy/5 dark:bg-white/5 border-l-4 border-magenta space-y-3">
+                <p className="text-xs font-bold uppercase text-navy dark:text-sky-300">
                   Datos del nuevo cliente (se dará de alta automáticamente)
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -239,7 +430,7 @@ function NewTaskContent() {
                       value={manualCustomerName}
                       onChange={(e) => setManualCustomerName(e.target.value)}
                       placeholder="Ej. Farmacia Central S.L."
-                      className="w-full px-3 py-2.5 bg-white border border-border"
+                      className="w-full px-3 py-2.5 bg-white dark:bg-bg-input border border-border text-charcoal"
                     />
                   </div>
                   <div>
@@ -251,7 +442,7 @@ function NewTaskContent() {
                       value={manualTaxId}
                       onChange={(e) => setManualTaxId(e.target.value)}
                       placeholder="Opcional"
-                      className="w-full px-3 py-2.5 bg-white border border-border"
+                      className="w-full px-3 py-2.5 bg-white dark:bg-bg-input border border-border text-charcoal"
                     />
                   </div>
                 </div>
@@ -267,7 +458,7 @@ function NewTaskContent() {
                   type="text"
                   value={siteContactName}
                   onChange={(e) => setSiteContactName(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-bg-input border border-border"
+                  className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
                 />
               </div>
               <div>
@@ -278,7 +469,7 @@ function NewTaskContent() {
                   type="tel"
                   value={siteContactPhone}
                   onChange={(e) => setSiteContactPhone(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-bg-input border border-border"
+                  className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
                 />
               </div>
             </div>
@@ -292,7 +483,7 @@ function NewTaskContent() {
                   type="text"
                   value={siteAddress}
                   onChange={(e) => setSiteAddress(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-bg-input border border-border"
+                  className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
                 />
               </div>
               <div>
@@ -303,7 +494,7 @@ function NewTaskContent() {
                   type="text"
                   value={siteCity}
                   onChange={(e) => setSiteCity(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-bg-input border border-border"
+                  className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
                 />
               </div>
             </div>
@@ -322,46 +513,309 @@ function NewTaskContent() {
 
         {step === 2 && (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                  Equipo / Modelo
-                </label>
-                <input
-                  type="text"
-                  value={equipmentRef}
-                  onChange={(e) => setEquipmentRef(e.target.value)}
-                  placeholder="Ej. Impresora Ricoh IM C3000"
-                  className="w-full px-3 py-2.5 bg-bg-input border border-border"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                  Nº de Serie
-                </label>
-                <input
-                  type="text"
-                  value={equipmentSn}
-                  onChange={(e) => setEquipmentSn(e.target.value)}
-                  placeholder="Opcional"
-                  className="w-full px-3 py-2.5 bg-bg-input border border-border"
-                />
-              </div>
-            </div>
+            {/* ── BLOQUE ESPECÍFICO: INSTALACIÓN ─────────────────────────── */}
+            {taskType === 'installation' && (
+              <>
+                <div className="p-3 bg-petrol/10 dark:bg-sky-500/15 border-l-4 border-petrol text-xs text-charcoal">
+                  <strong>Solicitud de Instalación:</strong> Adjunta el pedido de instalación
+                  (PDF o imagen) y asigna la fecha futura acordada con el cliente.
+                </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                Descripción del problema *
-              </label>
-              <textarea
-                rows={4}
-                required
-                value={problemDesc}
-                onChange={(e) => setProblemDesc(e.target.value)}
-                placeholder="Describe síntomas, código de error o instrucciones previas..."
-                className="w-full px-3 py-2.5 bg-bg-input border border-border"
-              />
-            </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      Equipo / Sistema a instalar
+                    </label>
+                    <input
+                      type="text"
+                      value={equipmentRef}
+                      onChange={(e) => setEquipmentRef(e.target.value)}
+                      placeholder="Ej. Ricoh IM C3500 + Finisher"
+                      className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      Nº de Serie (si disponible)
+                    </label>
+                    <input
+                      type="text"
+                      value={equipmentSn}
+                      onChange={(e) => setEquipmentSn(e.target.value)}
+                      placeholder="Opcional"
+                      className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Solicitud de instalación / Alcance *
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={problemDesc}
+                    onChange={(e) => setProblemDesc(e.target.value)}
+                    placeholder="Indica detalles de la solicitud de instalación, ubicación, red, requisitos..."
+                    className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
+                      <Calendar size={13} className="text-magenta" /> Fecha acordada de instalación
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={scheduledDate}
+                      onChange={(e) => setScheduledDate(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
+                      <FileUp size={13} className="text-magenta" /> Adjuntar Pedido de Instalación
+                    </label>
+                    <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy dark:text-sky-300 cursor-pointer hover:bg-navy/5 min-h-[46px]">
+                      <FileUp size={15} />
+                      <span className="truncate">
+                        {orderFile ? orderFile.name : 'Subir PDF o imagen (máx. 10 MB)'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="application/pdf,image/jpeg,image/png,image/webp"
+                        onChange={handleOrderFileChange}
+                        className="hidden"
+                      />
+                    </label>
+                    {orderFile && (
+                      <button
+                        type="button"
+                        onClick={() => setOrderFile(null)}
+                        className="text-[11px] font-bold text-danger mt-1 hover:underline"
+                      >
+                        Quitar archivo adjunto
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── BLOQUE ESPECÍFICO: INCIDENCIA RMA ──────────────────────── */}
+            {taskType === 'rma_incident' && (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      Equipo / Modelo
+                    </label>
+                    <input
+                      type="text"
+                      value={equipmentRef}
+                      onChange={(e) => setEquipmentRef(e.target.value)}
+                      placeholder="Ej. Impresora Ricoh IM C3000"
+                      className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      Nº de Serie
+                    </label>
+                    <input
+                      type="text"
+                      value={equipmentSn}
+                      onChange={(e) => setEquipmentSn(e.target.value)}
+                      placeholder="Opcional"
+                      className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Descripción del problema *
+                  </label>
+                  <textarea
+                    rows={4}
+                    required
+                    value={problemDesc}
+                    onChange={(e) => setProblemDesc(e.target.value)}
+                    placeholder="Describe síntomas, código de error o instrucciones previas..."
+                    className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ── BLOQUE ESPECÍFICO: INCIDENCIA CXC ──────────────────────── */}
+            {taskType === 'cxc_incident' && (
+              <>
+                <div className="p-3 bg-magenta/10 border-l-4 border-magenta text-xs text-charcoal">
+                  <strong>Incidencia CXC:</strong> El nº de serie es obligatorio. Indica las
+                  copias actuales en B/N y color y añade todas las piezas necesarias con el botón{' '}
+                  <strong>+</strong>.
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      Equipo / Modelo
+                    </label>
+                    <input
+                      type="text"
+                      value={equipmentRef}
+                      onChange={(e) => setEquipmentRef(e.target.value)}
+                      placeholder="Ej. Ricoh IM C3000"
+                      className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-danger mb-1">
+                      Nº de Serie * (Obligatorio)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={equipmentSn}
+                      onChange={(e) => setEquipmentSn(e.target.value)}
+                      placeholder="Ej. SN-CXC-90412"
+                      className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      Nº Copias B/N actuales
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={meterBw}
+                      onChange={(e) => setMeterBw(e.target.value)}
+                      placeholder="Ej. 45200"
+                      className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      Nº Copias Color actuales
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={meterColor}
+                      onChange={(e) => setMeterColor(e.target.value)}
+                      placeholder="Ej. 18400"
+                      className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Descripción de la incidencia CXC *
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={problemDesc}
+                    onChange={(e) => setProblemDesc(e.target.value)}
+                    placeholder="Describe la incidencia CXC detectada..."
+                    className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                  />
+                </div>
+
+                {/* Piezas dinámicas con botón + */}
+                <div className="space-y-2 pt-2 border-t border-border">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase text-navy dark:text-sky-300">
+                      Piezas a utilizar (opcional)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={addCxcPieceRow}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-navy text-white text-xs font-bold hover:bg-navy-dark"
+                      aria-label="Añadir fila de pieza"
+                    >
+                      <Plus size={14} /> Añadir pieza
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {cxcPieces.map((row, idx) => (
+                      <div key={row.id} className="grid grid-cols-12 gap-2 items-center">
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(e) => updateCxcPieceRow(row.id, 'name', e.target.value)}
+                          placeholder={`Pieza ${idx + 1}`}
+                          className="col-span-6 px-2.5 py-2 bg-bg-input border border-border text-xs text-charcoal"
+                        />
+                        <input
+                          type="text"
+                          value={row.ref}
+                          onChange={(e) => updateCxcPieceRow(row.id, 'ref', e.target.value)}
+                          placeholder="Ref."
+                          className="col-span-3 px-2.5 py-2 bg-bg-input border border-border text-xs text-charcoal"
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          value={row.qty}
+                          onChange={(e) => updateCxcPieceRow(row.id, 'qty', e.target.value)}
+                          className="col-span-2 px-2 py-2 bg-bg-input border border-border text-xs text-center text-charcoal"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            idx === cxcPieces.length - 1
+                              ? addCxcPieceRow()
+                              : removeCxcPieceRow(row.id)
+                          }
+                          className={`col-span-1 h-9 flex items-center justify-center ${
+                            idx === cxcPieces.length - 1
+                              ? 'bg-navy text-white hover:bg-navy-dark'
+                              : 'border border-border text-mid-grey hover:text-danger'
+                          }`}
+                          aria-label={
+                            idx === cxcPieces.length - 1 ? 'Añadir pieza' : 'Quitar pieza'
+                          }
+                        >
+                          {idx === cxcPieces.length - 1 ? (
+                            <Plus size={15} />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── BLOQUE ESPECÍFICO: TAREA GENERAL ───────────────────────── */}
+            {taskType === 'task' && (
+              <div>
+                <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                  Añadir tarea / Descripción *
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  value={problemDesc}
+                  onChange={(e) => setProblemDesc(e.target.value)}
+                  placeholder="Describe la tarea a realizar para que el técnico pueda informar de su avance hasta finalizar..."
+                  className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-bold uppercase text-mid-grey mb-2">
@@ -379,7 +833,7 @@ function NewTaskContent() {
                       className={`py-2.5 px-3 border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 min-h-[44px] ${
                         active
                           ? 'border-navy bg-navy text-white'
-                          : 'border-border bg-white text-dark-grey'
+                          : 'border-border bg-white dark:bg-bg-input text-dark-grey'
                       }`}
                     >
                       <span
@@ -393,14 +847,23 @@ function NewTaskContent() {
               </div>
             </div>
 
+            {error && (
+              <p className="text-xs font-semibold text-danger bg-danger/10 p-3 border-l-4 border-danger">
+                {error}
+              </p>
+            )}
+
             <div className="pt-2 flex justify-between">
               <Button type="button" variant="secondary" onClick={() => setStep(1)}>
                 <ArrowLeft size={16} /> Atrás
               </Button>
               <Button
                 type="button"
-                disabled={!problemDesc.trim()}
-                onClick={() => setStep(3)}
+                disabled={!step2Valid}
+                onClick={() => {
+                  setError(null);
+                  setStep(3);
+                }}
               >
                 Siguiente <ArrowRight size={16} />
               </Button>
@@ -411,14 +874,14 @@ function NewTaskContent() {
         {step === 3 && (
           <>
             {isTechnician ? (
-              <div className="p-4 bg-navy/5 border-l-4 border-navy flex items-start gap-3">
-                <UserCheck size={20} className="text-navy flex-shrink-0 mt-0.5" />
+              <div className="p-4 bg-navy/5 dark:bg-white/5 border-l-4 border-navy flex items-start gap-3">
+                <UserCheck size={20} className="text-navy dark:text-sky-300 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-bold uppercase text-navy">
+                  <p className="text-xs font-bold uppercase text-navy dark:text-sky-300">
                     Asignación automática
                   </p>
                   <p className="text-sm text-charcoal mt-0.5">
-                    Este parte se asignará automáticamente a{' '}
+                    Esta tarea se asignará automáticamente a{' '}
                     <strong>{profile.full_name}</strong> con estado <strong>Asignada</strong>.
                   </p>
                 </div>
@@ -431,7 +894,7 @@ function NewTaskContent() {
                 <select
                   value={assignedTo}
                   onChange={(e) => setAssignedTo(e.target.value)}
-                  className="w-full px-3 py-3 bg-bg-input border border-border"
+                  className="w-full px-3 py-3 bg-bg-input border border-border text-charcoal"
                 >
                   <option value="">Dejar pendiente sin asignar (aviso al equipo)</option>
                   {technicians.map((t) => (
@@ -474,13 +937,51 @@ function NewTaskContent() {
 
             {/* Resumen */}
             <div className="p-4 bg-off-white border-l-4 border-navy space-y-1.5 text-sm">
-              <p className="text-xs font-bold uppercase text-navy">Resumen del parte</p>
+              <p className="text-xs font-bold uppercase text-navy dark:text-sky-300">
+                Resumen de la tarea
+              </p>
+              <p>
+                <strong>Tipo:</strong> {typeMeta.label}
+              </p>
               <p>
                 <strong>Cliente:</strong> {displayCustomerName}
               </p>
-              <p>
-                <strong>Equipo:</strong> {equipmentRef || 'No especificado'}
-              </p>
+              {taskType !== 'task' && (
+                <p>
+                  <strong>Equipo:</strong> {equipmentRef || 'No especificado'}
+                  {equipmentSn ? ` (S/N: ${equipmentSn})` : ''}
+                </p>
+              )}
+              {taskType === 'installation' && (
+                <>
+                  <p>
+                    <strong>Fecha acordada:</strong>{' '}
+                    {scheduledDate
+                      ? new Date(scheduledDate).toLocaleString('es-ES', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })
+                      : 'Pendiente de acordar'}
+                  </p>
+                  <p>
+                    <strong>Pedido adjunto:</strong> {orderFile ? orderFile.name : 'Sin adjuntar'}
+                  </p>
+                </>
+              )}
+              {taskType === 'cxc_incident' && (
+                <>
+                  <p>
+                    <strong>Copias actuales:</strong> B/N {meterBw || '—'} · Color{' '}
+                    {meterColor || '—'}
+                  </p>
+                  <p>
+                    <strong>Piezas previstas:</strong>{' '}
+                    {normalizedMaterials.length > 0
+                      ? normalizedMaterials.map((m) => `${m.name} (x${m.qty})`).join(', ')
+                      : 'Ninguna añadida'}
+                  </p>
+                </>
+              )}
               <p>
                 <strong>Prioridad:</strong> {TASK_PRIORITY_META[priority].label}
               </p>
@@ -505,7 +1006,7 @@ function NewTaskContent() {
                 isLoading={submitting}
                 onClick={handleSubmit}
               >
-                <Check size={16} /> Crear Parte
+                <Check size={16} /> Crear Tarea
               </Button>
             </div>
           </>

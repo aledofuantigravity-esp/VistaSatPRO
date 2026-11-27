@@ -10,6 +10,7 @@ import {
 import {
   type AppNotification,
   type Attachment,
+  type AttachmentKind,
   type Customer,
   type MaterialItem,
   type NotificationLevel,
@@ -20,6 +21,7 @@ import {
   type TaskHistoryItem,
   type TaskPriority,
   type TaskStatus,
+  type TaskType,
   type UserRole,
   TASK_STATUS_META,
 } from '@/types/database';
@@ -475,6 +477,7 @@ export async function getTaskDetail(taskId: string): Promise<{
 
 export async function createTask(
   input: {
+    task_type?: TaskType;
     customer_id: string;
     site_contact_name?: string;
     site_contact_phone?: string;
@@ -487,15 +490,30 @@ export async function createTask(
     assigned_to?: string | null;
     estimated_duration?: number | null;
     due_date?: string | null;
+    scheduled_date?: string | null;
+    merchandise_check_done?: boolean | null;
+    merchandise_check_notes?: string | null;
+    meter_bw?: number | null;
+    meter_color?: number | null;
+    materials_used?: MaterialItem[];
   },
   actor: Profile
 ): Promise<Task> {
+  const effectiveType: TaskType = input.task_type || 'rma_incident';
+  if (effectiveType === 'cxc_incident' && !input.equipment_sn?.trim()) {
+    throw new Error('El nº de serie es obligatorio para una Incidencia CXC.');
+  }
+
   const supabase = getSupabaseBrowserClient();
   // Si quien crea el parte es técnico, siempre se autoasigna a él
   const effectiveAssignedTo =
     actor.role === 'technician' ? actor.id : input.assigned_to || null;
   const initialStatus: TaskStatus = effectiveAssignedTo ? 'assigned' : 'pending';
-  const normalizedInput = { ...input, assigned_to: effectiveAssignedTo };
+  const normalizedInput = {
+    ...input,
+    task_type: effectiveType,
+    assigned_to: effectiveAssignedTo,
+  };
 
   if (!supabase) {
     const data = await demoPost<{ task: Task }>({
@@ -518,9 +536,24 @@ export async function createTask(
     .select('*, customer:customers(name)')
     .single();
 
-  if (error && (error.code === '42703' || error.message.includes('due_date'))) {
-    const { due_date: _omitDue, ...legacyPayload } = normalizedInput;
+  if (error && error.code === '42703') {
+    const {
+      due_date: _omitDue,
+      task_type: _omitType,
+      scheduled_date: _omitSched,
+      merchandise_check_done: _omitMerch,
+      merchandise_check_notes: _omitMerchNotes,
+      meter_bw: _omitBw,
+      meter_color: _omitColor,
+      ...legacyPayload
+    } = normalizedInput;
     void _omitDue;
+    void _omitType;
+    void _omitSched;
+    void _omitMerch;
+    void _omitMerchNotes;
+    void _omitBw;
+    void _omitColor;
     const retry = await supabase
       .from('tasks')
       .insert({
@@ -547,8 +580,8 @@ export async function createTask(
     actorId: actor.id,
     type: created.assigned_to ? 'task_assigned' : 'task_created',
     title: created.assigned_to
-      ? `Nuevo parte asignado: ${created.code}`
-      : `Nuevo parte disponible: ${created.code}`,
+      ? `Nueva tarea asignada: ${created.code}`
+      : `Nueva tarea disponible: ${created.code}`,
     body: `${created.customer?.name || 'Cliente'} — ${input.equipment_ref || input.problem_desc.slice(0, 60)}`,
     isNewTask: true,
   });
@@ -658,6 +691,7 @@ export async function addTaskNote(
 export async function updateTaskFields(
   taskId: string,
   patch: Partial<{
+    task_type: TaskType;
     customer_id: string;
     site_contact_name: string | null;
     site_contact_phone: string | null;
@@ -671,6 +705,11 @@ export async function updateTaskFields(
     assigned_to: string | null;
     estimated_duration: number | null;
     due_date: string | null;
+    scheduled_date: string | null;
+    merchandise_check_done: boolean | null;
+    merchandise_check_notes: string | null;
+    meter_bw: number | null;
+    meter_color: number | null;
     materials_used: MaterialItem[];
     client_signature_url: string | null;
     signer_name: string | null;
@@ -697,9 +736,24 @@ export async function updateTaskFields(
     .select('code')
     .single();
 
-  if (error && (error.code === '42703' || error.message.includes('due_date'))) {
-    const { due_date: _omitDue, ...legacyPatch } = patch;
+  if (error && error.code === '42703') {
+    const {
+      due_date: _omitDue,
+      task_type: _omitType,
+      scheduled_date: _omitSched,
+      merchandise_check_done: _omitMerch,
+      merchandise_check_notes: _omitMerchNotes,
+      meter_bw: _omitBw,
+      meter_color: _omitColor,
+      ...legacyPatch
+    } = patch;
     void _omitDue;
+    void _omitType;
+    void _omitSched;
+    void _omitMerch;
+    void _omitMerchNotes;
+    void _omitBw;
+    void _omitColor;
     if (Object.keys(legacyPatch).length === 0) return;
     const retry = await supabase
       .from('tasks')
@@ -824,7 +878,9 @@ async function fileToDataUrl(file: File): Promise<string> {
 }
 
 const ALLOWED_IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
+const ALLOWED_ORDER_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB imágenes
+const MAX_ORDER_BYTES = 10 * 1024 * 1024; // 10 MB pedidos PDF/imagen
 
 function dataUrlToPngBlob(dataUrl: string): Blob {
   const parts = dataUrl.split(',');
@@ -870,13 +926,24 @@ export async function uploadTaskAttachment(
   taskId: string,
   file: File,
   caption: string | undefined,
-  actor: Profile
+  actor: Profile,
+  options?: { kind?: AttachmentKind }
 ): Promise<Attachment> {
-  if (!ALLOWED_IMAGE_MIME.has(file.type)) {
-    throw new Error('Formato no permitido. Usa únicamente imágenes JPG, PNG o WEBP.');
+  const kind: AttachmentKind = options?.kind || 'photo';
+  const allowedMimes = kind === 'installation_order' ? ALLOWED_ORDER_MIME : ALLOWED_IMAGE_MIME;
+  const maxBytes = kind === 'installation_order' ? MAX_ORDER_BYTES : MAX_UPLOAD_BYTES;
+
+  if (!allowedMimes.has(file.type)) {
+    throw new Error(
+      kind === 'installation_order'
+        ? 'Formato no permitido. Usa PDF, JPG, PNG o WEBP para el pedido de instalación.'
+        : 'Formato no permitido. Usa únicamente imágenes JPG, PNG o WEBP.'
+    );
   }
-  if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error('La imagen supera el tamaño máximo permitido (5 MB).');
+  if (file.size > maxBytes) {
+    throw new Error(
+      `El archivo supera el tamaño máximo permitido (${kind === 'installation_order' ? '10 MB' : '5 MB'}).`
+    );
   }
 
   const supabase = getSupabaseBrowserClient();
@@ -891,13 +958,22 @@ export async function uploadTaskAttachment(
       mimeType: file.type,
       publicUrl: dataUrl,
       caption,
+      kind,
       actorId: actor.id,
     });
     return data.attachment;
   }
 
-  const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
-  const path = `${taskId}/${Date.now()}.${ext}`;
+  const ext =
+    file.type === 'application/pdf'
+      ? 'pdf'
+      : file.type === 'image/png'
+      ? 'png'
+      : file.type === 'image/webp'
+      ? 'webp'
+      : 'jpg';
+  const prefix = kind === 'installation_order' ? 'pedido' : 'foto';
+  const path = `${taskId}/${prefix}-${Date.now()}.${ext}`;
   const { error: uploadError } = await supabase.storage
     .from('task-attachments')
     .upload(path, file, { contentType: file.type, upsert: false });
@@ -907,7 +983,7 @@ export async function uploadTaskAttachment(
     .from('task-attachments')
     .createSignedUrl(path, 3600);
 
-  const { data: attData, error: dbError } = await supabase
+  let { data: attData, error: dbError } = await supabase
     .from('attachments')
     .insert({
       task_id: taskId,
@@ -918,9 +994,34 @@ export async function uploadTaskAttachment(
       file_size: file.size,
       mime_type: file.type,
       caption: caption || null,
+      attachment_kind: kind,
     })
     .select()
     .single();
+
+  if (dbError && dbError.code === '42703') {
+    const fallbackCaption =
+      kind === 'installation_order'
+        ? `[PEDIDO_INSTALACION] ${caption || file.name}`.trim()
+        : caption || null;
+    const retry = await supabase
+      .from('attachments')
+      .insert({
+        task_id: taskId,
+        uploaded_by: actor.id,
+        storage_path: path,
+        public_url: path,
+        file_name: file.name,
+        file_size: file.size,
+        mime_type: file.type,
+        caption: fallbackCaption,
+      })
+      .select()
+      .single();
+    attData = retry.data;
+    dbError = retry.error;
+  }
+
   if (dbError) throw new Error(dbError.message);
 
   await supabase.from('task_history').insert({
@@ -928,14 +1029,20 @@ export async function uploadTaskAttachment(
     actor_id: actor.id,
     event_type: 'attachment_added',
     new_value: file.name,
-    note: caption || `Adjunto: ${file.name}`,
+    note:
+      kind === 'installation_order'
+        ? `Pedido de instalación adjunto: ${file.name}`
+        : caption || `Adjunto: ${file.name}`,
   });
 
   await triggerPushEndpoint({
     taskId,
     actorId: actor.id,
     type: 'task_updated',
-    title: 'Nueva fotografía adjunta',
+    title:
+      kind === 'installation_order'
+        ? 'Pedido de instalación adjunto'
+        : 'Nueva fotografía adjunta',
     body: `${actor.full_name} adjuntó ${file.name}.`,
   });
 

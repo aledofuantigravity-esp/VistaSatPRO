@@ -475,7 +475,7 @@ function CustomersContent() {
               <div className="flex flex-wrap gap-2">
                 <Link href={`/tasks/new?customerId=${encodeURIComponent(selectedCustomer.id)}`}>
                   <Button size="sm" variant="accent">
-                    <Plus size={14} /> Nuevo Parte para este Cliente
+                    <Plus size={14} /> Nueva Tarea para este Cliente
                   </Button>
                 </Link>
                 {(isCoord || selectedCustomer.created_by === profile.id) && (

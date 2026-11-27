@@ -47,7 +47,7 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: 'Alta' }).click();
     await page.getByRole('button', { name: /Siguiente/i }).click();
 
-    await page.getByRole('button', { name: /Crear Parte/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
     await expect(page).toHaveURL(/\/tasks\/task-/);
     await expect(page.getByText('Caldera Baxi E2E')).toBeVisible();
 
@@ -132,5 +132,69 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByRole('button', { name: /★ Vista E2E/i })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('button', { name: /★ Vista E2E/i })).toBeVisible();
+  });
+
+  test('4. Flujos de Nueva Tarea por tipo: Instalación (cotejo + PDF), Incidencia CXC (S/N obl. + copias + piezas) y Tarea', async ({
+    page,
+  }) => {
+    await loginAsCoordinator(page);
+
+    // A) Instalación
+    await page.goto('/tasks/new');
+    await expect(page.getByRole('heading', { name: 'Nueva Tarea' })).toBeVisible();
+    await page.getByRole('button', { name: /Instalación/i }).click();
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+
+    await page.getByPlaceholder(/Ricoh IM C3500/i).fill('Multifunción Instalación E2E');
+    await page.getByPlaceholder(/solicitud de instalación/i).fill('Instalación en planta 2 según pedido.');
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+    await expect(page.getByText('Checklist: Cotejo de Mercancía')).toBeVisible();
+    await page.getByRole('button', { name: /Cotejo Realizado/i }).click();
+    await expect(page.getByText('Realizado', { exact: true }).first()).toBeVisible();
+
+    const instPdfPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: /Parte de Instalación \(PDF\)/i }).click();
+    const instPdf = await instPdfPromise;
+    expect(instPdf.suggestedFilename()).toContain('_parte_instalacion.pdf');
+
+    // B) Incidencia CXC (Nº de serie obligatorio, copias B/N y color, botón + piezas)
+    await page.goto('/tasks/new');
+    await page.getByRole('button', { name: /Incidencia CXC/i }).click();
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+
+    await page.getByPlaceholder(/Describe la incidencia CXC/i).fill('Fallo unidad imagen CXC.');
+    // Sin nº de serie, Siguiente debe seguir deshabilitado
+    await expect(page.getByRole('button', { name: /Siguiente/i })).toBeDisabled();
+
+    await page.getByPlaceholder(/SN-CXC-90412/i).fill('SN-CXC-E2E-001');
+    await page.getByPlaceholder('Ej. 45200').fill('12500');
+    await page.getByPlaceholder('Ej. 18400').fill('4300');
+    await page.getByPlaceholder('Pieza 1').fill('Tambor negro CXC');
+    await page.getByRole('button', { name: /Añadir pieza/i }).first().click();
+    await page.getByPlaceholder('Pieza 2').fill('Tóner amarillo CXC');
+
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+    await expect(page.getByText('S/N: SN-CXC-E2E-001')).toBeVisible();
+    await expect(page.getByText('Tambor negro CXC')).toBeVisible();
+    await expect(page.getByText('Tóner amarillo CXC')).toBeVisible();
+
+    // C) Tarea general
+    await page.goto('/tasks/new');
+    await page.getByRole('button', { name: /^Tarea\b/i }).click();
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByPlaceholder(/Describe la tarea a realizar/i).fill('Revisar stock almacén E2E.');
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+    await expect(page.getByText('Revisar stock almacén E2E.')).toBeVisible();
   });
 });

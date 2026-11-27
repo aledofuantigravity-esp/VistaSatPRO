@@ -6,6 +6,10 @@ export type NotificationLevel = 'all' | 'assigned_or_created' | 'none';
 
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
+export type TaskType = 'installation' | 'rma_incident' | 'cxc_incident' | 'task';
+
+export type AttachmentKind = 'photo' | 'installation_order';
+
 export type TaskStatus =
   | 'pending'
   | 'assigned'
@@ -81,6 +85,7 @@ export interface Customer {
 export interface Task {
   id: string;
   code: string;
+  task_type?: TaskType;
   customer_id: string;
   site_contact_name: string | null;
   site_contact_phone: string | null;
@@ -101,6 +106,14 @@ export interface Task {
   completed_at: string | null;
   estimated_duration: number | null;
   due_date?: string | null;
+  // Campos específicos por tipo de tarea
+  scheduled_date?: string | null;
+  merchandise_check_done?: boolean | null;
+  merchandise_check_notes?: string | null;
+  merchandise_checked_at?: string | null;
+  merchandise_checked_by?: string | null;
+  meter_bw?: number | null;
+  meter_color?: number | null;
   // Auditoría y borrado lógico
   created_by: string;
   created_at: string;
@@ -150,6 +163,7 @@ export interface Attachment {
   file_size: number | null;
   mime_type: string | null;
   caption: string | null;
+  attachment_kind?: AttachmentKind;
   created_at: string;
 }
 
@@ -273,3 +287,52 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   coordinator: 'Coordinador SAT',
   technician: 'Técnico de Campo',
 };
+
+export const TASK_TYPE_META: Record<
+  TaskType,
+  {
+    label: string;
+    shortLabel: string;
+    description: string;
+    bgClass: string;
+    textClass: string;
+    borderColor: string;
+  }
+> = {
+  installation: {
+    label: 'Instalación',
+    shortLabel: 'Instalación',
+    description: 'Pedido adjunto, cotejo de mercancía, fecha acordada y parte de instalación.',
+    bgClass: 'bg-petrol/15 dark:bg-sky-500/20',
+    textClass: 'text-petrol dark:text-sky-300',
+    borderColor: '#004876',
+  },
+  rma_incident: {
+    label: 'Incidencia RMA',
+    shortLabel: 'RMA',
+    description: 'Parte de reparación y asistencia técnica SAT estándar.',
+    bgClass: 'bg-navy/10 dark:bg-white/10',
+    textClass: 'text-navy dark:text-slate-200',
+    borderColor: '#002169',
+  },
+  cxc_incident: {
+    label: 'Incidencia CXC',
+    shortLabel: 'CXC',
+    description: 'Nº de serie obligatorio, contadores B/N y color, y piezas a sustituir.',
+    bgClass: 'bg-magenta/15 dark:bg-magenta/25',
+    textClass: 'text-magenta dark:text-pink-300',
+    borderColor: '#CF095E',
+  },
+  task: {
+    label: 'Tarea',
+    shortLabel: 'Tarea',
+    description: 'Tarea general con seguimiento de avance hasta su finalización.',
+    bgClass: 'bg-plum/15 dark:bg-purple-500/20',
+    textClass: 'text-plum dark:text-purple-300',
+    borderColor: '#5E3654',
+  },
+};
+
+export function resolveTaskType(task: Pick<Task, 'task_type'> | null | undefined): TaskType {
+  return task?.task_type ?? 'rma_incident';
+}

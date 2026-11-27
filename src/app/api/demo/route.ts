@@ -12,7 +12,9 @@ import {
 import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
+  TASK_TYPE_META,
   type Attachment,
+  type AttachmentKind,
   type Customer,
   type MaterialItem,
   type Profile,
@@ -21,6 +23,7 @@ import {
   type TaskComment,
   type TaskPriority,
   type TaskStatus,
+  type TaskType,
   type UserRole,
 } from '@/types/database';
 
@@ -303,6 +306,7 @@ export async function POST(request: Request) {
       case 'create_task': {
         const { payload, actorId } = body as {
           payload: {
+            task_type?: TaskType;
             customer_id: string;
             site_contact_name?: string;
             site_contact_phone?: string;
@@ -315,9 +319,23 @@ export async function POST(request: Request) {
             assigned_to?: string | null;
             estimated_duration?: number | null;
             due_date?: string | null;
+            scheduled_date?: string | null;
+            merchandise_check_done?: boolean | null;
+            merchandise_check_notes?: string | null;
+            meter_bw?: number | null;
+            meter_color?: number | null;
+            materials_used?: MaterialItem[];
           };
           actorId: string;
         };
+
+        const effectiveType: TaskType = payload.task_type || 'rma_incident';
+        if (effectiveType === 'cxc_incident' && !payload.equipment_sn?.trim()) {
+          return NextResponse.json(
+            { error: 'El nº de serie es obligatorio para una Incidencia CXC.' },
+            { status: 400 }
+          );
+        }
 
         const actor = state.profiles.find((p) => p.id === actorId);
         // Regla de negocio: si un técnico crea una tarea, siempre se le asigna automáticamente
@@ -331,6 +349,7 @@ export async function POST(request: Request) {
         const newTask: Task = {
           id: `task-${Date.now()}`,
           code,
+          task_type: effectiveType,
           customer_id: payload.customer_id,
           site_contact_name: payload.site_contact_name || null,
           site_contact_phone: payload.site_contact_phone || null,
@@ -344,7 +363,13 @@ export async function POST(request: Request) {
           assigned_to: effectiveAssignedTo,
           assigned_at: effectiveAssignedTo ? nowIso : null,
           resolution_notes: null,
-          materials_used: [],
+          materials_used: Array.isArray(payload.materials_used) ? payload.materials_used : [],
+          scheduled_date: payload.scheduled_date || null,
+          merchandise_check_done:
+            payload.merchandise_check_done !== undefined ? payload.merchandise_check_done : null,
+          merchandise_check_notes: payload.merchandise_check_notes || null,
+          meter_bw: payload.meter_bw ?? null,
+          meter_color: payload.meter_color ?? null,
           client_signature_url: null,
           signer_name: null,
           pdf_url: null,
@@ -365,8 +390,8 @@ export async function POST(request: Request) {
           field_name: null,
           old_value: null,
           new_value: code,
-          note: 'Parte de trabajo creado',
-          metadata: {},
+          note: `${TASK_TYPE_META[effectiveType].label} creada`,
+          metadata: { task_type: effectiveType },
           created_at: nowIso,
         });
 
@@ -707,6 +732,77 @@ export async function POST(request: Request) {
           });
         }
 
+        if (
+          patch.scheduled_date !== undefined &&
+          patch.scheduled_date !== (prev.scheduled_date ?? null)
+        ) {
+          state.history.push({
+            id: `hist-${Date.now()}-sched`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'scheduled_date',
+            old_value: prev.scheduled_date ?? null,
+            new_value: patch.scheduled_date ?? null,
+            note: patch.scheduled_date
+              ? `Fecha acordada de instalación: ${new Date(patch.scheduled_date).toLocaleString('es-ES', {
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                })}`
+              : 'Fecha acordada de instalación eliminada',
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
+        if (
+          patch.merchandise_check_done !== undefined &&
+          patch.merchandise_check_done !== (prev.merchandise_check_done ?? null)
+        ) {
+          next.merchandise_checked_at = nowIso;
+          next.merchandise_checked_by = actorId;
+          state.tasks[idx] = next;
+          state.history.push({
+            id: `hist-${Date.now()}-merch`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'merchandise_check_done',
+            old_value:
+              prev.merchandise_check_done == null ? null : String(prev.merchandise_check_done),
+            new_value:
+              patch.merchandise_check_done == null ? null : String(patch.merchandise_check_done),
+            note:
+              patch.merchandise_check_done === true
+                ? 'Cotejo de mercancía: REALIZADO'
+                : patch.merchandise_check_done === false
+                ? 'Cotejo de mercancía: NO REALIZADO'
+                : 'Cotejo de mercancía: Pendiente',
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
+        if (
+          (patch.meter_bw !== undefined && patch.meter_bw !== (prev.meter_bw ?? null)) ||
+          (patch.meter_color !== undefined && patch.meter_color !== (prev.meter_color ?? null))
+        ) {
+          state.history.push({
+            id: `hist-${Date.now()}-meters`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'meters',
+            old_value: `${prev.meter_bw ?? '—'} / ${prev.meter_color ?? '—'}`,
+            new_value: `${next.meter_bw ?? '—'} / ${next.meter_color ?? '—'}`,
+            note: `Contadores actualizados — B/N: ${next.meter_bw ?? '—'} · Color: ${
+              next.meter_color ?? '—'
+            }`,
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
         await dispatchServerDemoNotifications(state, {
           task: next,
           actorId,
@@ -827,7 +923,7 @@ export async function POST(request: Request) {
       }
 
       case 'upload_attachment': {
-        const { taskId, fileName, fileSize, mimeType, publicUrl, caption, actorId } =
+        const { taskId, fileName, fileSize, mimeType, publicUrl, caption, kind, actorId } =
           body as {
             taskId: string;
             fileName: string;
@@ -835,8 +931,10 @@ export async function POST(request: Request) {
             mimeType: string;
             publicUrl: string;
             caption?: string;
+            kind?: AttachmentKind;
             actorId: string;
           };
+        const resolvedKind: AttachmentKind = kind || 'photo';
         const actor = state.profiles.find((p) => p.id === actorId);
         const att: Attachment = {
           id: `att-${Date.now()}`,
@@ -848,6 +946,7 @@ export async function POST(request: Request) {
           file_size: fileSize,
           mime_type: mimeType,
           caption: caption || null,
+          attachment_kind: resolvedKind,
           created_at: nowIso,
         };
         state.attachments.unshift(att);
@@ -859,8 +958,13 @@ export async function POST(request: Request) {
           field_name: null,
           old_value: null,
           new_value: fileName,
-          note: caption ? `Foto adjunta: ${caption}` : `Foto adjunta (${fileName})`,
-          metadata: {},
+          note:
+            resolvedKind === 'installation_order'
+              ? `Pedido de instalación adjunto (${fileName})`
+              : caption
+              ? `Foto adjunta: ${caption}`
+              : `Foto adjunta (${fileName})`,
+          metadata: { attachment_kind: resolvedKind },
           created_at: nowIso,
         });
 

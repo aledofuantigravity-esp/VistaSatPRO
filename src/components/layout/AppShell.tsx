@@ -90,8 +90,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const desktopLinks = [
     { href: '/dashboard', label: 'Panel General', icon: Home, show: true },
-    { href: '/tasks', label: isCoord ? 'Todos los Partes' : 'Mis Tareas', icon: ClipboardList, show: true },
-    { href: '/tasks/new', label: 'Nuevo Parte', icon: PlusCircle, show: true },
+    { href: '/tasks', label: isCoord ? 'Todas las Tareas' : 'Mis Tareas', icon: ClipboardList, show: true },
+    { href: '/tasks/new', label: 'Nueva Tarea', icon: PlusCircle, show: true },
     { href: '/customers', label: 'Clientes', icon: Building2, show: true },
     { href: '/users', label: 'Equipo y Roles', icon: Users, show: isAdmin },
     { href: '/reports', label: 'Informes', icon: BarChart3, show: isCoord },
@@ -101,8 +101,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const mobileTabs = [
     { href: '/dashboard', label: 'Inicio', icon: Home },
-    { href: '/tasks', label: isCoord ? 'Partes' : 'Tareas', icon: ClipboardList },
-    { href: '/tasks/new', label: 'Nuevo', icon: PlusCircle },
+    { href: '/tasks', label: 'Tareas', icon: ClipboardList },
+    { href: '/tasks/new', label: 'Nueva', icon: PlusCircle },
     { href: '/notifications', label: 'Avisos', icon: Bell, badge: unreadCount },
     { href: '/profile', label: 'Perfil', icon: User },
   ];

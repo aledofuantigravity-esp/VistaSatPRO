@@ -23,10 +23,15 @@ import {
   X,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
+import { CxcMetersSection } from '@/components/tasks/CxcMetersSection';
+import {
+  InstallationWorkflowSection,
+  isInstallationOrderAttachment,
+} from '@/components/tasks/InstallationWorkflowSection';
 import { TaskCommentsSection } from '@/components/tasks/TaskCommentsSection';
 import { TaskGallerySection } from '@/components/tasks/TaskGallerySection';
 import { Button } from '@/components/ui/Button';
-import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
+import { PriorityBadge, StatusBadge, TaskTypeBadge } from '@/components/ui/Badge';
 import { SignaturePadModal } from '@/components/ui/SignaturePadModal';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -43,6 +48,7 @@ import {
 import { downloadTaskPDF } from '@/lib/pdf-generator';
 import { getSlaStatus, toDatetimeLocalValue } from '@/lib/sla';
 import {
+  resolveTaskType,
   TASK_PRIORITY_META,
   TASK_STATUS_META,
   type Attachment,
@@ -254,6 +260,9 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
 
   const isDeleted = Boolean(task.deleted_at);
   const sla = getSlaStatus(task);
+  const taskType = resolveTaskType(task);
+  const orderAttachments = attachments.filter(isInstallationOrderAttachment);
+  const photoAttachments = attachments.filter((a) => !isInstallationOrderAttachment(a));
 
   const openEditModal = () => {
     setEditError(null);
@@ -282,7 +291,11 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editCustomerId || !editProblemDesc.trim()) {
-      setEditError('El cliente y la descripción de la avería son obligatorios.');
+      setEditError('El cliente y la descripción son obligatorios.');
+      return;
+    }
+    if (taskType === 'cxc_incident' && !editEquipmentSn.trim()) {
+      setEditError('El nº de serie es obligatorio en una Incidencia CXC.');
       return;
     }
 
@@ -444,6 +457,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <TaskTypeBadge taskType={taskType} />
             <StatusBadge status={task.status} />
             <PriorityBadge priority={task.priority} />
             {sla && (
@@ -576,7 +590,14 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
-            <Wrench size={16} className="text-magenta" /> Equipo y Avería
+            <Wrench size={16} className="text-magenta" />{' '}
+            {taskType === 'installation'
+              ? 'Solicitud de Instalación y Equipo'
+              : taskType === 'cxc_incident'
+              ? 'Equipo e Incidencia CXC'
+              : taskType === 'task'
+              ? 'Descripción de la Tarea'
+              : 'Equipo y Avería'}
           </h2>
           {!isDeleted && (
             <button
@@ -588,24 +609,51 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-          <div>
-            <span className="text-xs font-bold text-mid-grey block">Equipo / Modelo</span>
-            <span className="font-semibold text-charcoal">
-              {task.equipment_ref || 'No especificado'}
-            </span>
+        {taskType !== 'task' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div>
+              <span className="text-xs font-bold text-mid-grey block">Equipo / Modelo</span>
+              <span className="font-semibold text-charcoal">
+                {task.equipment_ref || 'No especificado'}
+              </span>
+            </div>
+            <div>
+              <span className="text-xs font-bold text-mid-grey block">
+                Nº de Serie {taskType === 'cxc_incident' ? '(Obligatorio)' : ''}
+              </span>
+              <span className="font-semibold text-charcoal">
+                {task.equipment_sn || '—'}
+              </span>
+            </div>
           </div>
-          <div>
-            <span className="text-xs font-bold text-mid-grey block">Nº de Serie</span>
-            <span className="font-semibold text-charcoal">
-              {task.equipment_sn || '—'}
-            </span>
-          </div>
-        </div>
+        )}
         <div className="p-3 bg-off-white border-l-4 border-petrol text-sm text-dark-grey leading-relaxed">
           {task.problem_desc}
         </div>
       </div>
+
+      {/* Flujo específico: INSTALACIÓN (Pedido adjunto, Fecha acordada, Cotejo de mercancía) */}
+      {taskType === 'installation' && (
+        <InstallationWorkflowSection
+          task={task}
+          orderAttachments={orderAttachments}
+          currentUser={profile}
+          isDeleted={isDeleted}
+          onChanged={load}
+          onFeedback={showTempMessage}
+        />
+      )}
+
+      {/* Flujo específico: INCIDENCIA CXC (Contadores B/N y Color) */}
+      {taskType === 'cxc_incident' && (
+        <CxcMetersSection
+          task={task}
+          currentUser={profile}
+          isDeleted={isDeleted}
+          onChanged={load}
+          onFeedback={showTempMessage}
+        />
+      )}
 
       {/* Chat Interno en Tiempo Real (M4) */}
       <TaskCommentsSection
@@ -615,14 +663,18 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         isDeleted={isDeleted}
       />
 
-      {/* Notas Técnicas */}
+      {/* Notas Técnicas / Incidencias / Avance de tarea */}
       <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
         <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider">
-          Notas Técnicas / Incidencias
+          {taskType === 'installation'
+            ? 'Finalización de Instalación · Incidencias y Observaciones'
+            : taskType === 'task'
+            ? 'Informe de Avance de la Tarea'
+            : 'Notas Técnicas / Incidencias'}
         </h2>
         {task.resolution_notes && (
           <div className="p-3 bg-navy/5 text-sm text-charcoal border-l-4 border-navy">
-            <span className="text-[11px] font-bold uppercase text-navy block mb-1">
+            <span className="text-[11px] font-bold uppercase text-navy dark:text-sky-300 block mb-1">
               Última nota registrada:
             </span>
             {task.resolution_notes}
@@ -634,8 +686,14 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
               rows={3}
               value={noteInput}
               onChange={(e) => setNoteInput(e.target.value)}
-              placeholder="Añade diagnóstico, actuaciones realizadas o incidencias..."
-              className="w-full px-3 py-2.5 bg-bg-input border border-border focus:outline-none focus:ring-2 focus:ring-navy"
+              placeholder={
+                taskType === 'installation'
+                  ? 'Anota incidencias durante la instalación o comentarios finales...'
+                  : taskType === 'task'
+                  ? 'Informa del progreso de la tarea...'
+                  : 'Añade diagnóstico, actuaciones realizadas o incidencias...'
+              }
+              className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
             />
             <Button type="submit" size="sm" isLoading={savingNote} disabled={!noteInput.trim()}>
               <Send size={14} /> Guardar nota en historial
@@ -644,11 +702,15 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         )}
       </div>
 
-      {/* Materiales y Piezas (Decisión 4: campo libre) */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
-        <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
-          <PackagePlus size={16} className="text-magenta" /> Materiales / Piezas Empleadas
-        </h2>
+      {/* Materiales y Piezas (oculto en tipo Tarea simple; botón + en CXC y RMA/Instalación) */}
+      {taskType !== 'task' && (
+        <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
+          <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
+            <PackagePlus size={16} className="text-magenta" />{' '}
+            {taskType === 'cxc_incident'
+              ? 'Piezas a Utilizar / Repuestos CXC'
+              : 'Materiales / Piezas Empleadas'}
+          </h2>
 
         {task.materials_used && task.materials_used.length > 0 && (
           <div className="divide-y divide-border border border-border rounded-sm">
@@ -713,12 +775,13 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
             </div>
           </form>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Galería de Fotografías Mejorada (M7) */}
       <TaskGallerySection
         taskId={task.id}
-        attachments={attachments}
+        attachments={photoAttachments}
         currentUser={profile}
         isDeleted={isDeleted}
         onChanged={load}
@@ -728,7 +791,14 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       {/* Cierre: Firma Digital + PDF */}
       <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-4">
         <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
-          <PenTool size={16} className="text-magenta" /> Conformidad, Cierre y Parte PDF
+          <PenTool size={16} className="text-magenta" />{' '}
+          {taskType === 'installation'
+            ? 'Finalización de Instalación · Parte de Instalación PDF y Firma'
+            : taskType === 'cxc_incident'
+            ? 'Cierre de Incidencia CXC y Parte PDF'
+            : taskType === 'task'
+            ? 'Finalización de Tarea y Parte PDF'
+            : 'Conformidad, Cierre y Parte PDF'}
         </h2>
 
         {task.client_signature_url && (
@@ -760,14 +830,22 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           <Button
             type="button"
             variant="primary"
-            onClick={() => downloadTaskPDF(task, history)}
+            onClick={() => downloadTaskPDF(task, history, photoAttachments)}
           >
-            <FileDown size={16} /> Descargar PDF
+            <FileDown size={16} />{' '}
+            {taskType === 'installation' ? 'Parte de Instalación (PDF)' : 'Descargar PDF'}
           </Button>
 
           {!isDeleted && task.status !== 'completed' && (
             <Button type="button" variant="accent" onClick={handleCloseTask}>
-              <CheckCircle2 size={16} /> Cerrar Parte
+              <CheckCircle2 size={16} />{' '}
+              {taskType === 'installation'
+                ? 'Finalizar Instalación'
+                : taskType === 'cxc_incident'
+                ? 'Cerrar Incidencia'
+                : taskType === 'task'
+                ? 'Finalizar Tarea'
+                : 'Cerrar Parte'}
             </Button>
           )}
         </div>
@@ -955,14 +1033,15 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                    Nº de Serie
+                    Nº de Serie {taskType === 'cxc_incident' ? '*' : ''}
                   </label>
                   <input
                     type="text"
+                    required={taskType === 'cxc_incident'}
                     value={editEquipmentSn}
                     onChange={(e) => setEditEquipmentSn(e.target.value)}
                     placeholder="Ej. SN-12345"
-                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
                   />
                 </div>
               </div>

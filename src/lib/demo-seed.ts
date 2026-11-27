@@ -159,6 +159,7 @@ export function createInitialDemoState(): DemoDatabaseState {
     {
       id: 'task-1',
       code: 'VS-2026-0001',
+      task_type: 'rma_incident',
       customer_id: 'cust-2',
       site_contact_name: 'Roberto Sánchez',
       site_contact_phone: '+34 913 998 110',
@@ -190,6 +191,7 @@ export function createInitialDemoState(): DemoDatabaseState {
     {
       id: 'task-2',
       code: 'VS-2026-0002',
+      task_type: 'cxc_incident',
       customer_id: 'cust-1',
       site_contact_name: 'Dra. Beatriz Gómez',
       site_contact_phone: '+34 915 234 890',
@@ -203,7 +205,9 @@ export function createInitialDemoState(): DemoDatabaseState {
       assigned_to: 'user-tech-1',
       assigned_at: hoursAgo(3),
       resolution_notes: null,
-      materials_used: [],
+      materials_used: [{ id: 'mat-cxc-1', name: 'Rodillo fusor superior', ref: 'RC-FUS-02', qty: 1 }],
+      meter_bw: 45820,
+      meter_color: 18940,
       client_signature_url: null,
       signer_name: null,
       pdf_url: null,
@@ -217,6 +221,7 @@ export function createInitialDemoState(): DemoDatabaseState {
     {
       id: 'task-3',
       code: 'VS-2026-0003',
+      task_type: 'installation',
       customer_id: 'cust-3',
       site_contact_name: 'Antonio Márquez',
       site_contact_phone: '+34 654 321 987',
@@ -224,13 +229,16 @@ export function createInitialDemoState(): DemoDatabaseState {
       site_city: 'Getafe',
       equipment_ref: 'Terminal RFID Zebra FX9600 + Antena',
       equipment_sn: 'ZB-9600-332',
-      problem_desc: 'Pérdida de conectividad PoE en arco de lectura muelle 4.',
+      problem_desc: 'Instalación completa de nuevo arco de lectura RFID en muelle 4 según pedido adjunto.',
       priority: 'medium',
       status: 'pending',
       assigned_to: null,
       assigned_at: null,
       resolution_notes: null,
       materials_used: [],
+      scheduled_date: hoursFromNow(48),
+      merchandise_check_done: null,
+      merchandise_check_notes: null,
       client_signature_url: null,
       signer_name: null,
       pdf_url: null,
@@ -244,6 +252,7 @@ export function createInitialDemoState(): DemoDatabaseState {
     {
       id: 'task-4',
       code: 'VS-2026-0004',
+      task_type: 'rma_incident',
       customer_id: 'cust-4',
       site_contact_name: 'Elena Castro',
       site_contact_phone: '+34 917 882 340',
@@ -270,6 +279,7 @@ export function createInitialDemoState(): DemoDatabaseState {
     {
       id: 'task-5',
       code: 'VS-2026-0005',
+      task_type: 'rma_incident',
       customer_id: 'cust-1',
       site_contact_name: 'Dra. Beatriz Gómez',
       site_contact_phone: '+34 915 234 890',
@@ -291,6 +301,33 @@ export function createInitialDemoState(): DemoDatabaseState {
       estimated_duration: 45,
       created_by: 'user-coord-1',
       created_at: hoursAgo(32),
+      updated_at: hoursAgo(4),
+    },
+    {
+      id: 'task-6',
+      code: 'VS-2026-0006',
+      task_type: 'task',
+      customer_id: 'cust-2',
+      site_contact_name: 'Roberto Sánchez',
+      site_contact_phone: '+34 913 998 110',
+      site_address: 'Paseo de la Castellana, 210',
+      site_city: 'Madrid',
+      equipment_ref: null,
+      equipment_sn: null,
+      problem_desc: 'Revisar inventario de repuestos en almacén del hotel y actualizar etiquetas de mantenimiento.',
+      priority: 'low',
+      status: 'assigned',
+      assigned_to: 'user-tech-1',
+      assigned_at: hoursAgo(4),
+      resolution_notes: null,
+      materials_used: [],
+      client_signature_url: null,
+      signer_name: null,
+      pdf_url: null,
+      completed_at: null,
+      estimated_duration: 45,
+      created_by: 'user-coord-1',
+      created_at: hoursAgo(5),
       updated_at: hoursAgo(4),
     },
   ];
@@ -432,7 +469,7 @@ export function createInitialDemoState(): DemoDatabaseState {
     attachments: [],
     pushSubscriptions: [],
     notifications,
-    seqCounter: 6,
+    seqCounter: 7,
     revision: 1,
   };
 }
@@ -509,10 +546,13 @@ export function buildNotificationRecipients(
 export function hydrateTasks(state: DemoDatabaseState, tasks: Task[]): Task[] {
   return tasks.map((t) => ({
     ...t,
+    task_type: t.task_type || 'rma_incident',
     customer: state.customers.find((c) => c.id === t.customer_id),
     assignee: t.assigned_to ? state.profiles.find((p) => p.id === t.assigned_to) || null : null,
     creator: state.profiles.find((p) => p.id === t.created_by) || null,
     deleter: t.deleted_by ? state.profiles.find((p) => p.id === t.deleted_by) || null : null,
-    attachment_count: state.attachments.filter((a) => a.task_id === t.id).length,
+    attachment_count: state.attachments.filter(
+      (a) => a.task_id === t.id && a.attachment_kind !== 'installation_order'
+    ).length,
   }));
 }

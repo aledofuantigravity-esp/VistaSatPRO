@@ -1,20 +1,38 @@
 import { jsPDF } from 'jspdf';
 import {
+  type Attachment,
   type Task,
   type TaskHistoryItem,
+  resolveTaskType,
   TASK_STATUS_META,
   TASK_PRIORITY_META,
+  TASK_TYPE_META,
 } from '@/types/database';
 
 /**
- * Genera y descarga un PDF corporativo con el resumen completo del parte de trabajo.
- * Incluye cabecera Vistalegre (#002169 + #CF095E), datos del cliente/equipo,
- * materiales empleados, notas técnicas, historial cronológico y firma digital.
+ * Genera y descarga un PDF corporativo adaptado al tipo de tarea:
+ * - Instalación: Parte de Instalación profesional (fecha acordada, cotejo de mercancía, fotos, incidencias y firma)
+ * - Incidencia CXC: Incluye nº de serie obligatorio, contadores B/N y Color, piezas y firma
+ * - Incidencia RMA / Tarea: Parte SAT estándar o de tarea general
  */
-export function generateTaskPDF(task: Task, history: TaskHistoryItem[]): Blob {
+export function generateTaskPDF(
+  task: Task,
+  history: TaskHistoryItem[],
+  installationPhotos: Array<{ dataUrl: string; label: string }> = []
+): Blob {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const taskType = resolveTaskType(task);
   let y = 0;
+
+  const headerSubtitle =
+    taskType === 'installation'
+      ? 'PARTE DE INSTALACIÓN PROFESIONAL'
+      : taskType === 'cxc_incident'
+      ? 'PARTE DE INCIDENCIA CXC'
+      : taskType === 'task'
+      ? 'PARTE DE SEGUIMIENTO DE TAREA'
+      : 'PARTE DE ASISTENCIA TÉCNICA (INCIDENCIA RMA)';
 
   // ─── Cabecera corporativa Navy #002169 ────────────────────────────────────
   doc.setFillColor(0, 33, 105);
@@ -31,7 +49,7 @@ export function generateTaskPDF(task: Task, history: TaskHistoryItem[]): Blob {
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text('PARTE DE ASISTENCIA TÉCNICA (SAT)', 14, 24);
+  doc.text(headerSubtitle, 14, 24);
 
   // Código del parte en derecha
   doc.setFont('helvetica', 'bold');
@@ -40,11 +58,15 @@ export function generateTaskPDF(task: Task, history: TaskHistoryItem[]): Blob {
 
   const statusLabel = TASK_STATUS_META[task.status]?.label ?? task.status;
   const priorityLabel = TASK_PRIORITY_META[task.priority]?.label ?? task.priority;
+  const typeLabel = TASK_TYPE_META[taskType]?.label ?? taskType;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text(`Estado: ${statusLabel} · Prioridad: ${priorityLabel}`, pageWidth - 14, 24, {
-    align: 'right',
-  });
+  doc.setFontSize(8.5);
+  doc.text(
+    `${typeLabel} · Estado: ${statusLabel} · Prioridad: ${priorityLabel}`,
+    pageWidth - 14,
+    24,
+    { align: 'right' }
+  );
 
   y = 46;
 
@@ -104,13 +126,64 @@ export function generateTaskPDF(task: Task, history: TaskHistoryItem[]): Blob {
 
   y += 3;
 
-  // ─── 2. Equipo y Avería ──────────────────────────────────────────────────
-  addSectionTitle('2. Equipo y Descripción del Problema');
-  addRow('Equipo / Modelo', task.equipment_ref);
-  addRow('Nº de Serie', task.equipment_sn);
-  addRow('Descripción', task.problem_desc);
-  if (task.resolution_notes) {
-    addRow('Notas resolución', task.resolution_notes);
+  // ─── 2. Detalle Operativo según Tipo ──────────────────────────────────────
+  if (taskType === 'installation') {
+    addSectionTitle('2. Solicitud, Planificación y Cotejo de Mercancía');
+    addRow('Equipo / Sistema', task.equipment_ref);
+    addRow('Nº de Serie', task.equipment_sn);
+    addRow('Solicitud instalación', task.problem_desc);
+    addRow(
+      'Fecha acordada',
+      task.scheduled_date
+        ? new Date(task.scheduled_date).toLocaleString('es-ES', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })
+        : 'Pendiente de acordar'
+    );
+    const cotejoText =
+      task.merchandise_check_done === true
+        ? 'REALIZADO'
+        : task.merchandise_check_done === false
+        ? 'NO REALIZADO'
+        : 'Pendiente de verificación';
+    addRow('Cotejo de mercancía', cotejoText);
+    if (task.merchandise_check_notes) {
+      addRow('Obs. cotejo', task.merchandise_check_notes);
+    }
+    if (task.resolution_notes) {
+      addRow('Incidencias / Notas', task.resolution_notes);
+    }
+  } else if (taskType === 'cxc_incident') {
+    addSectionTitle('2. Equipo, Contadores y Descripción CXC');
+    addRow('Equipo / Modelo', task.equipment_ref);
+    addRow('Nº de Serie (obl.)', task.equipment_sn || 'No especificado');
+    addRow(
+      'Copias actuales B/N',
+      task.meter_bw != null ? task.meter_bw.toLocaleString('es-ES') : 'No registrado'
+    );
+    addRow(
+      'Copias actuales Color',
+      task.meter_color != null ? task.meter_color.toLocaleString('es-ES') : 'No registrado'
+    );
+    addRow('Descripción CXC', task.problem_desc);
+    if (task.resolution_notes) {
+      addRow('Notas / Resolución', task.resolution_notes);
+    }
+  } else if (taskType === 'task') {
+    addSectionTitle('2. Descripción y Avance de la Tarea');
+    addRow('Tarea asignada', task.problem_desc);
+    if (task.resolution_notes) {
+      addRow('Último informe', task.resolution_notes);
+    }
+  } else {
+    addSectionTitle('2. Equipo y Descripción del Problema');
+    addRow('Equipo / Modelo', task.equipment_ref);
+    addRow('Nº de Serie', task.equipment_sn);
+    addRow('Descripción', task.problem_desc);
+    if (task.resolution_notes) {
+      addRow('Notas resolución', task.resolution_notes);
+    }
   }
 
   y += 3;
@@ -178,13 +251,40 @@ export function generateTaskPDF(task: Task, history: TaskHistoryItem[]): Blob {
     y += 3;
   }
 
-  // ─── 5. Firma Digital del Cliente ────────────────────────────────────────
+  // ─── 5. Fotografías de la Instalación (si aplica) ────────────────────────
+  if (taskType === 'installation' && installationPhotos.length > 0) {
+    addSectionTitle(`5. Fotografías de la Instalación (${installationPhotos.length})`);
+    for (const photo of installationPhotos.slice(0, 6)) {
+      if (y > 220) {
+        doc.addPage();
+        y = 20;
+      }
+      try {
+        const format = photo.dataUrl.includes('image/png') ? 'PNG' : 'JPEG';
+        doc.addImage(photo.dataUrl, format, 14, y, 72, 48);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(102, 102, 102);
+        doc.text(photo.label.slice(0, 60), 90, y + 6);
+        y += 52;
+      } catch {
+        // Si alguna imagen no puede embeberse, se omite sin romper el PDF
+      }
+    }
+    y += 3;
+  }
+
+  // ─── Firma Digital del Cliente ────────────────────────────────────────────
   if (task.client_signature_url) {
     if (y > 235) {
       doc.addPage();
       y = 20;
     }
-    addSectionTitle('5. Conformidad y Firma del Cliente');
+    addSectionTitle(
+      taskType === 'installation' && installationPhotos.length > 0
+        ? '6. Conformidad y Firma del Cliente'
+        : '5. Conformidad y Firma del Cliente'
+    );
     if (task.signer_name) {
       addRow('Firmante', task.signer_name);
     }
@@ -227,7 +327,11 @@ async function urlToDataUrl(url: string): Promise<string> {
   });
 }
 
-export async function downloadTaskPDF(task: Task, history: TaskHistoryItem[]) {
+export async function downloadTaskPDF(
+  task: Task,
+  history: TaskHistoryItem[],
+  attachments: Attachment[] = []
+) {
   let preparedTask = task;
   if (task.client_signature_url && !task.client_signature_url.startsWith('data:')) {
     try {
@@ -237,11 +341,39 @@ export async function downloadTaskPDF(task: Task, history: TaskHistoryItem[]) {
       // Si falla la descarga, genera el PDF sin romper
     }
   }
-  const blob = generateTaskPDF(preparedTask, history);
+
+  const taskType = resolveTaskType(task);
+  const installationPhotos: Array<{ dataUrl: string; label: string }> = [];
+  if (taskType === 'installation') {
+    const photos = attachments.filter(
+      (a) =>
+        a.attachment_kind !== 'installation_order' &&
+        !a.caption?.startsWith('[PEDIDO_INSTALACION]') &&
+        (a.mime_type?.startsWith('image/') ?? true)
+    );
+    for (const att of photos.slice(0, 6)) {
+      try {
+        const dataUrl = await urlToDataUrl(att.public_url);
+        if (dataUrl.startsWith('data:image/')) {
+          installationPhotos.push({
+            dataUrl,
+            label: att.caption || att.file_name,
+          });
+        }
+      } catch {
+        // Ignorar si falla descarga individual
+      }
+    }
+  }
+
+  const blob = generateTaskPDF(preparedTask, history, installationPhotos);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `${task.code}_parte_SAT.pdf`;
+  link.download =
+    taskType === 'installation'
+      ? `${task.code}_parte_instalacion.pdf`
+      : `${task.code}_parte_SAT.pdf`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
