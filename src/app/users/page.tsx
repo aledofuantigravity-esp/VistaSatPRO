@@ -79,12 +79,11 @@ function UsersContent() {
   const [role, setRole] = useState<UserRole>('technician');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [modalTab, setModalTab] = useState<'profile' | 'notifications'>('profile');
 
-  // Modal de configuración avanzada de notificaciones y Push por usuario
-  const [notifUser, setNotifUser] = useState<Profile | null>(null);
+  // Preferencias granulares y dispositivos Push del usuario en edición
   const [notifDraft, setNotifDraft] = useState<NotificationPreferences | null>(null);
   const [notifSubs, setNotifSubs] = useState<PushSubscriptionRecord[]>([]);
-  const [savingNotif, setSavingNotif] = useState(false);
   const [notifFeedback, setNotifFeedback] = useState<{
     type: 'ok' | 'err';
     text: string;
@@ -164,29 +163,50 @@ function UsersContent() {
 
   const openCreateModal = () => {
     setEditingUser(null);
+    setModalTab('profile');
     setFullName('');
     setEmail('');
     setPhone('');
     setPassword('');
     setRole('technician');
+    setNotifDraft(null);
+    setNotifSubs([]);
+    setNotifFeedback(null);
     setFormError(null);
     setShowCreate(true);
   };
 
-  const openEditModal = (u: Profile) => {
+  const openEditModal = async (
+    u: Profile,
+    initialTab: 'profile' | 'notifications' = 'profile'
+  ) => {
     setEditingUser(u);
+    setModalTab(initialTab);
     setFullName(u.full_name);
     setEmail(u.email);
     setPhone(u.phone || '');
     setPassword('');
     setRole(u.role);
+    setNotifDraft(
+      normalizeNotificationPreferences(
+        u.notification_preferences,
+        u.role,
+        u.notification_level
+      )
+    );
+    setNotifSubs([]);
+    setNotifFeedback(null);
     setFormError(null);
     setShowCreate(true);
+
+    const subs = await adminListUserPushSubscriptions(u.id);
+    setNotifSubs(subs);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    setNotifFeedback(null);
 
     if (!editingUser) {
       const check = validatePasswordStrength(password);
@@ -194,6 +214,10 @@ function UsersContent() {
         setFormError(check.error || 'La contraseña inicial no cumple los requisitos.');
         return;
       }
+    } else if (fullName.trim().length < 2) {
+      setModalTab('profile');
+      setFormError('El nombre completo debe tener al menos 2 caracteres.');
+      return;
     }
 
     setSaving(true);
@@ -203,6 +227,7 @@ function UsersContent() {
           full_name: fullName.trim(),
           phone: phone.trim() || null,
           role: editingUser.id === profile.id ? editingUser.role : role,
+          ...(notifDraft ? { notification_preferences: notifDraft } : {}),
         });
       } else {
         await createUserAccount({
@@ -233,58 +258,17 @@ function UsersContent() {
     await load();
   };
 
-  const openNotifModal = async (u: Profile) => {
-    setNotifUser(u);
-    setNotifDraft(
-      normalizeNotificationPreferences(
-        u.notification_preferences,
-        u.role,
-        u.notification_level
-      )
-    );
-    setNotifSubs([]);
-    setNotifFeedback(null);
-    const subs = await adminListUserPushSubscriptions(u.id);
-    setNotifSubs(subs);
-  };
-
-  const handleSaveNotifPrefs = async () => {
-    if (!notifUser || !notifDraft) return;
-    setSavingNotif(true);
-    setNotifFeedback(null);
-    try {
-      await adminUpdateUserProfile(notifUser.id, {
-        notification_preferences: notifDraft,
-      });
-      await load();
-      setNotifFeedback({
-        type: 'ok',
-        text: `Preferencias de ${notifUser.full_name} guardadas correctamente.`,
-      });
-    } catch (err) {
-      setNotifFeedback({
-        type: 'err',
-        text:
-          err instanceof Error
-            ? err.message
-            : 'No se pudieron guardar las preferencias de notificaciones.',
-      });
-    } finally {
-      setSavingNotif(false);
-    }
-  };
-
   const handleAdminSendTestPush = async () => {
-    if (!notifUser) return;
+    if (!editingUser) return;
     setNotifFeedback(null);
     try {
-      const { sent } = await adminSendTestPushToUser(notifUser.id);
+      const { sent } = await adminSendTestPushToUser(editingUser.id);
       setNotifFeedback({
         type: sent > 0 ? 'ok' : 'err',
         text:
           sent > 0
-            ? `Push de prueba enviado a ${sent} dispositivo(s) de ${notifUser.full_name}.`
-            : `${notifUser.full_name} no tiene dispositivos Push activos registrados.`,
+            ? `Push de prueba enviado a ${sent} dispositivo(s) de ${editingUser.full_name}.`
+            : `${editingUser.full_name} no tiene dispositivos Push activos registrados.`,
       });
     } catch (err) {
       setNotifFeedback({
@@ -295,9 +279,9 @@ function UsersContent() {
   };
 
   const handleAdminRevokeSub = async (subId: string) => {
-    if (!notifUser) return;
+    if (!editingUser) return;
     try {
-      await adminRevokeUserPushSubscription(notifUser.id, subId);
+      await adminRevokeUserPushSubscription(editingUser.id, subId);
       setNotifSubs((prev) => prev.filter((s) => s.id !== subId));
       setNotifFeedback({
         type: 'ok',
@@ -433,7 +417,7 @@ function UsersContent() {
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => openNotifModal(u)}
+                      onClick={() => openEditModal(u, 'notifications')}
                       className="px-2.5 py-1.5 text-xs font-bold border border-magenta/40 text-magenta hover:bg-magenta/5 inline-flex items-center gap-1"
                     >
                       <Bell size={13} /> Notificaciones
@@ -441,7 +425,7 @@ function UsersContent() {
 
                     <button
                       type="button"
-                      onClick={() => openEditModal(u)}
+                      onClick={() => openEditModal(u, 'profile')}
                       className="px-2.5 py-1.5 text-xs font-bold border border-border hover:bg-off-white inline-flex items-center gap-1 text-navy dark:text-sky-300"
                     >
                       <Pencil size={13} /> Editar
@@ -485,121 +469,241 @@ function UsersContent() {
       )}
 
       {showCreate && (
-        <div className="fixed inset-0 z-50 bg-charcoal/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white dark:bg-surface w-full sm:max-w-md rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden">
-            <div className="bg-navy text-white px-5 py-4 flex items-center justify-between">
-              <h2 className="text-base font-bold">
-                {editingUser ? 'Editar Usuario' : 'Alta de Nuevo Usuario'}
-              </h2>
+        <div className="fixed inset-0 z-50 bg-charcoal/75 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div
+            className={`bg-white dark:bg-surface w-full ${
+              editingUser ? 'sm:max-w-2xl' : 'sm:max-w-md'
+            } rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden flex flex-col max-h-[92dvh]`}
+          >
+            <div className="bg-navy text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold truncate">
+                  {editingUser
+                    ? `Editar Usuario · ${editingUser.full_name}`
+                    : 'Alta de Nuevo Usuario'}
+                </h2>
+                {editingUser && (
+                  <p className="text-[11px] text-white/70 truncate">
+                    {ROLE_LABELS[editingUser.role]} · {editingUser.email}
+                  </p>
+                )}
+              </div>
               <button
+                type="button"
                 onClick={() => setShowCreate(false)}
                 className="p-1 text-white/80 hover:text-white"
+                aria-label="Cerrar ficha de usuario"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSave} className="p-5 space-y-3.5">
-              <div>
-                <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
-                  Nombre completo *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Ej. Miguel Ángel Torres"
-                  className="w-full px-3 py-2.5 bg-bg-input border border-border"
-                />
+            {/* Pestañas dentro de la ficha de edición del usuario */}
+            {editingUser && (
+              <div className="grid grid-cols-2 border-b border-border bg-off-white flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setModalTab('profile')}
+                  className={`py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                    modalTab === 'profile'
+                      ? 'border-navy text-navy bg-white dark:bg-surface'
+                      : 'border-transparent text-mid-grey hover:text-charcoal'
+                  }`}
+                >
+                  <Pencil size={13} /> Datos y Rol
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalTab('notifications')}
+                  className={`py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                    modalTab === 'notifications'
+                      ? 'border-magenta text-magenta bg-white dark:bg-surface'
+                      : 'border-transparent text-mid-grey hover:text-charcoal'
+                  }`}
+                >
+                  <Bell size={13} /> Notificaciones y Push
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleSave} className="flex flex-col flex-1 min-h-0">
+              <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                {(!editingUser || modalTab === 'profile') && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
+                        Nombre completo *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="Ej. Miguel Ángel Torres"
+                        className="w-full px-3 py-2.5 bg-bg-input border border-border"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
+                        Correo electrónico *
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        disabled={Boolean(editingUser)}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="miguel@empresa.com"
+                        className="w-full px-3 py-2.5 bg-bg-input border border-border disabled:opacity-60"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
+                          Teléfono
+                        </label>
+                        <input
+                          type="tel"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="+34 600..."
+                          className="w-full px-3 py-2.5 bg-bg-input border border-border"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
+                          Rol *
+                        </label>
+                        <select
+                          value={role}
+                          disabled={editingUser?.id === profile.id}
+                          onChange={(e) => setRole(e.target.value as UserRole)}
+                          className="w-full px-3 py-2.5 bg-bg-input border border-border disabled:opacity-60"
+                        >
+                          <option value="technician">Técnico</option>
+                          <option value="coordinator">Coordinador</option>
+                          <option value="admin">Administrador</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {editingUser && (
+                      <button
+                        type="button"
+                        onClick={() => setModalTab('notifications')}
+                        className="w-full px-3 py-2.5 text-xs font-bold border border-magenta/40 bg-magenta/5 text-magenta hover:bg-magenta/10 rounded-sm flex items-center justify-center gap-2"
+                      >
+                        <Bell size={14} /> Configurar notificaciones y Push de este usuario →
+                      </button>
+                    )}
+
+                    {!editingUser && (
+                      <div>
+                        <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
+                          Contraseña inicial * (mín. 10 chars, letras y números)
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          minLength={10}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Clave temporal segura para entregar al usuario"
+                          className="w-full px-3 py-2.5 bg-bg-input border border-border"
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {editingUser && modalTab === 'notifications' && notifDraft && (
+                  <div className="space-y-6">
+                    <NotificationPreferencesEditor
+                      value={notifDraft}
+                      onChange={setNotifDraft}
+                      isAdminView
+                    />
+
+                    {/* Dispositivos Push del usuario */}
+                    <div className="border-t border-border pt-4 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wider text-navy flex items-center gap-1.5">
+                            <Smartphone size={14} className="text-magenta" /> Dispositivos Push
+                            vinculados ({notifSubs.length})
+                          </p>
+                          <p className="text-[11px] text-mid-grey">
+                            Envía un aviso de prueba o revoca dispositivos antiguos de este usuario.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={handleAdminSendTestPush}
+                        >
+                          <Send size={13} /> Enviar Push de prueba
+                        </Button>
+                      </div>
+
+                      {notifSubs.length === 0 ? (
+                        <p className="text-xs text-mid-grey bg-off-white p-3 border border-border rounded-sm">
+                          Este usuario aún no ha vinculado ningún navegador o móvil para Web Push.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {notifSubs.map((sub) => (
+                            <div
+                              key={sub.id}
+                              className="flex items-center justify-between p-2.5 bg-off-white border border-border rounded-sm"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-charcoal truncate">
+                                  {sub.device_label || 'Dispositivo registrado'}
+                                </p>
+                                <p className="text-[11px] text-mid-grey">
+                                  Activo desde{' '}
+                                  {new Date(sub.created_at).toLocaleDateString('es-ES')}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleAdminRevokeSub(sub.id)}
+                                className="p-1.5 text-mid-grey hover:text-danger"
+                                aria-label="Revocar dispositivo Push"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {notifFeedback && (
+                      <div
+                        className={`p-3 border-l-4 text-xs font-semibold ${
+                          notifFeedback.type === 'ok'
+                            ? 'bg-success/10 border-success text-success'
+                            : 'bg-danger/10 border-danger text-danger'
+                        }`}
+                      >
+                        {notifFeedback.text}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {formError && (
+                  <p className="text-xs font-semibold text-danger bg-danger/10 p-2.5 border-l-4 border-danger">
+                    {formError}
+                  </p>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
-                  Correo electrónico *
-                </label>
-                <input
-                  type="email"
-                  required
-                  disabled={Boolean(editingUser)}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="miguel@empresa.com"
-                  className="w-full px-3 py-2.5 bg-bg-input border border-border disabled:opacity-60"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
-                    Teléfono
-                  </label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+34 600..."
-                    className="w-full px-3 py-2.5 bg-bg-input border border-border"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
-                    Rol *
-                  </label>
-                  <select
-                    value={role}
-                    disabled={editingUser?.id === profile.id}
-                    onChange={(e) => setRole(e.target.value as UserRole)}
-                    className="w-full px-3 py-2.5 bg-bg-input border border-border disabled:opacity-60"
-                  >
-                    <option value="technician">Técnico</option>
-                    <option value="coordinator">Coordinador</option>
-                    <option value="admin">Administrador</option>
-                  </select>
-                </div>
-              </div>
-
-              {editingUser && (
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const target = editingUser;
-                      setShowCreate(false);
-                      setEditingUser(null);
-                      void openNotifModal(target);
-                    }}
-                    className="w-full px-3 py-2.5 text-xs font-bold border border-magenta/40 bg-magenta/5 text-magenta hover:bg-magenta/10 rounded-sm flex items-center justify-center gap-2"
-                  >
-                    <Bell size={14} /> Configurar notificaciones y Push de este usuario
-                  </button>
-                </div>
-              )}
-
-              {!editingUser && (
-                <div>
-                  <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
-                    Contraseña inicial * (mín. 10 chars, letras y números)
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    minLength={10}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Clave temporal segura para entregar al usuario"
-                    className="w-full px-3 py-2.5 bg-bg-input border border-border"
-                  />
-                </div>
-              )}
-
-              {formError && (
-                <p className="text-xs font-semibold text-danger bg-danger/10 p-2.5 border-l-4 border-danger">
-                  {formError}
-                </p>
-              )}
-
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="px-5 py-3.5 bg-off-white border-t border-border grid grid-cols-2 gap-3 flex-shrink-0">
                 <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>
                   Cancelar
                 </Button>
@@ -608,129 +712,6 @@ function UsersContent() {
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Configuración Avanzada de Notificaciones y Push por Usuario */}
-      {notifUser && notifDraft && (
-        <div className="fixed inset-0 z-50 bg-charcoal/75 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white dark:bg-surface w-full sm:max-w-2xl rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden flex flex-col max-h-[92dvh]">
-            <div className="bg-navy text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
-              <div className="min-w-0">
-                <h2 className="text-base font-bold flex items-center gap-2 truncate">
-                  <Bell size={18} className="text-magenta flex-shrink-0" />
-                  Notificaciones · {notifUser.full_name}
-                </h2>
-                <p className="text-[11px] text-white/70 truncate">
-                  {ROLE_LABELS[notifUser.role]} · {notifUser.email}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setNotifUser(null)}
-                className="p-1 text-white/80 hover:text-white"
-                aria-label="Cerrar configuración de notificaciones"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-5 overflow-y-auto space-y-6 flex-1">
-              <NotificationPreferencesEditor
-                value={notifDraft}
-                onChange={setNotifDraft}
-                isAdminView
-              />
-
-              {/* Dispositivos Push del usuario */}
-              <div className="border-t border-border pt-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-navy flex items-center gap-1.5">
-                      <Smartphone size={14} className="text-magenta" /> Dispositivos Push vinculados (
-                      {notifSubs.length})
-                    </p>
-                    <p className="text-[11px] text-mid-grey">
-                      Envía un aviso de prueba o revoca dispositivos antiguos de este usuario.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={handleAdminSendTestPush}
-                  >
-                    <Send size={13} /> Enviar Push de prueba
-                  </Button>
-                </div>
-
-                {notifSubs.length === 0 ? (
-                  <p className="text-xs text-mid-grey bg-off-white p-3 border border-border rounded-sm">
-                    Este usuario aún no ha vinculado ningún navegador o móvil para Web Push.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {notifSubs.map((sub) => (
-                      <div
-                        key={sub.id}
-                        className="flex items-center justify-between p-2.5 bg-off-white border border-border rounded-sm"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-charcoal truncate">
-                            {sub.device_label || 'Dispositivo registrado'}
-                          </p>
-                          <p className="text-[11px] text-mid-grey">
-                            Activo desde{' '}
-                            {new Date(sub.created_at).toLocaleDateString('es-ES')}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleAdminRevokeSub(sub.id)}
-                          className="p-1.5 text-mid-grey hover:text-danger"
-                          aria-label="Revocar dispositivo Push"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {notifFeedback && (
-                <div
-                  className={`p-3 border-l-4 text-xs font-semibold ${
-                    notifFeedback.type === 'ok'
-                      ? 'bg-success/10 border-success text-success'
-                      : 'bg-danger/10 border-danger text-danger'
-                  }`}
-                >
-                  {notifFeedback.text}
-                </div>
-              )}
-            </div>
-
-            <div className="px-5 py-3.5 bg-off-white border-t border-border flex items-center justify-end gap-2 flex-shrink-0">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setNotifUser(null)}
-              >
-                Cerrar
-              </Button>
-              <Button
-                type="button"
-                variant="accent"
-                size="sm"
-                isLoading={savingNotif}
-                onClick={handleSaveNotifPrefs}
-              >
-                Guardar preferencias
-              </Button>
-            </div>
           </div>
         </div>
       )}

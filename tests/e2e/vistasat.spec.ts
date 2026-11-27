@@ -304,24 +304,21 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.goto('/users');
     await expect(page.getByRole('heading', { name: /Equipo y Usuarios/i })).toBeVisible();
 
-    // Abrir configuración de notificaciones de Javier Ruiz
+    // Abrir ficha de Javier Ruiz pulsando Editar y cambiar a la pestaña Notificaciones y Push
     const techCard = page
       .locator('div.bg-white, div.dark\\:bg-surface')
       .filter({ hasText: 'Javier Ruiz' })
       .filter({ hasText: 'tecnico@vistalegre.com' })
       .first();
-    await techCard.getByRole('button', { name: /Notificaciones/i }).click();
+    await techCard.getByRole('button', { name: /Editar/i }).click();
 
-    await expect(page.getByRole('heading', { name: /Notificaciones · Javier Ruiz/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Editar Usuario · Javier Ruiz/i })).toBeVisible();
+    await page.getByRole('button', { name: /Notificaciones y Push$/i }).click();
     await page.getByRole('button', { name: /Solo Urgencias/i }).click();
     await page
       .getByLabel(/Permitir que el usuario modifique estas preferencias/i)
       .uncheck();
-    await page.getByRole('button', { name: /Guardar preferencias/i }).click();
-    await expect(
-      page.getByText(/Preferencias de Javier Ruiz guardadas correctamente/i)
-    ).toBeVisible();
-    await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await page.getByRole('button', { name: /Guardar cambios/i }).click();
 
     // Verificar en la tarjeta que muestra los nuevos badges
     await expect(techCard.getByText(/Push: Solo Urgentes/i)).toBeVisible();
