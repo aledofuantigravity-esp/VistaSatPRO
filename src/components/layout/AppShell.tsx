@@ -15,17 +15,14 @@ import {
   Home,
   LogOut,
   Menu,
-  Moon,
   PlusCircle,
   Search,
-  Sun,
   User,
   Users,
   X,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotifications } from '@/hooks/useNotifications';
-import { useTheme } from '@/hooks/useTheme';
 import { getPendingOfflineActions } from '@/lib/offline-queue';
 import { OfflineBanner } from '@/components/pwa/OfflineBanner';
 import { SWUpdateBanner } from '@/components/pwa/SWUpdateBanner';
@@ -38,7 +35,6 @@ import { ROLE_LABELS } from '@/types/database';
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { profile, isLoading, isDemoMode, signOut } = useAuth();
   const { unreadCount, latestToast, dismissToast } = useNotifications();
-  const { resolvedTheme, toggleTheme } = useTheme();
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -220,17 +216,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
           <button
-            type="button"
-            onClick={toggleTheme}
-            className="w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition-colors"
-            aria-label={resolvedTheme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-          >
-            {resolvedTheme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-            {!sidebarCollapsed && (
-              <span>{resolvedTheme === 'dark' ? 'Modo claro' : 'Modo oscuro'}</span>
-            )}
-          </button>
-          <button
             onClick={signOut}
             className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-white/80 hover:bg-magenta hover:text-white transition-colors"
           >
@@ -279,15 +264,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label="Búsqueda global"
             >
               <Search size={19} />
-            </button>
-
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="p-2 text-white hover:bg-white/10 rounded-full"
-              aria-label={resolvedTheme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
-            >
-              {resolvedTheme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
             </button>
 
             <Link

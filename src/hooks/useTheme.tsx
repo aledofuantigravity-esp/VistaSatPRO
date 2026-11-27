@@ -1,13 +1,6 @@
 'use client';
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
@@ -22,72 +15,27 @@ interface ThemeContextValue {
 const THEME_STORAGE_KEY = 'vistasat_theme';
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function getSystemTheme(): ResolvedTheme {
-  if (typeof window === 'undefined') return 'light';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function readStoredTheme(): ThemePreference {
-  if (typeof window === 'undefined') return 'system';
-  try {
-    const val = localStorage.getItem(THEME_STORAGE_KEY);
-    if (val === 'light' || val === 'dark' || val === 'system') return val;
-  } catch {
-    // Ignorar error de acceso a almacenamiento
-  }
-  return 'system';
-}
-
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<ThemePreference>('system');
-  const [systemTheme, setSystemTheme] = useState<ResolvedTheme>('light');
-
   useEffect(() => {
-    const syncInitial = () => {
-      setThemeState(readStoredTheme());
-      setSystemTheme(getSystemTheme());
-    };
-    const t = setTimeout(syncInitial, 0);
-
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const onMediaChange = (e: MediaQueryListEvent) => {
-      setSystemTheme(e.matches ? 'dark' : 'light');
-    };
-    media.addEventListener('change', onMediaChange);
-    return () => {
-      clearTimeout(t);
-      media.removeEventListener('change', onMediaChange);
-    };
+    document.documentElement.classList.remove('dark');
+    try {
+      localStorage.removeItem(THEME_STORAGE_KEY);
+    } catch {
+      // Silencioso si no hay acceso a almacenamiento
+    }
   }, []);
 
-  const resolvedTheme: ResolvedTheme = theme === 'system' ? systemTheme : theme;
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (resolvedTheme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-  }, [resolvedTheme]);
-
-  const setTheme = useCallback((next: ThemePreference) => {
-    setThemeState(next);
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, next);
-    } catch {
-      // Silencioso
-    }
+  const setTheme = useCallback(() => {
+    document.documentElement.classList.remove('dark');
   }, []);
 
   const toggleTheme = useCallback(() => {
-    const next: ThemePreference = resolvedTheme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-  }, [resolvedTheme, setTheme]);
+    document.documentElement.classList.remove('dark');
+  }, []);
 
-  const value = useMemo(
-    () => ({ theme, resolvedTheme, setTheme, toggleTheme }),
-    [theme, resolvedTheme, setTheme, toggleTheme]
+  const value = useMemo<ThemeContextValue>(
+    () => ({ theme: 'light', resolvedTheme: 'light', setTheme, toggleTheme }),
+    [setTheme, toggleTheme]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

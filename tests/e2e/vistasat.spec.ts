@@ -18,17 +18,19 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     });
   });
 
-  test('1. Login demo, Dashboard con gráficos y cambio a Modo Oscuro', async ({ page }) => {
+  test('1. Login demo, Dashboard con gráficos y modo claro fijo (sin opción de modo oscuro)', async ({
+    page,
+  }) => {
     await loginAsCoordinator(page);
     await expect(page.getByText('Partes por Estado')).toBeVisible();
     await expect(page.getByText('Evolución Últimos 14 Días')).toBeVisible();
 
-    // Cambiar a Modo Oscuro desde el botón lateral
-    await page.getByRole('button', { name: /Cambiar a modo oscuro/i }).click();
-    await expect(page.locator('html')).toHaveClass(/dark/);
+    // Siempre modo claro y sin botón de modo oscuro
+    await expect(page.locator('html')).not.toHaveClass(/dark/);
+    await expect(page.getByRole('button', { name: /modo oscuro/i })).toHaveCount(0);
 
-    // Volver a claro
-    await page.getByRole('button', { name: /Cambiar a modo claro/i }).click();
+    await page.goto('/profile');
+    await expect(page.getByRole('heading', { name: 'Apariencia' })).toHaveCount(0);
     await expect(page.locator('html')).not.toHaveClass(/dark/);
   });
 

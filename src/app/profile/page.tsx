@@ -9,13 +9,10 @@ import {
   Download,
   KeyRound,
   LogOut,
-  Monitor,
-  Moon,
   RotateCcw,
   Send,
   Shield,
   Smartphone,
-  Sun,
   Trash2,
   User as UserIcon,
 } from 'lucide-react';
@@ -24,7 +21,6 @@ import { Button } from '@/components/ui/Button';
 import { NotificationPreferencesEditor } from '@/components/users/NotificationPreferencesEditor';
 import { useAuth } from '@/hooks/useAuth';
 import { usePWAInstall } from '@/hooks/usePWAInstall';
-import { useTheme, type ThemePreference } from '@/hooks/useTheme';
 import {
   changeOwnPassword,
   listPushSubscriptions,
@@ -86,7 +82,6 @@ function ProfileContentInner({
   refreshProfile: () => Promise<void>;
 }) {
   const { isInstalled, isIOSBrowser, canInstall, triggerInstall } = usePWAInstall();
-  const { theme, setTheme } = useTheme();
 
   const [fullName, setFullName] = useState(profile.full_name);
   const [phone, setPhone] = useState(profile.phone || '');
@@ -435,43 +430,6 @@ function ProfileContentInner({
           Actualizar contraseña
         </Button>
       </form>
-
-      {/* Apariencia / Modo Oscuro (M5) */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-3 border border-border/60">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
-          <Moon size={18} className="text-navy dark:text-sky-300" />
-          <h2 className="text-base font-bold text-charcoal">Apariencia</h2>
-        </div>
-        <p className="text-xs text-mid-grey">
-          Elige el tema visual de VistaSatPRO. En exteriores o de noche, el modo oscuro reduce la fatiga visual.
-        </p>
-        <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              { id: 'light', label: 'Claro', icon: Sun },
-              { id: 'dark', label: 'Oscuro', icon: Moon },
-              { id: 'system', label: 'Automático', icon: Monitor },
-            ] as Array<{ id: ThemePreference; label: string; icon: typeof Sun }>
-          ).map((opt) => {
-            const Icon = opt.icon;
-            const active = theme === opt.id;
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => setTheme(opt.id)}
-                className={`py-2.5 px-3 border text-xs font-bold flex items-center justify-center gap-1.5 min-h-[44px] transition-colors ${
-                  active
-                    ? 'bg-navy text-white border-navy'
-                    : 'bg-off-white text-dark-grey border-border hover:bg-navy/5'
-                }`}
-              >
-                <Icon size={15} /> {opt.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       {/* Dispositivos Push (vinculación de dispositivo propio para entrega con la app cerrada) */}
       <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-3 border border-border/60">

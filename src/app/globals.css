@@ -48,6 +48,7 @@
 
 /* ─── Variables CSS globales (Safe Area & Layout) ───────────────────────────── */
 :root {
+  color-scheme: light;
   --safe-top:    env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left:   env(safe-area-inset-left, 0px);
@@ -55,20 +56,6 @@
 
   --tab-bar-height: calc(64px + var(--safe-bottom));
   --header-height:  calc(56px + var(--safe-top));
-}
-
-html.dark {
-  color-scheme: dark;
-  --color-off-white:  #0F1420;
-  --color-surface:    #182032;
-  --color-bg-input:   #111827;
-  --color-border:     #2A354D;
-  --color-charcoal:   #F1F5F9;
-  --color-dark-grey:  #CBD5E1;
-  --color-mid-grey:   #94A3B8;
-  --color-light-grey: #64748B;
-  --shadow-card:      6px 6px 18px 0px rgba(0, 0, 0, 0.35);
-  --shadow-nav:       0px 2px 10px 0px rgba(0, 0, 0, 0.45);
 }
 
 @keyframes pulse-urgent {
