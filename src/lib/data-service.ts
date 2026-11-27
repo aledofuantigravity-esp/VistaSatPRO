@@ -1,6 +1,7 @@
 import { getSupabaseBrowserClient } from './supabase/client';
 import { isSupabaseConfigured } from './supabase/config';
 import { loadDemoState, saveDemoState } from './demo-store';
+import { captureMonitoringError } from './monitoring';
 import {
   enqueueOfflineAction,
   getPendingOfflineActions,
@@ -15,6 +16,7 @@ import {
   type Profile,
   type PushSubscriptionRecord,
   type Task,
+  type TaskComment,
   type TaskHistoryItem,
   type TaskPriority,
   type TaskStatus,
@@ -334,7 +336,7 @@ export async function listTasks(
   let query = supabase
     .from('tasks')
     .select(
-      '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*), deleter:profiles!tasks_deleted_by_fkey(*)'
+      '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*), deleter:profiles!tasks_deleted_by_fkey(*), attachments(id)'
     )
     .order('created_at', { ascending: false });
 
@@ -352,29 +354,48 @@ export async function listTasks(
           '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*)'
         )
         .order('created_at', { ascending: false });
-      if (legacy.error) throw new Error(legacy.error.message);
+      if (legacy.error) {
+        captureMonitoringError(legacy.error, { scope: 'listTasks.legacy' });
+        throw new Error(legacy.error.message);
+      }
       return (legacy.data || []) as Task[];
     }
+    captureMonitoringError(error, { scope: 'listTasks' });
     throw new Error(error.message);
   }
-  return (data || []) as Task[];
+
+  return ((data || []) as Array<Task & { attachments?: Array<{ id: string }> }>).map((row) => {
+    const { attachments: rawAtts, ...rest } = row;
+    return {
+      ...rest,
+      attachment_count: Array.isArray(rawAtts) ? rawAtts.length : 0,
+    };
+  });
 }
 
 export async function getTaskDetail(taskId: string): Promise<{
   task: Task | null;
   history: TaskHistoryItem[];
   attachments: Attachment[];
+  comments: TaskComment[];
 }> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
-    return demoGet<{
+    const res = await demoGet<{
       task: Task | null;
       history: TaskHistoryItem[];
       attachments: Attachment[];
+      comments?: TaskComment[];
     }>(`resource=task_detail&taskId=${encodeURIComponent(taskId)}`);
+    return {
+      task: res.task,
+      history: res.history,
+      attachments: res.attachments,
+      comments: res.comments || [],
+    };
   }
 
-  const [initialTaskRes, histRes, attRes] = await Promise.all([
+  const [initialTaskRes, histRes, attRes, commentsRes] = await Promise.all([
     supabase
       .from('tasks')
       .select(
@@ -392,6 +413,11 @@ export async function getTaskDetail(taskId: string): Promise<{
       .select('*')
       .eq('task_id', taskId)
       .order('created_at', { ascending: false }),
+    supabase
+      .from('task_comments')
+      .select('*, author:profiles(*)')
+      .eq('task_id', taskId)
+      .order('created_at', { ascending: true }),
   ]);
 
   let taskRes = initialTaskRes;
@@ -410,7 +436,7 @@ export async function getTaskDetail(taskId: string): Promise<{
       .single()) as unknown as typeof initialTaskRes;
   }
 
-  if (taskRes.error) return { task: null, history: [], attachments: [] };
+  if (taskRes.error) return { task: null, history: [], attachments: [], comments: [] };
 
   const taskData = taskRes.data as Task;
   const rawAttachments = (attRes.data || []) as Attachment[];
@@ -443,6 +469,7 @@ export async function getTaskDetail(taskId: string): Promise<{
     task: taskData,
     history: (histRes.data || []) as TaskHistoryItem[],
     attachments: signedAttachments,
+    comments: commentsRes.error ? [] : ((commentsRes.data || []) as TaskComment[]),
   };
 }
 
@@ -459,6 +486,7 @@ export async function createTask(
     priority: TaskPriority;
     assigned_to?: string | null;
     estimated_duration?: number | null;
+    due_date?: string | null;
   },
   actor: Profile
 ): Promise<Task> {
@@ -478,7 +506,7 @@ export async function createTask(
     return data.task;
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('tasks')
     .insert({
       ...normalizedInput,
@@ -489,7 +517,29 @@ export async function createTask(
     })
     .select('*, customer:customers(name)')
     .single();
-  if (error) throw new Error(error.message);
+
+  if (error && (error.code === '42703' || error.message.includes('due_date'))) {
+    const { due_date: _omitDue, ...legacyPayload } = normalizedInput;
+    void _omitDue;
+    const retry = await supabase
+      .from('tasks')
+      .insert({
+        ...legacyPayload,
+        code: '',
+        status: initialStatus,
+        assigned_at: effectiveAssignedTo ? new Date().toISOString() : null,
+        created_by: actor.id,
+      })
+      .select('*, customer:customers(name)')
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error) {
+    captureMonitoringError(error, { scope: 'createTask' });
+    throw new Error(error.message);
+  }
 
   const created = data as Task;
   await triggerPushEndpoint({
@@ -620,6 +670,7 @@ export async function updateTaskFields(
     status: TaskStatus;
     assigned_to: string | null;
     estimated_duration: number | null;
+    due_date: string | null;
     materials_used: MaterialItem[];
     client_signature_url: string | null;
     signer_name: string | null;
@@ -639,13 +690,31 @@ export async function updateTaskFields(
     return;
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('tasks')
     .update(patch)
     .eq('id', taskId)
     .select('code')
     .single();
-  if (error) throw new Error(error.message);
+
+  if (error && (error.code === '42703' || error.message.includes('due_date'))) {
+    const { due_date: _omitDue, ...legacyPatch } = patch;
+    void _omitDue;
+    if (Object.keys(legacyPatch).length === 0) return;
+    const retry = await supabase
+      .from('tasks')
+      .update(legacyPatch)
+      .eq('id', taskId)
+      .select('code')
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error || !data) {
+    captureMonitoringError(error, { scope: 'updateTaskFields', taskId });
+    throw new Error(error?.message || 'Error actualizando el parte');
+  }
 
   if (patch.materials_used) {
     await supabase.from('task_history').insert({
@@ -875,6 +944,214 @@ export async function uploadTaskAttachment(
     att.public_url = signedData.signedUrl;
   }
   return att;
+}
+
+export async function deleteTaskAttachment(
+  taskId: string,
+  attachment: Attachment,
+  actor: Profile
+): Promise<void> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    await demoPost({
+      action: 'delete_attachment',
+      taskId,
+      attachmentId: attachment.id,
+      actorId: actor.id,
+    });
+    return;
+  }
+
+  if (attachment.storage_path && !attachment.storage_path.startsWith('demo/')) {
+    await supabase.storage.from('task-attachments').remove([attachment.storage_path]);
+  }
+
+  const { error } = await supabase.from('attachments').delete().eq('id', attachment.id);
+  if (error) {
+    captureMonitoringError(error, { scope: 'deleteTaskAttachment', taskId });
+    throw new Error(error.message);
+  }
+
+  await supabase.from('task_history').insert({
+    task_id: taskId,
+    actor_id: actor.id,
+    event_type: 'field_updated',
+    field_name: 'attachments',
+    old_value: attachment.file_name,
+    note: `Fotografía eliminada (${attachment.file_name})`,
+  });
+}
+
+// ─── COMENTARIOS / CHAT INTERNO DEL PARTE (M4) ───────────────────────────────
+
+export async function listTaskComments(taskId: string): Promise<TaskComment[]> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    const res = await demoGet<{ comments?: TaskComment[] }>(
+      `resource=task_detail&taskId=${encodeURIComponent(taskId)}`
+    );
+    return res.comments || [];
+  }
+
+  const { data, error } = await supabase
+    .from('task_comments')
+    .select('*, author:profiles(*)')
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: true });
+
+  if (error) return [];
+  return (data || []) as TaskComment[];
+}
+
+export async function addTaskComment(
+  taskId: string,
+  body: string,
+  actor: Profile
+): Promise<TaskComment> {
+  const cleanBody = body.trim();
+  if (!cleanBody) throw new Error('Escribe un mensaje antes de enviarlo.');
+
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    const res = await demoPost<{ comment: TaskComment }>({
+      action: 'add_task_comment',
+      taskId,
+      body: cleanBody,
+      actorId: actor.id,
+    });
+    return res.comment;
+  }
+
+  const { data, error } = await supabase
+    .from('task_comments')
+    .insert({
+      task_id: taskId,
+      author_id: actor.id,
+      body: cleanBody,
+    })
+    .select('*, author:profiles(*)')
+    .single();
+
+  if (error) {
+    captureMonitoringError(error, { scope: 'addTaskComment', taskId });
+    throw new Error(
+      error.code === '42P01' || error.code === 'PGRST205'
+        ? 'Falta aplicar la migración 0004 en Supabase para activar comentarios internos.'
+        : error.message
+    );
+  }
+
+  const { data: taskRow } = await supabase
+    .from('tasks')
+    .select('code')
+    .eq('id', taskId)
+    .single();
+
+  await triggerPushEndpoint({
+    taskId,
+    actorId: actor.id,
+    type: 'comment_added',
+    title: `Nuevo mensaje en ${taskRow?.code || 'parte'}`,
+    body: `${actor.full_name}: "${cleanBody.slice(0, 90)}"`,
+  });
+
+  return data as TaskComment;
+}
+
+// ─── BÚSQUEDA GLOBAL (M3) ────────────────────────────────────────────────────
+
+export interface GlobalSearchResults {
+  tasks: Task[];
+  customers: Customer[];
+  profiles: Profile[];
+}
+
+export async function globalSearch(
+  query: string,
+  viewer: Profile
+): Promise<GlobalSearchResults> {
+  const clean = query.trim();
+  if (clean.length < 2) {
+    return { tasks: [], customers: [], profiles: [] };
+  }
+
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    return demoGet<GlobalSearchResults>(
+      `resource=search&userId=${encodeURIComponent(viewer.id)}&q=${encodeURIComponent(clean)}`
+    );
+  }
+
+  const safePattern = `%${clean.replace(/[%_]/g, '')}%`;
+  const isCoord = viewer.role === 'admin' || viewer.role === 'coordinator';
+
+  const [tasksRes, custRes, profRes] = await Promise.all([
+    supabase
+      .from('tasks')
+      .select('*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*)')
+      .is('deleted_at', null)
+      .or(
+        `code.ilike.${safePattern},equipment_ref.ilike.${safePattern},equipment_sn.ilike.${safePattern},problem_desc.ilike.${safePattern},site_address.ilike.${safePattern},site_city.ilike.${safePattern}`
+      )
+      .order('created_at', { ascending: false })
+      .limit(8),
+    supabase
+      .from('customers')
+      .select('*')
+      .or(
+        `name.ilike.${safePattern},tax_id.ilike.${safePattern},city.ilike.${safePattern},contact_name.ilike.${safePattern}`
+      )
+      .order('name', { ascending: true })
+      .limit(6),
+    isCoord
+      ? supabase
+          .from('profiles')
+          .select('*')
+          .or(`full_name.ilike.${safePattern},email.ilike.${safePattern},phone.ilike.${safePattern}`)
+          .order('full_name', { ascending: true })
+          .limit(5)
+      : Promise.resolve({ data: [] as Profile[], error: null }),
+  ]);
+
+  let resolvedTasks = (tasksRes.data || []) as Task[];
+  if (
+    tasksRes.error &&
+    (tasksRes.error.code === '42703' || tasksRes.error.message.includes('deleted_at'))
+  ) {
+    const legacy = await supabase
+      .from('tasks')
+      .select('*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*)')
+      .or(
+        `code.ilike.${safePattern},equipment_ref.ilike.${safePattern},equipment_sn.ilike.${safePattern},problem_desc.ilike.${safePattern},site_address.ilike.${safePattern},site_city.ilike.${safePattern}`
+      )
+      .limit(8);
+    resolvedTasks = (legacy.data || []) as Task[];
+  }
+
+  const matchedCustomers = (custRes.data || []) as Customer[];
+  if (matchedCustomers.length > 0 && resolvedTasks.length < 8) {
+    const custIds = matchedCustomers.map((c) => c.id);
+    const { data: byCustomer } = await supabase
+      .from('tasks')
+      .select('*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*)')
+      .in('customer_id', custIds)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    const seenIds = new Set(resolvedTasks.map((t) => t.id));
+    for (const row of (byCustomer || []) as Task[]) {
+      if (!seenIds.has(row.id)) {
+        resolvedTasks.push(row);
+        seenIds.add(row.id);
+      }
+    }
+  }
+
+  return {
+    tasks: resolvedTasks.slice(0, 8),
+    customers: matchedCustomers,
+    profiles: (profRes.data || []) as Profile[],
+  };
 }
 
 // ─── NOTIFICACIONES IN-APP & PUSH SUBSCRIPTIONS ──────────────────────────────

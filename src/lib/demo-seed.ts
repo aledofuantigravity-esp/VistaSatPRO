@@ -6,6 +6,7 @@ import type {
   Profile,
   PushSubscriptionRecord,
   Task,
+  TaskComment,
   TaskHistoryItem,
 } from '@/types/database';
 
@@ -15,6 +16,7 @@ export interface DemoDatabaseState {
   customers: Customer[];
   tasks: Task[];
   history: TaskHistoryItem[];
+  comments: TaskComment[];
   attachments: Attachment[];
   pushSubscriptions: PushSubscriptionRecord[];
   notifications: AppNotification[];
@@ -29,6 +31,7 @@ export interface DemoDatabaseState {
 export function createInitialDemoState(): DemoDatabaseState {
   const now = Date.now();
   const hoursAgo = (h: number) => new Date(now - h * 3600 * 1000).toISOString();
+  const hoursFromNow = (h: number) => new Date(now + h * 3600 * 1000).toISOString();
 
   const profiles: Profile[] = [
     {
@@ -179,6 +182,7 @@ export function createInitialDemoState(): DemoDatabaseState {
       pdf_url: null,
       completed_at: null,
       estimated_duration: 120,
+      due_date: hoursAgo(2),
       created_by: 'user-coord-1',
       created_at: hoursAgo(6),
       updated_at: hoursAgo(1),
@@ -205,6 +209,7 @@ export function createInitialDemoState(): DemoDatabaseState {
       pdf_url: null,
       completed_at: null,
       estimated_duration: 60,
+      due_date: hoursFromNow(2),
       created_by: 'user-coord-1',
       created_at: hoursAgo(3.5),
       updated_at: hoursAgo(3),
@@ -231,6 +236,7 @@ export function createInitialDemoState(): DemoDatabaseState {
       pdf_url: null,
       completed_at: null,
       estimated_duration: 90,
+      due_date: hoursFromNow(36),
       created_by: 'user-admin-1',
       created_at: hoursAgo(2),
       updated_at: hoursAgo(2),
@@ -352,6 +358,23 @@ export function createInitialDemoState(): DemoDatabaseState {
     },
   ];
 
+  const comments: TaskComment[] = [
+    {
+      id: 'comm-1',
+      task_id: 'task-1',
+      author_id: 'user-coord-1',
+      body: 'Roberto confirma que tienen acceso a la sala de máquinas hasta las 18:30.',
+      created_at: hoursAgo(4.5),
+    },
+    {
+      id: 'comm-2',
+      task_id: 'task-1',
+      author_id: 'user-tech-1',
+      body: 'Recibido. Estoy limpiando condensador y calibrando el transductor.',
+      created_at: hoursAgo(1.2),
+    },
+  ];
+
   const notifications: AppNotification[] = [
     {
       id: 'notif-1',
@@ -405,6 +428,7 @@ export function createInitialDemoState(): DemoDatabaseState {
     customers,
     tasks,
     history,
+    comments,
     attachments: [],
     pushSubscriptions: [],
     notifications,
@@ -489,5 +513,6 @@ export function hydrateTasks(state: DemoDatabaseState, tasks: Task[]): Task[] {
     assignee: t.assigned_to ? state.profiles.find((p) => p.id === t.assigned_to) || null : null,
     creator: state.profiles.find((p) => p.id === t.created_by) || null,
     deleter: t.deleted_by ? state.profiles.find((p) => p.id === t.deleted_by) || null : null,
+    attachment_count: state.attachments.filter((a) => a.task_id === t.id).length,
   }));
 }

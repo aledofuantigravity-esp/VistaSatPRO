@@ -13,29 +13,47 @@ import {
   CloudOff,
   Home,
   LogOut,
+  Moon,
   PlusCircle,
+  Search,
+  Sun,
   User,
   Users,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useTheme } from '@/hooks/useTheme';
 import { getPendingOfflineActions } from '@/lib/offline-queue';
 import { OfflineBanner } from '@/components/pwa/OfflineBanner';
 import { SWUpdateBanner } from '@/components/pwa/SWUpdateBanner';
 import { InstallBanner } from '@/components/pwa/InstallBanner';
 import { InstallGuideSheet } from '@/components/pwa/InstallGuideSheet';
+import { GlobalSearch } from '@/components/layout/GlobalSearch';
 import { NotificationToast } from '@/components/ui/NotificationToast';
 import { ROLE_LABELS } from '@/types/database';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { profile, isLoading, isDemoMode, signOut } = useAuth();
   const { unreadCount, latestToast, dismissToast } = useNotifications();
+  const { resolvedTheme, toggleTheme } = useTheme();
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [pendingQueueCount, setPendingQueueCount] = useState(0);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const redirectedRef = useRef(false);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   useEffect(() => {
     if (!isLoading && !profile && !redirectedRef.current) {
@@ -128,6 +146,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
+        {/* Botón Búsqueda Global (Ctrl+K) */}
+        <div className="px-2 pt-3">
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-semibold text-white/90 transition-colors"
+            aria-label="Buscar en toda la aplicación"
+          >
+            <Search size={16} className="flex-shrink-0 text-magenta" />
+            {!sidebarCollapsed && (
+              <>
+                <span className="truncate">Buscar...</span>
+                <kbd className="ml-auto text-[10px] px-1.5 py-0.5 bg-black/25 text-white/75 rounded-xs">
+                  Ctrl+K
+                </kbd>
+              </>
+            )}
+          </button>
+        </div>
+
         {/* Links */}
         <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
           {desktopLinks.map((item) => {
@@ -160,13 +198,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Footer usuario */}
-        <div className="p-3 border-t border-white/10">
+        <div className="p-3 border-t border-white/10 space-y-1">
           {!sidebarCollapsed && (
-            <div className="px-2 py-2 mb-2">
+            <div className="px-2 py-2 mb-1">
               <p className="text-sm font-bold truncate">{profile.full_name}</p>
               <p className="text-xs text-white/60 truncate">{ROLE_LABELS[profile.role]}</p>
             </div>
           )}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition-colors"
+            aria-label={resolvedTheme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+          >
+            {resolvedTheme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+            {!sidebarCollapsed && (
+              <span>{resolvedTheme === 'dark' ? 'Modo claro' : 'Modo oscuro'}</span>
+            )}
+          </button>
           <button
             onClick={signOut}
             className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-white/80 hover:bg-magenta hover:text-white transition-colors"
@@ -198,7 +247,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {pendingQueueCount > 0 && (
               <span
                 title={`${pendingQueueCount} cambios pendientes de sincronizar`}
@@ -208,6 +257,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {pendingQueueCount}
               </span>
             )}
+
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="p-2 text-white hover:bg-white/10 rounded-full"
+              aria-label="Búsqueda global"
+            >
+              <Search size={19} />
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="p-2 text-white hover:bg-white/10 rounded-full"
+              aria-label={resolvedTheme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
+            >
+              {resolvedTheme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
+            </button>
 
             <Link
               href="/notifications"
@@ -232,7 +299,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ─── TAB BAR INFERIOR MÓVIL (Fija) ───────────────────────────────── */}
       <nav
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-border shadow-nav grid"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-surface border-t border-border shadow-nav grid"
         style={{
           gridTemplateColumns: `repeat(${mobileTabs.length}, minmax(0, 1fr))`,
           paddingBottom: 'var(--safe-bottom)',
@@ -246,7 +313,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               key={tab.href}
               href={tab.href}
               className={`flex flex-col items-center justify-center py-2 min-h-[60px] relative transition-colors ${
-                active ? 'text-navy font-bold' : 'text-mid-grey font-medium'
+                active ? 'text-navy dark:text-white font-bold' : 'text-mid-grey font-medium'
               }`}
             >
               {active && (
@@ -266,6 +333,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         })}
       </nav>
 
+      <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
       <NotificationToast notification={latestToast} onDismiss={dismissToast} />
       <InstallBanner />
       <InstallGuideSheet />

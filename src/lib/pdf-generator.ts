@@ -247,3 +247,225 @@ export async function downloadTaskPDF(task: Task, history: TaskHistoryItem[]) {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
+
+export interface ReportPdfInput {
+  filters: {
+    dateFrom?: string;
+    dateTo?: string;
+    technicianName?: string;
+    customerName?: string;
+    statusLabel?: string;
+  };
+  kpis: {
+    total: number;
+    completed: number;
+    open: number;
+    closeRate: number;
+    avgHours: string;
+  };
+  techStats: Array<{
+    name: string;
+    total: number;
+    completed: number;
+    rate: number;
+    avgHours: string;
+  }>;
+  topCustomers: Array<{
+    name: string;
+    total: number;
+    open: number;
+  }>;
+  tasks: Task[];
+}
+
+/**
+ * Genera y descarga un informe operativo SAT en formato PDF con filtros, KPIs y tablas.
+ */
+export function downloadReportPDF(input: ReportPdfInput): void {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let y = 0;
+
+  // Cabecera corporativa
+  doc.setFillColor(0, 33, 105);
+  doc.rect(0, 0, pageWidth, 32, 'F');
+  doc.setFillColor(207, 9, 94);
+  doc.rect(0, 32, pageWidth, 2.5, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('VistaSatPRO', 14, 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text('INFORME OPERATIVO DE SERVICIO TÉCNICO (SAT)', 14, 23);
+
+  doc.setFontSize(9);
+  doc.text(
+    `Generado: ${new Date().toLocaleDateString('es-ES')}`,
+    pageWidth - 14,
+    23,
+    { align: 'right' }
+  );
+
+  y = 43;
+
+  const ensureSpace = (needed = 16) => {
+    if (y + needed > 276) {
+      doc.addPage();
+      y = 20;
+    }
+  };
+
+  const addSection = (title: string) => {
+    ensureSpace(16);
+    doc.setFillColor(248, 247, 247);
+    doc.rect(14, y - 5, pageWidth - 28, 8, 'F');
+    doc.setDrawColor(0, 33, 105);
+    doc.setLineWidth(0.8);
+    doc.line(14, y - 5, 14, y + 3);
+    doc.setTextColor(0, 33, 105);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(title.toUpperCase(), 18, y + 0.5);
+    y += 10;
+  };
+
+  // Resumen de filtros
+  addSection('1. Alcance y Filtros Aplicados');
+  const filterParts = [
+    input.filters.dateFrom ? `Desde: ${input.filters.dateFrom}` : 'Desde: inicio',
+    input.filters.dateTo ? `Hasta: ${input.filters.dateTo}` : 'Hasta: hoy',
+    `Técnico: ${input.filters.technicianName || 'Todos'}`,
+    `Cliente: ${input.filters.customerName || 'Todos'}`,
+    `Estado: ${input.filters.statusLabel || 'Todos'}`,
+  ];
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.8);
+  doc.setTextColor(53, 55, 64);
+  const filterLines = doc.splitTextToSize(filterParts.join(' · '), pageWidth - 28);
+  doc.text(filterLines, 14, y);
+  y += filterLines.length * 4.8 + 4;
+
+  // KPIs
+  addSection('2. Resumen Ejecutivo del Período');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(34, 34, 34);
+  doc.text(
+    `Total partes: ${input.kpis.total}   |   Completados: ${input.kpis.completed}   |   Abiertos: ${input.kpis.open}   |   Tasa cierre: ${input.kpis.closeRate}%   |   Tiempo medio: ${input.kpis.avgHours}h`,
+    14,
+    y
+  );
+  y += 10;
+
+  // Rendimiento por técnico
+  if (input.techStats.length > 0) {
+    addSection('3. Rendimiento por Técnico');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(102, 102, 102);
+    doc.text('Técnico', 14, y);
+    doc.text('Totales', 105, y, { align: 'right' });
+    doc.text('Cerrados', 132, y, { align: 'right' });
+    doc.text('Tasa', 158, y, { align: 'right' });
+    doc.text('Ø Resol.', pageWidth - 14, y, { align: 'right' });
+    y += 2;
+    doc.setDrawColor(221, 221, 221);
+    doc.line(14, y, pageWidth - 14, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(34, 34, 34);
+    for (const row of input.techStats) {
+      ensureSpace(8);
+      doc.text(row.name.slice(0, 40), 14, y);
+      doc.text(String(row.total), 105, y, { align: 'right' });
+      doc.text(String(row.completed), 132, y, { align: 'right' });
+      doc.text(`${row.rate}%`, 158, y, { align: 'right' });
+      doc.text(row.avgHours === '—' ? '—' : `${row.avgHours}h`, pageWidth - 14, y, {
+        align: 'right',
+      });
+      y += 6;
+    }
+    y += 4;
+  }
+
+  // Top clientes
+  if (input.topCustomers.length > 0) {
+    addSection('4. Volumen por Cliente (Top 10)');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(102, 102, 102);
+    doc.text('Cliente', 14, y);
+    doc.text('Total Partes', 150, y, { align: 'right' });
+    doc.text('Abiertos', pageWidth - 14, y, { align: 'right' });
+    y += 2;
+    doc.line(14, y, pageWidth - 14, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(34, 34, 34);
+    for (const row of input.topCustomers) {
+      ensureSpace(8);
+      doc.text(row.name.slice(0, 55), 14, y);
+      doc.text(String(row.total), 150, y, { align: 'right' });
+      doc.text(String(row.open), pageWidth - 14, y, { align: 'right' });
+      y += 6;
+    }
+    y += 4;
+  }
+
+  // Detalle de partes filtrados (máx 40)
+  if (input.tasks.length > 0) {
+    addSection(`5. Listado de Partes (${Math.min(40, input.tasks.length)} de ${input.tasks.length})`);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(102, 102, 102);
+    doc.text('Código', 14, y);
+    doc.text('Cliente', 42, y);
+    doc.text('Estado', 112, y);
+    doc.text('Técnico', 145, y);
+    doc.text('Fecha', pageWidth - 14, y, { align: 'right' });
+    y += 2;
+    doc.line(14, y, pageWidth - 14, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(34, 34, 34);
+    for (const t of input.tasks.slice(0, 40)) {
+      ensureSpace(7);
+      doc.text(t.code, 14, y);
+      doc.text((t.customer?.name || 'Cliente').slice(0, 30), 42, y);
+      doc.text(TASK_STATUS_META[t.status]?.label || t.status, 112, y);
+      doc.text((t.assignee?.full_name || 'Sin asignar').slice(0, 22), 145, y);
+      doc.text(new Date(t.created_at).toLocaleDateString('es-ES'), pageWidth - 14, y, {
+        align: 'right',
+      });
+      y += 5.5;
+    }
+  }
+
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(155, 155, 155);
+    doc.text(
+      `VistaSatPRO · Informe Operativo SAT · Pág. ${i}/${pageCount}`,
+      pageWidth / 2,
+      290,
+      { align: 'center' }
+    );
+  }
+
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `VistaSatPRO_informe_SAT_${new Date().toISOString().slice(0, 10)}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}

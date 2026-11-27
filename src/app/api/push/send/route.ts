@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { isVapidConfigured } from '@/lib/supabase/config';
+import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
+import { captureMonitoringError } from '@/lib/monitoring';
 
 if (
   isVapidConfigured() &&
@@ -46,6 +48,11 @@ const pushPayloadSchema = z.union([
  */
 export async function POST(request: Request) {
   try {
+    const rl = await checkRateLimit(`push:${getClientIp(request)}`, 20, 60_000);
+    if (!rl.allowed) {
+      return rateLimitExceededResponse(rl);
+    }
+
     const supabaseAdmin = getSupabaseAdminClient();
     const supabaseServer = await getSupabaseServerClient();
 
@@ -250,6 +257,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, recipients: recipients.length, pushCount });
   } catch (error) {
+    captureMonitoringError(error, { route: '/api/push/send' });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error enviando notificación' },
       { status: 500 }

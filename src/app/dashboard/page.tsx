@@ -14,13 +14,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { listProfiles, listTasks } from '@/lib/data-service';
+import { getSlaStatus } from '@/lib/sla';
+import { DashboardCharts } from '@/components/dashboard/DashboardCharts';
 import { TaskCard } from '@/components/ui/TaskCard';
 import { Button } from '@/components/ui/Button';
 import {
-  TASK_STATUS_META,
   type Profile,
   type Task,
-  type TaskStatus,
 } from '@/types/database';
 
 export default function DashboardPage() {
@@ -75,6 +75,7 @@ export default function DashboardPage() {
     const urgent = active.filter(
       (t) => t.priority === 'urgent' || t.priority === 'high'
     );
+    const overdueCount = active.filter((t) => getSlaStatus(t)?.state === 'overdue').length;
 
     const resolvedDurations = completed
       .filter((t) => t.completed_at)
@@ -89,6 +90,8 @@ export default function DashboardPage() {
             resolvedDurations.reduce((a, b) => a + b, 0) / resolvedDurations.length
           ).toFixed(1)
         : '—';
+    const closeRate =
+      tasks.length > 0 ? Math.round((completed.length / tasks.length) * 100) : 0;
 
     return {
       total: tasks.length,
@@ -97,6 +100,8 @@ export default function DashboardPage() {
       inProgressCount: inProgress.length,
       completedCount: completed.length,
       urgentCount: urgent.length,
+      overdueCount,
+      closeRate,
       avgHours,
     };
   }, [tasks]);
@@ -106,38 +111,12 @@ export default function DashboardPage() {
       (t) => t.status !== 'completed' && t.status !== 'cancelled'
     );
     const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
-    return [...active].sort(
-      (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]
-    );
-  }, [tasks]);
-
-  const technicianWorkload = useMemo(() => {
-    if (!isCoord) return [];
-    const techs = profiles.filter((p) => p.role === 'technician' && p.is_active);
-    return techs.map((tech) => {
-      const assigned = tasks.filter((t) => t.assigned_to === tech.id);
-      const open = assigned.filter(
-        (t) => t.status !== 'completed' && t.status !== 'cancelled'
-      ).length;
-      const done = assigned.filter((t) => t.status === 'completed').length;
-      return { tech, open, done, total: assigned.length };
+    return [...active].sort((a, b) => {
+      const aOver = getSlaStatus(a)?.state === 'overdue' ? 0 : 1;
+      const bOver = getSlaStatus(b)?.state === 'overdue' ? 0 : 1;
+      if (aOver !== bOver) return aOver - bOver;
+      return priorityOrder[a.priority] - priorityOrder[b.priority];
     });
-  }, [isCoord, profiles, tasks]);
-
-  const statusBreakdown = useMemo(() => {
-    const statuses: TaskStatus[] = [
-      'pending',
-      'assigned',
-      'en_route',
-      'in_progress',
-      'on_hold',
-      'completed',
-    ];
-    return statuses.map((st) => ({
-      status: st,
-      meta: TASK_STATUS_META[st],
-      count: tasks.filter((t) => t.status === st).length,
-    }));
   }, [tasks]);
 
   if (!profile) return null;
@@ -206,82 +185,22 @@ export default function DashboardPage() {
           colorClass="bg-navy"
         />
         <KPICard
-          label="Urgentes / Alta"
+          label={metrics.overdueCount > 0 ? `Urgentes (${metrics.overdueCount} SLA venc.)` : 'Urgentes / Alta'}
           value={loading ? '…' : String(metrics.urgentCount)}
           icon={<AlertTriangle size={20} />}
-          colorClass="bg-magenta"
+          colorClass={metrics.overdueCount > 0 ? 'bg-danger' : 'bg-magenta'}
         />
         <KPICard
-          label={isCoord ? `Resueltos (Ø ${metrics.avgHours}h)` : 'Completados'}
+          label={`Cierre ${metrics.closeRate}% · Ø ${metrics.avgHours}h`}
           value={loading ? '…' : String(metrics.completedCount)}
           icon={<CheckCircle2 size={20} />}
           colorClass="bg-success"
         />
       </div>
 
-      {/* Gráficos operativos (solo Coordinador / Admin) */}
-      {isCoord && !loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Carga por técnico */}
-          <div className="bg-white rounded-md shadow-card p-5 border border-border/60">
-            <h2 className="text-base font-bold text-charcoal mb-4">
-              Carga de Partes por Técnico
-            </h2>
-            {technicianWorkload.length === 0 ? (
-              <p className="text-sm text-mid-grey">No hay técnicos activos registrados.</p>
-            ) : (
-              <div className="space-y-3.5">
-                {technicianWorkload.map(({ tech, open, done }) => {
-                  const maxVal = Math.max(
-                    1,
-                    ...technicianWorkload.map((w) => w.open + w.done)
-                  );
-                  const openPct = Math.round((open / maxVal) * 100);
-                  const donePct = Math.round((done / maxVal) * 100);
-                  return (
-                    <div key={tech.id}>
-                      <div className="flex items-center justify-between text-xs font-semibold mb-1">
-                        <span className="text-charcoal">{tech.full_name}</span>
-                        <span className="text-mid-grey">
-                          {open} activos · {done} cerrados
-                        </span>
-                      </div>
-                      <div className="w-full h-3 bg-off-white rounded-full overflow-hidden flex">
-                        <div
-                          className="h-full bg-navy transition-all"
-                          style={{ width: `${openPct}%` }}
-                        />
-                        <div
-                          className="h-full bg-success transition-all"
-                          style={{ width: `${donePct}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Distribución por estado */}
-          <div className="bg-white rounded-md shadow-card p-5 border border-border/60">
-            <h2 className="text-base font-bold text-charcoal mb-4">
-              Distribución por Estado
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {statusBreakdown.map(({ status, meta, count }) => (
-                <div
-                  key={status}
-                  className="p-3 bg-off-white rounded-sm border-l-4"
-                  style={{ borderLeftColor: meta.color }}
-                >
-                  <p className="text-lg font-bold text-charcoal">{count}</p>
-                  <p className="text-xs font-semibold text-mid-grey">{meta.label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {/* Gráficos interactivos reales (Recharts) */}
+      {!loading && (
+        <DashboardCharts tasks={tasks} profiles={profiles} isCoord={isCoord} />
       )}
 
       {/* Listado prioritario de partes */}
@@ -301,11 +220,11 @@ export default function DashboardPage() {
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[1, 2].map((i) => (
-              <div key={i} className="h-40 bg-white rounded-md animate-pulse shadow-card" />
+              <div key={i} className="h-40 bg-white dark:bg-surface rounded-md animate-pulse shadow-card" />
             ))}
           </div>
         ) : urgentSpotlight.length === 0 ? (
-          <div className="bg-white rounded-md p-8 text-center shadow-card">
+          <div className="bg-white dark:bg-surface rounded-md p-8 text-center shadow-card">
             <CheckCircle2 size={32} className="text-success mx-auto mb-2" />
             <p className="font-bold text-charcoal">Todo al día</p>
             <p className="text-sm text-mid-grey mt-1">
@@ -336,7 +255,7 @@ function KPICard({
   colorClass: string;
 }) {
   return (
-    <div className="bg-white rounded-md shadow-card p-4 border border-border/50">
+    <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 border border-border/50">
       <div className={`inline-flex p-2.5 rounded-sm ${colorClass} text-white mb-2.5`}>
         {icon}
       </div>

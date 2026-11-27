@@ -223,7 +223,7 @@ function UsersContent() {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 bg-white rounded-md animate-pulse shadow-card" />
+            <div key={i} className="h-24 bg-white dark:bg-surface rounded-md animate-pulse shadow-card" />
           ))}
         </div>
       ) : (
@@ -240,7 +240,7 @@ function UsersContent() {
             return (
               <div
                 key={u.id}
-                className={`bg-white rounded-md shadow-card p-4 border-l-4 ${
+                className={`bg-white dark:bg-surface rounded-md shadow-card p-4 border-l-4 ${
                   u.is_active ? 'border-navy' : 'border-light-grey opacity-65'
                 }`}
               >
@@ -282,7 +282,7 @@ function UsersContent() {
                     </div>
                   </div>
 
-                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-navy/10 text-navy text-xs font-bold rounded-sm flex-shrink-0">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-navy/10 dark:bg-white/10 text-navy dark:text-sky-300 text-xs font-bold rounded-sm flex-shrink-0">
                     {u.role === 'technician' ? <Wrench size={12} /> : <UserCheck size={12} />}
                     {ROLE_LABELS[u.role]}
                   </span>
@@ -297,7 +297,7 @@ function UsersContent() {
                     <button
                       type="button"
                       onClick={() => openEditModal(u)}
-                      className="px-2.5 py-1.5 text-xs font-bold border border-border hover:bg-off-white inline-flex items-center gap-1 text-navy"
+                      className="px-2.5 py-1.5 text-xs font-bold border border-border hover:bg-off-white inline-flex items-center gap-1 text-navy dark:text-sky-300"
                     >
                       <Pencil size={13} /> Editar
                     </button>
@@ -341,7 +341,7 @@ function UsersContent() {
 
       {showCreate && (
         <div className="fixed inset-0 z-50 bg-charcoal/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full sm:max-w-md rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden">
+          <div className="bg-white dark:bg-surface w-full sm:max-w-md rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden">
             <div className="bg-navy text-white px-5 py-4 flex items-center justify-between">
               <h2 className="text-base font-bold">
                 {editingUser ? 'Editar Usuario' : 'Alta de Nuevo Usuario'}

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/supabase/config';
+import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
 
 /**
  * POST /api/presence
@@ -10,6 +11,11 @@ import { isSupabaseConfigured } from '@/lib/supabase/config';
  */
 export async function POST(request: Request) {
   try {
+    const rl = await checkRateLimit(`presence:${getClientIp(request)}`, 60, 60_000);
+    if (!rl.allowed) {
+      return rateLimitExceededResponse(rl);
+    }
+
     if (!isSupabaseConfigured()) {
       return NextResponse.json({ ok: true, mode: 'demo' });
     }

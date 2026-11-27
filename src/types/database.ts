@@ -100,6 +100,7 @@ export interface Task {
   pdf_url: string | null;
   completed_at: string | null;
   estimated_duration: number | null;
+  due_date?: string | null;
   // Auditoría y borrado lógico
   created_by: string;
   created_at: string;
@@ -113,6 +114,16 @@ export interface Task {
   assignee?: Profile | null;
   creator?: Profile | null;
   deleter?: Profile | null;
+  attachment_count?: number;
+}
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  author_id: string;
+  body: string;
+  created_at: string;
+  author?: Profile;
 }
 
 export interface TaskHistoryItem {

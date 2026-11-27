@@ -18,6 +18,7 @@ import {
   type Profile,
   type PushSubscriptionRecord,
   type Task,
+  type TaskComment,
   type TaskPriority,
   type TaskStatus,
   type UserRole,
@@ -81,7 +82,7 @@ export async function GET(request: Request) {
     case 'task_detail': {
       const rawTask = state.tasks.find((t) => t.id === taskId);
       if (!rawTask) {
-        return NextResponse.json({ task: null, history: [], attachments: [] });
+        return NextResponse.json({ task: null, history: [], attachments: [], comments: [] });
       }
       const [task] = hydrateTasks(state, [rawTask]);
       const history = state.history
@@ -94,7 +95,77 @@ export async function GET(request: Request) {
       const attachments = state.attachments
         .filter((a) => a.task_id === taskId)
         .sort((a, b) => b.created_at.localeCompare(a.created_at));
-      return NextResponse.json({ task, history, attachments, revision: state.revision });
+      const comments = (state.comments || [])
+        .filter((c) => c.task_id === taskId)
+        .map((c) => ({
+          ...c,
+          author: state.profiles.find((p) => p.id === c.author_id),
+        }))
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+      return NextResponse.json({ task, history, attachments, comments, revision: state.revision });
+    }
+
+    case 'search': {
+      const q = (searchParams.get('q') || '').trim().toLowerCase();
+      const viewer = state.profiles.find((p) => p.id === userId);
+      if (!viewer || q.length < 2) {
+        return NextResponse.json({ tasks: [], customers: [], profiles: [] });
+      }
+      const isCoord = viewer.role === 'admin' || viewer.role === 'coordinator';
+      const visibleTasks = hydrateTasks(
+        state,
+        state.tasks.filter((t) => {
+          if (t.deleted_at) return false;
+          if (isCoord) return true;
+          return (
+            t.assigned_to === viewer.id ||
+            t.created_by === viewer.id ||
+            (!t.assigned_to && t.status === 'pending')
+          );
+        })
+      );
+
+      const tasks = visibleTasks
+        .filter((t) =>
+          [
+            t.code,
+            t.customer?.name,
+            t.equipment_ref,
+            t.equipment_sn,
+            t.problem_desc,
+            t.site_address,
+            t.site_city,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(q)
+        )
+        .slice(0, 8);
+
+      const customers = state.customers
+        .filter((c) =>
+          [c.name, c.tax_id, c.city, c.contact_name, c.address]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(q)
+        )
+        .slice(0, 6);
+
+      const profiles = isCoord
+        ? state.profiles
+            .filter((p) =>
+              [p.full_name, p.email, p.phone]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase()
+                .includes(q)
+            )
+            .slice(0, 5)
+        : [];
+
+      return NextResponse.json({ tasks, customers, profiles });
     }
 
     case 'notifications': {
@@ -243,6 +314,7 @@ export async function POST(request: Request) {
             priority: TaskPriority;
             assigned_to?: string | null;
             estimated_duration?: number | null;
+            due_date?: string | null;
           };
           actorId: string;
         };
@@ -278,6 +350,7 @@ export async function POST(request: Request) {
           pdf_url: null,
           completed_at: null,
           estimated_duration: payload.estimated_duration || null,
+          due_date: payload.due_date || null,
           created_by: actorId,
           created_at: nowIso,
           updated_at: nowIso,
@@ -614,6 +687,26 @@ export async function POST(request: Request) {
           });
         }
 
+        if (patch.due_date !== undefined && patch.due_date !== (prev.due_date ?? null)) {
+          state.history.push({
+            id: `hist-${Date.now()}-due`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'due_date',
+            old_value: prev.due_date ?? null,
+            new_value: patch.due_date ?? null,
+            note: patch.due_date
+              ? `Fecha límite SLA fijada: ${new Date(patch.due_date).toLocaleString('es-ES', {
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                })}`
+              : 'Fecha límite SLA eliminada',
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
         await dispatchServerDemoNotifications(state, {
           task: next,
           actorId,
@@ -784,6 +877,76 @@ export async function POST(request: Request) {
 
         saveServerDemoDb(state);
         return NextResponse.json({ attachment: att });
+      }
+
+      case 'delete_attachment': {
+        const { taskId, attachmentId, actorId } = body as {
+          taskId: string;
+          attachmentId: string;
+          actorId: string;
+        };
+        const target = state.attachments.find(
+          (a) => a.id === attachmentId && a.task_id === taskId
+        );
+        if (!target) {
+          return NextResponse.json({ error: 'Adjunto no encontrado' }, { status: 404 });
+        }
+        state.attachments = state.attachments.filter((a) => a.id !== attachmentId);
+        state.history.push({
+          id: `hist-${Date.now()}-delatt`,
+          task_id: taskId,
+          actor_id: actorId,
+          event_type: 'field_updated',
+          field_name: 'attachments',
+          old_value: target.file_name,
+          new_value: null,
+          note: `Fotografía eliminada (${target.file_name})`,
+          metadata: {},
+          created_at: nowIso,
+        });
+        saveServerDemoDb(state);
+        return NextResponse.json({ ok: true });
+      }
+
+      case 'add_task_comment': {
+        const { taskId, body: commentBody, actorId } = body as {
+          taskId: string;
+          body: string;
+          actorId: string;
+        };
+        const cleanBody = commentBody?.trim();
+        if (!cleanBody) {
+          return NextResponse.json({ error: 'El comentario no puede estar vacío' }, { status: 400 });
+        }
+        const task = state.tasks.find((t) => t.id === taskId);
+        if (!task) {
+          return NextResponse.json({ error: 'Parte no encontrado' }, { status: 404 });
+        }
+        const actor = state.profiles.find((p) => p.id === actorId);
+        if (!Array.isArray(state.comments)) {
+          state.comments = [];
+        }
+        const comment: TaskComment = {
+          id: `comm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          task_id: taskId,
+          author_id: actorId,
+          body: cleanBody,
+          created_at: nowIso,
+        };
+        state.comments.push(comment);
+
+        await dispatchServerDemoNotifications(state, {
+          task,
+          actorId,
+          type: 'comment_added',
+          title: `Nuevo mensaje en ${task.code}`,
+          body: `${actor?.full_name || 'Usuario'}: "${cleanBody.slice(0, 90)}"`,
+        });
+
+        saveServerDemoDb(state);
+        return NextResponse.json({
+          comment: { ...comment, author: actor },
+        });
       }
 
       case 'mark_notification_read': {

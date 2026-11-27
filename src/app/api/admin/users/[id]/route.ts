@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
+import { captureMonitoringError } from '@/lib/monitoring';
 
 const updateUserSchema = z.object({
   full_name: z.string().trim().min(2).max(120).optional(),
@@ -20,6 +22,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const rl = await checkRateLimit(`admin-users-patch:${getClientIp(request)}`, 15, 60_000);
+    if (!rl.allowed) {
+      return rateLimitExceededResponse(rl);
+    }
+
     const { id: targetId } = await params;
     const supabaseServer = await getSupabaseServerClient();
     const supabaseAdmin = getSupabaseAdminClient();
@@ -97,6 +104,7 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true, profile: updated });
   } catch (error) {
+    captureMonitoringError(error, { route: '/api/admin/users/[id]' });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error actualizando usuario' },
       { status: 500 }

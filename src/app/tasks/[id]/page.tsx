@@ -5,7 +5,6 @@ import Link from 'next/link';
 import {
   AlertTriangle,
   ArrowLeft,
-  Camera,
   CheckCircle2,
   Clock,
   FileDown,
@@ -24,6 +23,8 @@ import {
   X,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
+import { TaskCommentsSection } from '@/components/tasks/TaskCommentsSection';
+import { TaskGallerySection } from '@/components/tasks/TaskGallerySection';
 import { Button } from '@/components/ui/Button';
 import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { SignaturePadModal } from '@/components/ui/SignaturePadModal';
@@ -38,9 +39,9 @@ import {
   softDeleteTask,
   updateTaskFields,
   updateTaskStatus,
-  uploadTaskAttachment,
 } from '@/lib/data-service';
 import { downloadTaskPDF } from '@/lib/pdf-generator';
+import { getSlaStatus, toDatetimeLocalValue } from '@/lib/sla';
 import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -49,6 +50,7 @@ import {
   type MaterialItem,
   type Profile,
   type Task,
+  type TaskComment,
   type TaskHistoryItem,
   type TaskPriority,
   type TaskStatus,
@@ -72,6 +74,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [task, setTask] = useState<Task | null>(null);
   const [history, setHistory] = useState<TaskHistoryItem[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [comments, setComments] = useState<TaskComment[]>([]);
   const [technicians, setTechnicians] = useState<Profile[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,8 +85,6 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [matName, setMatName] = useState('');
   const [matRef, setMatRef] = useState('');
   const [matQty, setMatQty] = useState('1');
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
@@ -102,6 +103,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [editSiteAddress, setEditSiteAddress] = useState('');
   const [editSiteCity, setEditSiteCity] = useState('');
   const [editEstimatedDuration, setEditEstimatedDuration] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
 
   // Borrado lógico y restauración
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -125,6 +127,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       setTask(detail.task);
       setHistory(detail.history);
       setAttachments(detail.attachments);
+      setComments(detail.comments);
       setTechnicians(profs.filter((p) => p.role === 'technician' && p.is_active));
       setCustomers(custs.filter((c) => c.is_active));
     } finally {
@@ -243,30 +246,6 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     await load();
   };
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingPhoto(true);
-    try {
-      await uploadTaskAttachment(task.id, file, undefined, profile);
-      showTempMessage('Fotografía adjuntada al parte.');
-      await load();
-    } catch (err) {
-      showTempMessage(
-        err instanceof Error ? err.message : 'No se pudo subir la fotografía.'
-      );
-    } finally {
-      setUploadingPhoto(false);
-      e.target.value = '';
-    }
-  };
-
-  const handleSaveSignature = async (dataUrl: string, signerName: string) => {
-    await saveTaskSignature(task.id, dataUrl, signerName, profile);
-    showTempMessage('Firma del cliente guardada correctamente.');
-    await load();
-  };
-
   const handleCloseTask = async () => {
     await updateTaskStatus(task.id, 'completed', profile);
     showTempMessage('Parte cerrado como Completada.');
@@ -274,6 +253,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   };
 
   const isDeleted = Boolean(task.deleted_at);
+  const sla = getSlaStatus(task);
 
   const openEditModal = () => {
     setEditError(null);
@@ -289,7 +269,14 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     setEditEstimatedDuration(
       task.estimated_duration != null ? String(task.estimated_duration) : ''
     );
+    setEditDueDate(toDatetimeLocalValue(task.due_date));
     setShowEditModal(true);
+  };
+
+  const handleSaveSignature = async (dataUrl: string, signerName: string) => {
+    await saveTaskSignature(task.id, dataUrl, signerName, profile);
+    showTempMessage('Firma del cliente guardada correctamente.');
+    await load();
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -328,6 +315,13 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       : null;
     if (parsedDuration !== (task.estimated_duration ?? null)) {
       patch.estimated_duration = parsedDuration;
+    }
+    if (isCoord) {
+      const nextDueIso = editDueDate.trim() ? new Date(editDueDate).toISOString() : null;
+      const prevDueIso = task.due_date ? new Date(task.due_date).toISOString() : null;
+      if (nextDueIso !== prevDueIso) {
+        patch.due_date = nextDueIso;
+      }
     }
 
     if (Object.keys(patch).length === 0) {
@@ -430,17 +424,17 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       )}
 
       {/* Cabecera */}
-      <div className="bg-white rounded-md shadow-card p-5 border border-border/60">
+      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-3">
             <Link
               href="/tasks"
-              className="p-2 bg-off-white border border-border text-navy hover:bg-navy/5"
+              className="p-2 bg-off-white border border-border text-navy dark:text-sky-300 hover:bg-navy/5"
             >
               <ArrowLeft size={18} />
             </Link>
             <div>
-              <span className="text-xs font-extrabold tracking-widest text-navy uppercase">
+              <span className="text-xs font-extrabold tracking-widest text-navy dark:text-sky-300 uppercase">
                 {task.code}
               </span>
               <h1 className="text-lg sm:text-xl font-bold text-charcoal leading-tight">
@@ -452,12 +446,19 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={task.status} />
             <PriorityBadge priority={task.priority} />
+            {sla && (
+              <span
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-bold uppercase tracking-wide ${sla.badgeClass}`}
+              >
+                <Clock size={12} /> {sla.label}
+              </span>
+            )}
             {!isDeleted && (
               <>
                 <button
                   type="button"
                   onClick={openEditModal}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold border border-navy text-navy hover:bg-navy/5 min-h-[34px]"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold border border-navy dark:border-slate-400 text-navy dark:text-slate-100 hover:bg-navy/5 min-h-[34px]"
                 >
                   <Pencil size={13} /> Editar
                 </button>
@@ -572,16 +573,16 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       </div>
 
       {/* Equipo y Descripción */}
-      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
+      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
+          <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
             <Wrench size={16} className="text-magenta" /> Equipo y Avería
           </h2>
           {!isDeleted && (
             <button
               type="button"
               onClick={openEditModal}
-              className="text-xs font-bold text-navy hover:underline inline-flex items-center gap-1"
+              className="text-xs font-bold text-navy dark:text-sky-300 hover:underline inline-flex items-center gap-1"
             >
               <Pencil size={12} /> Modificar datos
             </button>
@@ -606,9 +607,17 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         </div>
       </div>
 
+      {/* Chat Interno en Tiempo Real (M4) */}
+      <TaskCommentsSection
+        taskId={task.id}
+        initialComments={comments}
+        currentUser={profile}
+        isDeleted={isDeleted}
+      />
+
       {/* Notas Técnicas */}
-      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
-        <h2 className="text-sm font-bold text-navy uppercase tracking-wider">
+      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
+        <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider">
           Notas Técnicas / Incidencias
         </h2>
         {task.resolution_notes && (
@@ -636,8 +645,8 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       </div>
 
       {/* Materiales y Piezas (Decisión 4: campo libre) */}
-      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
-        <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
+      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
+        <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
           <PackagePlus size={16} className="text-magenta" /> Materiales / Piezas Empleadas
         </h2>
 
@@ -706,56 +715,19 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         )}
       </div>
 
-      {/* Fotografías */}
-      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
-            <Camera size={16} className="text-magenta" /> Fotografías ({attachments.length})
-          </h2>
-
-          {!isDeleted && (
-            <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy-dark min-h-[40px]">
-              <Camera size={15} /> {uploadingPhoto ? 'Subiendo...' : 'Añadir Foto'}
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handlePhotoUpload}
-                className="hidden"
-                disabled={uploadingPhoto}
-              />
-            </label>
-          )}
-        </div>
-
-        {attachments.length === 0 ? (
-          <p className="text-xs text-mid-grey">
-            Aún no hay fotografías adjuntas. Usa la cámara o galería del móvil.
-          </p>
-        ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-            {attachments.map((att) => (
-              <button
-                key={att.id}
-                type="button"
-                onClick={() => setLightboxUrl(att.public_url)}
-                className="aspect-square rounded-sm overflow-hidden border border-border bg-off-white"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={att.public_url}
-                  alt={att.file_name}
-                  className="w-full h-full object-cover"
-                />
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Galería de Fotografías Mejorada (M7) */}
+      <TaskGallerySection
+        taskId={task.id}
+        attachments={attachments}
+        currentUser={profile}
+        isDeleted={isDeleted}
+        onChanged={load}
+        onFeedback={showTempMessage}
+      />
 
       {/* Cierre: Firma Digital + PDF */}
-      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-4">
-        <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
+      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-4">
+        <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
           <PenTool size={16} className="text-magenta" /> Conformidad, Cierre y Parte PDF
         </h2>
 
@@ -802,8 +774,8 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       </div>
 
       {/* Audit Trail — Historial Cronológico Inmutable */}
-      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-4">
-        <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
+      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-4">
+        <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
           <History size={16} className="text-magenta" /> Historial Cronológico Inmutable (
           {history.length})
         </h2>
@@ -908,7 +880,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           onClick={() => setShowEditModal(false)}
         >
           <div
-            className="bg-white w-full sm:max-w-lg rounded-t-lg sm:rounded-lg p-5 space-y-4 max-h-[90dvh] overflow-y-auto"
+            className="bg-white dark:bg-surface w-full sm:max-w-lg rounded-t-lg sm:rounded-lg p-5 space-y-4 max-h-[90dvh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-2 border-b border-border">
@@ -1058,17 +1030,32 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                  Duración estimada (minutos)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={editEstimatedDuration}
-                  onChange={(e) => setEditEstimatedDuration(e.target.value)}
-                  className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Duración estimada (minutos)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editEstimatedDuration}
+                    onChange={(e) => setEditEstimatedDuration(e.target.value)}
+                    className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
+                  />
+                </div>
+                {isCoord && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                      Fecha límite SLA
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={editDueDate}
+                      onChange={(e) => setEditDueDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
+                    />
+                  </div>
+                )}
               </div>
 
               <p className="text-[11px] text-mid-grey">
@@ -1101,7 +1088,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           onClick={() => setShowDeleteModal(false)}
         >
           <div
-            className="bg-white w-full sm:max-w-md rounded-t-lg sm:rounded-lg p-5 space-y-4"
+            className="bg-white dark:bg-surface w-full sm:max-w-md rounded-t-lg sm:rounded-lg p-5 space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-2 border-b border-border">
@@ -1176,7 +1163,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           onClick={() => setShowStatusSheet(false)}
         >
           <div
-            className="bg-white w-full sm:max-w-md rounded-t-lg sm:rounded-lg p-5 space-y-3"
+            className="bg-white dark:bg-surface w-full sm:max-w-md rounded-t-lg sm:rounded-lg p-5 space-y-3"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-2 border-b border-border">
@@ -1213,27 +1200,6 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
               })}
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Lightbox foto */}
-      {lightboxUrl && (
-        <div
-          className="fixed inset-0 z-50 bg-charcoal/90 flex items-center justify-center p-4"
-          onClick={() => setLightboxUrl(null)}
-        >
-          <button
-            className="absolute top-4 right-4 text-white p-2"
-            onClick={() => setLightboxUrl(null)}
-          >
-            <X size={28} />
-          </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lightboxUrl}
-            alt="Vista ampliada"
-            className="max-w-full max-h-[85dvh] object-contain"
-          />
         </div>
       )}
 

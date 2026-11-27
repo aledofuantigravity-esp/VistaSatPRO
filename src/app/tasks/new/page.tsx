@@ -56,6 +56,7 @@ function NewTaskContent() {
   // Paso 3: Asignación
   const [assignedTo, setAssignedTo] = useState('');
   const [estimatedDuration, setEstimatedDuration] = useState('60');
+  const [dueDate, setDueDate] = useState('');
 
   const isTechnician = profile?.role === 'technician';
 
@@ -64,8 +65,23 @@ function NewTaskContent() {
       listCustomers(),
       profile?.role === 'technician' ? Promise.resolve([]) : listProfiles(),
     ]);
-    setCustomers(custs.filter((c) => c.is_active));
+    const activeCusts = custs.filter((c) => c.is_active);
+    setCustomers(activeCusts);
     setTechnicians(profs.filter((p) => p.role === 'technician' && p.is_active));
+
+    if (typeof window !== 'undefined') {
+      const preselectedCust = new URLSearchParams(window.location.search).get('customerId');
+      if (preselectedCust) {
+        const match = activeCusts.find((c) => c.id === preselectedCust);
+        if (match) {
+          setCustomerId(match.id);
+          setSiteContactName(match.contact_name || '');
+          setSiteContactPhone(match.contact_phone || '');
+          setSiteAddress(match.address || '');
+          setSiteCity(match.city || '');
+        }
+      }
+    }
   }, [profile?.role]);
 
   useEffect(() => {
@@ -131,6 +147,7 @@ function NewTaskContent() {
           priority,
           assigned_to: isTechnician ? profile.id : assignedTo || null,
           estimated_duration: estimatedDuration ? parseInt(estimatedDuration, 10) : null,
+          due_date: !isTechnician && dueDate ? new Date(dueDate).toISOString() : null,
         },
         profile
       );
@@ -184,7 +201,7 @@ function NewTaskContent() {
       </div>
 
       {/* Contenido de cada paso */}
-      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-4">
+      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-4">
         {step === 1 && (
           <>
             <div>
@@ -426,18 +443,33 @@ function NewTaskContent() {
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                Duración estimada (minutos)
-              </label>
-              <input
-                type="number"
-                min={15}
-                step={15}
-                value={estimatedDuration}
-                onChange={(e) => setEstimatedDuration(e.target.value)}
-                className="w-full px-3 py-2.5 bg-bg-input border border-border"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                  Duración estimada (minutos)
+                </label>
+                <input
+                  type="number"
+                  min={15}
+                  step={15}
+                  value={estimatedDuration}
+                  onChange={(e) => setEstimatedDuration(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                />
+              </div>
+              {!isTechnician && (
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
+                    Fecha límite SLA (opcional)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Resumen */}

@@ -91,7 +91,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="nombre@empresa.com"
-                  className="w-full px-4 py-3 bg-white border border-border text-charcoal placeholder:text-light-grey focus:outline-none focus:ring-2 focus:ring-navy focus:border-navy transition-colors"
+                  className="w-full px-4 py-3 bg-white dark:bg-surface border border-border text-charcoal placeholder:text-light-grey focus:outline-none focus:ring-2 focus:ring-navy focus:border-navy transition-colors"
                 />
               </div>
 
@@ -111,7 +111,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full px-4 py-3 pr-12 bg-white border border-border text-charcoal placeholder:text-light-grey focus:outline-none focus:ring-2 focus:ring-navy focus:border-navy transition-colors"
+                    className="w-full px-4 py-3 pr-12 bg-white dark:bg-surface border border-border text-charcoal placeholder:text-light-grey focus:outline-none focus:ring-2 focus:ring-navy focus:border-navy transition-colors"
                   />
                   <button
                     type="button"
@@ -144,7 +144,7 @@ export default function LoginPage() {
 
             {/* Acceso rápido Demo cuando no hay credenciales Supabase configuradas */}
             {isDemoMode && (
-              <div className="mt-7 p-4 bg-white border border-border rounded-md shadow-card">
+              <div className="mt-7 p-4 bg-white dark:bg-surface border border-border rounded-md shadow-card">
                 <div className="flex items-center gap-2 mb-2">
                   <Wrench size={15} className="text-magenta" />
                   <span className="text-xs font-extrabold text-navy uppercase tracking-wider">
@@ -159,8 +159,9 @@ export default function LoginPage() {
                 <div className="grid grid-cols-1 gap-2">
                   <button
                     type="button"
+                    disabled={authLoading}
                     onClick={() => signInDemoUser('user-tech-1')}
-                    className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 border border-border text-left transition-colors min-h-[46px]"
+                    className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 border border-border text-left transition-colors min-h-[46px] disabled:opacity-60"
                   >
                     <div className="flex items-center gap-2.5">
                       <Wrench size={16} className="text-petrol" />
@@ -174,8 +175,9 @@ export default function LoginPage() {
 
                   <button
                     type="button"
+                    disabled={authLoading}
                     onClick={() => signInDemoUser('user-coord-1')}
-                    className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 border border-border text-left transition-colors min-h-[46px]"
+                    className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 border border-border text-left transition-colors min-h-[46px] disabled:opacity-60"
                   >
                     <div className="flex items-center gap-2.5">
                       <UserCheck size={16} className="text-magenta" />
@@ -189,8 +191,9 @@ export default function LoginPage() {
 
                   <button
                     type="button"
+                    disabled={authLoading}
                     onClick={() => signInDemoUser('user-admin-1')}
-                    className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 border border-border text-left transition-colors min-h-[46px]"
+                    className="flex items-center justify-between px-3 py-2.5 bg-off-white hover:bg-navy/5 border border-border text-left transition-colors min-h-[46px] disabled:opacity-60"
                   >
                     <div className="flex items-center gap-2.5">
                       <ShieldCheck size={16} className="text-navy" />

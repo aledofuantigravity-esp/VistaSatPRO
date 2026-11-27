@@ -4,6 +4,7 @@ import './globals.css';
 import { ServiceWorkerRegistration } from '@/components/pwa/ServiceWorkerRegistration';
 import { AuthProvider } from '@/hooks/useAuth';
 import { NotificationsProvider } from '@/hooks/useNotifications';
+import { ThemeProvider } from '@/hooks/useTheme';
 
 const montserrat = Montserrat({
   subsets: ['latin'],
@@ -75,11 +76,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className={montserrat.variable}>
-      <body className="font-montserrat antialiased bg-off-white text-charcoal">
-        <AuthProvider>
-          <NotificationsProvider>{children}</NotificationsProvider>
-        </AuthProvider>
+    <html lang="es" className={montserrat.variable} suppressHydrationWarning>
+      <body className="font-montserrat antialiased bg-off-white text-charcoal transition-colors">
+        <ThemeProvider>
+          <AuthProvider>
+            <NotificationsProvider>{children}</NotificationsProvider>
+          </AuthProvider>
+        </ThemeProvider>
         <ServiceWorkerRegistration />
       </body>
     </html>

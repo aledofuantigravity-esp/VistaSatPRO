@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
+import { captureMonitoringError } from '@/lib/monitoring';
 
 const createUserSchema = z.object({
   email: z.string().trim().email('Correo electrónico inválido'),
@@ -17,6 +19,11 @@ const createUserSchema = z.object({
  */
 export async function POST(request: Request) {
   try {
+    const rl = await checkRateLimit(`admin-users-post:${getClientIp(request)}`, 10, 60_000);
+    if (!rl.allowed) {
+      return rateLimitExceededResponse(rl);
+    }
+
     const supabaseServer = await getSupabaseServerClient();
     const supabaseAdmin = getSupabaseAdminClient();
 
@@ -84,6 +91,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, userId: created.user.id });
   } catch (error) {
+    captureMonitoringError(error, { route: '/api/admin/users' });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error creando usuario' },
       { status: 500 }

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
+  BookmarkPlus,
+  Clock,
   Download,
   Filter,
   LayoutGrid,
@@ -12,6 +14,7 @@ import {
   Search,
   Table as TableIcon,
   Trash2,
+  X,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
@@ -20,6 +23,7 @@ import { TaskCard } from '@/components/ui/TaskCard';
 import { useAuth } from '@/hooks/useAuth';
 import { downloadCsv } from '@/lib/csv';
 import { listProfiles, listTasks, restoreTask } from '@/lib/data-service';
+import { getSlaStatus } from '@/lib/sla';
 import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -28,6 +32,23 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from '@/types/database';
+
+type TaskTab = 'mine' | 'unassigned' | 'overdue' | 'all' | 'trash';
+
+interface SavedFilterPreset {
+  id: string;
+  name: string;
+  tab: TaskTab;
+  statusFilter: TaskStatus | 'all';
+  priorityFilter: TaskPriority | 'all';
+  techFilter: string;
+  dateFrom: string;
+  dateTo: string;
+  search: string;
+}
+
+const ACTIVE_FILTERS_KEY = 'vistasat_tasks_filters_v1';
+const SAVED_PRESETS_KEY = 'vistasat_tasks_saved_filters_v1';
 
 export default function TasksPage() {
   return (
@@ -45,17 +66,7 @@ function TasksContent() {
 
   const isCoord = profile?.role === 'admin' || profile?.role === 'coordinator';
 
-  const [tab, setTab] = useState<'mine' | 'unassigned' | 'all' | 'trash'>(() =>
-    isCoord ? 'all' : 'mine'
-  );
-
-  useEffect(() => {
-    const f = new URLSearchParams(window.location.search).get('filter');
-    if (f === 'mine' || f === 'unassigned' || f === 'trash' || f === 'all') {
-      const t = setTimeout(() => setTab(f), 0);
-      return () => clearTimeout(t);
-    }
-  }, []);
+  const [tab, setTab] = useState<TaskTab>(() => (isCoord ? 'all' : 'mine'));
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | 'all'>('all');
@@ -66,6 +77,79 @@ function TasksContent() {
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
+
+  // Filtros favoritos (M8)
+  const [presets, setPresets] = useState<SavedFilterPreset[]>([]);
+  const [savingPreset, setSavingPreset] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
+
+  // Cargar filtros guardados y query ?filter=...
+  useEffect(() => {
+    const hydrate = () => {
+      try {
+        const rawPresets = localStorage.getItem(SAVED_PRESETS_KEY);
+        if (rawPresets) {
+          setPresets(JSON.parse(rawPresets) as SavedFilterPreset[]);
+        }
+      } catch {
+        // Silencioso
+      }
+
+      const urlFilter = new URLSearchParams(window.location.search).get('filter');
+      if (
+        urlFilter === 'mine' ||
+        urlFilter === 'unassigned' ||
+        urlFilter === 'overdue' ||
+        urlFilter === 'trash' ||
+        urlFilter === 'all'
+      ) {
+        setTab(urlFilter);
+        setFiltersHydrated(true);
+        return;
+      }
+
+      try {
+        const rawActive = localStorage.getItem(ACTIVE_FILTERS_KEY);
+        if (rawActive) {
+          const parsed = JSON.parse(rawActive) as Partial<SavedFilterPreset>;
+          if (parsed.tab) setTab(parsed.tab);
+          if (parsed.statusFilter) setStatusFilter(parsed.statusFilter);
+          if (parsed.priorityFilter) setPriorityFilter(parsed.priorityFilter);
+          if (parsed.techFilter) setTechFilter(parsed.techFilter);
+          if (typeof parsed.dateFrom === 'string') setDateFrom(parsed.dateFrom);
+          if (typeof parsed.dateTo === 'string') setDateTo(parsed.dateTo);
+          if (typeof parsed.search === 'string') setSearch(parsed.search);
+        }
+      } catch {
+        // Silencioso
+      }
+      setFiltersHydrated(true);
+    };
+    const t = setTimeout(hydrate, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Persistir filtros activos en localStorage
+  useEffect(() => {
+    if (!filtersHydrated) return;
+    try {
+      localStorage.setItem(
+        ACTIVE_FILTERS_KEY,
+        JSON.stringify({
+          tab,
+          statusFilter,
+          priorityFilter,
+          techFilter,
+          dateFrom,
+          dateTo,
+          search,
+        })
+      );
+    } catch {
+      // Silencioso
+    }
+  }, [filtersHydrated, tab, statusFilter, priorityFilter, techFilter, dateFrom, dateTo, search]);
 
   const profileId = profile?.id;
   const profileRole = profile?.role;
@@ -99,12 +183,17 @@ function TasksContent() {
 
   const activeTasks = useMemo(() => tasks.filter((t) => !t.deleted_at), [tasks]);
   const trashedTasks = useMemo(() => tasks.filter((t) => Boolean(t.deleted_at)), [tasks]);
+  const overdueTasks = useMemo(
+    () => activeTasks.filter((t) => getSlaStatus(t)?.state === 'overdue'),
+    [activeTasks]
+  );
 
   const filteredTasks = useMemo(() => {
     const source = tab === 'trash' ? trashedTasks : activeTasks;
     return source.filter((t) => {
       if (tab === 'mine' && t.assigned_to !== profile?.id) return false;
       if (tab === 'unassigned' && (t.assigned_to !== null || t.status !== 'pending')) return false;
+      if (tab === 'overdue' && getSlaStatus(t)?.state !== 'overdue') return false;
 
       if (statusFilter !== 'all' && t.status !== statusFilter) return false;
       if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
@@ -121,6 +210,7 @@ function TasksContent() {
           t.code,
           t.customer?.name,
           t.equipment_ref,
+          t.equipment_sn,
           t.problem_desc,
           t.site_city,
           t.assignee?.full_name,
@@ -157,6 +247,7 @@ function TasksContent() {
       'Prioridad',
       'Técnico',
       'Ciudad',
+      'Límite SLA',
       'Fecha Apertura',
       'Fecha Cierre',
     ];
@@ -168,6 +259,7 @@ function TasksContent() {
       TASK_PRIORITY_META[t.priority].label,
       t.assignee?.full_name || 'Sin asignar',
       t.site_city || t.customer?.city || '',
+      t.due_date ? new Date(t.due_date).toLocaleString('es-ES') : '',
       new Date(t.created_at).toLocaleString('es-ES'),
       t.completed_at ? new Date(t.completed_at).toLocaleString('es-ES') : '',
     ]);
@@ -182,6 +274,68 @@ function TasksContent() {
   if (!profile) return null;
 
   const technicians = profiles.filter((p) => p.role === 'technician' && p.is_active);
+  const hasActiveFilterCriteria =
+    statusFilter !== 'all' ||
+    priorityFilter !== 'all' ||
+    techFilter !== 'all' ||
+    Boolean(dateFrom) ||
+    Boolean(dateTo) ||
+    Boolean(search.trim());
+
+  const clearFilters = () => {
+    setStatusFilter('all');
+    setPriorityFilter('all');
+    setTechFilter('all');
+    setDateFrom('');
+    setDateTo('');
+    setSearch('');
+  };
+
+  const handleSavePreset = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = presetName.trim();
+    if (!clean) return;
+    const newPreset: SavedFilterPreset = {
+      id: `preset-${Date.now()}`,
+      name: clean,
+      tab,
+      statusFilter,
+      priorityFilter,
+      techFilter,
+      dateFrom,
+      dateTo,
+      search,
+    };
+    const next = [...presets, newPreset];
+    setPresets(next);
+    try {
+      localStorage.setItem(SAVED_PRESETS_KEY, JSON.stringify(next));
+    } catch {
+      // Silencioso
+    }
+    setPresetName('');
+    setSavingPreset(false);
+  };
+
+  const applyPreset = (p: SavedFilterPreset) => {
+    setTab(p.tab);
+    setStatusFilter(p.statusFilter);
+    setPriorityFilter(p.priorityFilter);
+    setTechFilter(p.techFilter);
+    setDateFrom(p.dateFrom);
+    setDateTo(p.dateTo);
+    setSearch(p.search);
+  };
+
+  const removePreset = (id: string) => {
+    const next = presets.filter((p) => p.id !== id);
+    setPresets(next);
+    try {
+      localStorage.setItem(SAVED_PRESETS_KEY, JSON.stringify(next));
+    } catch {
+      // Silencioso
+    }
+  };
 
   const handleRestore = async (taskId: string, code: string) => {
     setRestoringId(taskId);
@@ -248,7 +402,7 @@ function TasksContent() {
               className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
                 tab === 'all'
                   ? 'bg-navy text-white'
-                  : 'bg-white text-mid-grey border border-border'
+                  : 'bg-white dark:bg-surface text-mid-grey border border-border'
               }`}
             >
               Todos ({activeTasks.length})
@@ -259,7 +413,7 @@ function TasksContent() {
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
               tab === 'mine'
                 ? 'bg-navy text-white'
-                : 'bg-white text-mid-grey border border-border'
+                : 'bg-white dark:bg-surface text-mid-grey border border-border'
             }`}
           >
             Mis Tareas ({activeTasks.filter((t) => t.assigned_to === profile.id).length})
@@ -269,25 +423,35 @@ function TasksContent() {
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
               tab === 'unassigned'
                 ? 'bg-navy text-white'
-                : 'bg-white text-mid-grey border border-border'
+                : 'bg-white dark:bg-surface text-mid-grey border border-border'
             }`}
           >
             Sin Asignar (
             {activeTasks.filter((t) => t.assigned_to === null && t.status === 'pending').length})
           </button>
           <button
+            onClick={() => setTab('overdue')}
+            className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap inline-flex items-center gap-1 ${
+              tab === 'overdue'
+                ? 'bg-danger text-white'
+                : 'bg-white dark:bg-surface text-mid-grey border border-border hover:text-danger'
+            }`}
+          >
+            <Clock size={13} /> Vencidos ({overdueTasks.length})
+          </button>
+          <button
             onClick={() => setTab('trash')}
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap inline-flex items-center gap-1.5 ${
               tab === 'trash'
                 ? 'bg-danger text-white'
-                : 'bg-white text-mid-grey border border-border hover:text-danger'
+                : 'bg-white dark:bg-surface text-mid-grey border border-border hover:text-danger'
             }`}
           >
             <Trash2 size={13} /> Papelera ({trashedTasks.length})
           </button>
         </div>
 
-        <div className="hidden md:flex items-center gap-1 bg-white border border-border p-1">
+        <div className="hidden md:flex items-center gap-1 bg-white dark:bg-surface border border-border p-1">
           <button
             onClick={() => setViewMode('cards')}
             className={`p-1.5 ${viewMode === 'cards' ? 'bg-navy text-white' : 'text-mid-grey'}`}
@@ -305,9 +469,9 @@ function TasksContent() {
         </div>
       </div>
 
-      {/* Buscador + Botón filtros */}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
+      {/* Buscador + Botón filtros + Guardar favorito */}
+      <div className="flex flex-wrap gap-2">
+        <div className="relative flex-1 min-w-[210px]">
           <Search
             size={17}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-mid-grey"
@@ -317,7 +481,7 @@ function TasksContent() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar código, cliente, equipo..."
-            className="w-full pl-10 pr-3 py-2.5 bg-white border border-border focus:outline-none focus:ring-2 focus:ring-navy"
+            className="w-full pl-10 pr-3 py-2.5 bg-white dark:bg-surface border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
           />
         </div>
         <button
@@ -326,16 +490,84 @@ function TasksContent() {
           className={`px-4 py-2.5 border text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1.5 min-h-[44px] ${
             showFilters
               ? 'bg-navy text-white border-navy'
-              : 'bg-white text-charcoal border-border'
+              : 'bg-white dark:bg-surface text-charcoal border-border'
           }`}
         >
           <Filter size={15} /> Filtros
         </button>
+        <button
+          type="button"
+          onClick={() => setSavingPreset(!savingPreset)}
+          className="px-3 py-2.5 border border-border bg-white dark:bg-surface text-xs font-bold text-navy dark:text-sky-300 inline-flex items-center gap-1.5 min-h-[44px] hover:bg-off-white"
+          title="Guardar filtro actual como favorito"
+        >
+          <BookmarkPlus size={15} /> Guardar vista
+        </button>
       </div>
+
+      {/* Formulario rápido guardar filtro favorito (M8) */}
+      {savingPreset && (
+        <form
+          onSubmit={handleSavePreset}
+          className="bg-white dark:bg-surface border border-border rounded-sm p-3 flex flex-wrap items-center gap-2"
+        >
+          <input
+            type="text"
+            required
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            placeholder="Nombre del filtro favorito (ej. Urgentes Madrid)..."
+            className="flex-1 min-w-[200px] px-3 py-2 bg-bg-input border border-border text-xs text-charcoal"
+          />
+          <Button type="submit" size="sm" variant="primary">
+            Guardar favorito
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setSavingPreset(false)}>
+            Cancelar
+          </Button>
+        </form>
+      )}
+
+      {/* Chips de filtros favoritos guardados + limpiar */}
+      {(presets.length > 0 || hasActiveFilterCriteria) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {presets.map((p) => (
+            <span
+              key={p.id}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-surface border border-border rounded-full text-xs font-semibold text-charcoal"
+            >
+              <button
+                type="button"
+                onClick={() => applyPreset(p)}
+                className="hover:text-magenta font-bold"
+              >
+                ★ {p.name}
+              </button>
+              <button
+                type="button"
+                onClick={() => removePreset(p.id)}
+                className="text-mid-grey hover:text-danger"
+                aria-label={`Eliminar favorito ${p.name}`}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+          {hasActiveFilterCriteria && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-xs font-bold text-magenta hover:underline px-2 py-1"
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Panel de filtros */}
       {showFilters && (
-        <div className="bg-white rounded-md shadow-card p-4 border border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 border border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="block text-[11px] font-bold uppercase text-mid-grey mb-1">
               Estado
@@ -343,7 +575,7 @@ function TasksContent() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as TaskStatus | 'all')}
-              className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+              className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
             >
               <option value="all">Todos los estados</option>
               {Object.entries(TASK_STATUS_META).map(([k, v]) => (
@@ -361,7 +593,7 @@ function TasksContent() {
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | 'all')}
-              className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+              className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
             >
               <option value="all">Todas las prioridades</option>
               {Object.entries(TASK_PRIORITY_META).map(([k, v]) => (
@@ -380,7 +612,7 @@ function TasksContent() {
               <select
                 value={techFilter}
                 onChange={(e) => setTechFilter(e.target.value)}
-                className="w-full px-3 py-2 bg-bg-input border border-border text-sm"
+                className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
               >
                 <option value="all">Todos los técnicos</option>
                 <option value="unassigned">Sin asignar</option>
@@ -402,7 +634,7 @@ function TasksContent() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full px-2 py-2 bg-bg-input border border-border text-xs"
+                className="w-full px-2 py-2 bg-bg-input border border-border text-xs text-charcoal"
               />
             </div>
             <div>
@@ -413,7 +645,7 @@ function TasksContent() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="w-full px-2 py-2 bg-bg-input border border-border text-xs"
+                className="w-full px-2 py-2 bg-bg-input border border-border text-xs text-charcoal"
               />
             </div>
           </div>
@@ -435,11 +667,11 @@ function TasksContent() {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-44 bg-white rounded-md animate-pulse shadow-card" />
+            <div key={i} className="h-44 bg-white dark:bg-surface rounded-md animate-pulse shadow-card" />
           ))}
         </div>
       ) : filteredTasks.length === 0 ? (
-        <div className="bg-white rounded-md p-8 text-center shadow-card">
+        <div className="bg-white dark:bg-surface rounded-md p-8 text-center shadow-card">
           <p className="font-bold text-charcoal">
             {tab === 'trash' ? 'La papelera está vacía' : 'No se encontraron partes'}
           </p>
@@ -450,7 +682,7 @@ function TasksContent() {
           </p>
         </div>
       ) : viewMode === 'table' ? (
-        <div className="bg-white rounded-md shadow-card overflow-x-auto border border-border/60">
+        <div className="bg-white dark:bg-surface rounded-md shadow-card overflow-x-auto border border-border/60">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-navy text-white text-xs uppercase tracking-wider">
@@ -458,63 +690,75 @@ function TasksContent() {
                 <th className="p-3">Cliente</th>
                 <th className="p-3">Equipo</th>
                 <th className="p-3">Estado</th>
-                <th className="p-3">Prioridad</th>
+                <th className="p-3">Prioridad / SLA</th>
                 <th className="p-3">{tab === 'trash' ? 'Eliminado por' : 'Técnico'}</th>
                 <th className="p-3">{tab === 'trash' ? 'Acción' : 'Apertura'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-sm">
-              {filteredTasks.map((t) => (
-                <tr key={t.id} className="hover:bg-off-white transition-colors">
-                  <td className="p-3 font-bold text-navy">
-                    <Link href={`/tasks/${t.id}`} className="hover:underline">
-                      {t.code}
-                    </Link>
-                  </td>
-                  <td className="p-3 font-semibold text-charcoal">{t.customer?.name}</td>
-                  <td className="p-3 text-dark-grey">{t.equipment_ref || '—'}</td>
-                  <td className="p-3">
-                    <StatusBadge status={t.status} />
-                  </td>
-                  <td className="p-3">
-                    <PriorityBadge priority={t.priority} />
-                  </td>
-                  <td className="p-3 text-dark-grey text-xs">
-                    {tab === 'trash' ? (
-                      <div>
-                        <span className="font-bold text-danger block">
-                          {t.deleter?.full_name || 'Usuario'}
-                        </span>
-                        <span className="text-mid-grey">
-                          {t.deleted_at ? new Date(t.deleted_at).toLocaleString('es-ES') : ''}
-                        </span>
-                        {t.deletion_reason && (
-                          <span className="block text-[11px] italic text-dark-grey">
-                            &ldquo;{t.deletion_reason}&rdquo;
+              {filteredTasks.map((t) => {
+                const sla = getSlaStatus(t);
+                return (
+                  <tr key={t.id} className="hover:bg-off-white transition-colors">
+                    <td className="p-3 font-bold text-navy dark:text-sky-300">
+                      <Link href={`/tasks/${t.id}`} className="hover:underline">
+                        {t.code}
+                      </Link>
+                    </td>
+                    <td className="p-3 font-semibold text-charcoal">{t.customer?.name}</td>
+                    <td className="p-3 text-dark-grey">{t.equipment_ref || '—'}</td>
+                    <td className="p-3">
+                      <StatusBadge status={t.status} />
+                    </td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <PriorityBadge priority={t.priority} />
+                        {sla && (
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-xs ${sla.badgeClass}`}
+                          >
+                            {sla.shortLabel}
                           </span>
                         )}
                       </div>
-                    ) : (
-                      t.assignee?.full_name || 'Sin asignar'
-                    )}
-                  </td>
-                  <td className="p-3 text-xs text-mid-grey">
-                    {tab === 'trash' ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        isLoading={restoringId === t.id}
-                        onClick={() => handleRestore(t.id, t.code)}
-                      >
-                        <RotateCcw size={14} /> Restaurar
-                      </Button>
-                    ) : (
-                      new Date(t.created_at).toLocaleDateString('es-ES')
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="p-3 text-dark-grey text-xs">
+                      {tab === 'trash' ? (
+                        <div>
+                          <span className="font-bold text-danger block">
+                            {t.deleter?.full_name || 'Usuario'}
+                          </span>
+                          <span className="text-mid-grey">
+                            {t.deleted_at ? new Date(t.deleted_at).toLocaleString('es-ES') : ''}
+                          </span>
+                          {t.deletion_reason && (
+                            <span className="block text-[11px] italic text-dark-grey">
+                              &ldquo;{t.deletion_reason}&rdquo;
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        t.assignee?.full_name || 'Sin asignar'
+                      )}
+                    </td>
+                    <td className="p-3 text-xs text-mid-grey">
+                      {tab === 'trash' ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          isLoading={restoringId === t.id}
+                          onClick={() => handleRestore(t.id, t.code)}
+                        >
+                          <RotateCcw size={14} /> Restaurar
+                        </Button>
+                      ) : (
+                        new Date(t.created_at).toLocaleDateString('es-ES')
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
