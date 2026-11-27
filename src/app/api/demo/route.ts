@@ -564,6 +564,9 @@ export async function POST(request: Request) {
           assigned_to: effectiveAssignedTo,
           assigned_at: effectiveAssignedTo ? nowIso : null,
           resolution_notes: null,
+          resolution: null,
+          resolution_updated_at: null,
+          resolution_updated_by: null,
           materials_used: Array.isArray(payload.materials_used) ? payload.materials_used : [],
           scheduled_date: payload.scheduled_date || null,
           merchandise_check_done:
@@ -656,6 +659,16 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
+        if (
+          normalizedStatus === 'completed' &&
+          (prev.task_type || 'rma_incident') !== 'installation' &&
+          !prev.resolution?.trim()
+        ) {
+          return NextResponse.json(
+            { error: 'Para cerrar este parte es obligatorio indicar la resolución del problema.' },
+            { status: 400 }
+          );
+        }
 
         state.tasks[idx] = {
           ...prev,
@@ -704,23 +717,28 @@ export async function POST(request: Request) {
         }
         const cleanNote = note.trim();
         const actor = state.profiles.find((p) => p.id === actorId);
+        const lastNoteTs = state.history
+          .filter((h) => h.task_id === taskId && h.event_type === 'note_added')
+          .reduce((maxMs, h) => Math.max(maxMs, Date.parse(h.created_at) || 0), 0);
+        const noteCreatedAt = new Date(
+          Math.max(Date.parse(nowIso) || Date.now(), lastNoteTs + 1)
+        ).toISOString();
 
         state.tasks[idx] = {
           ...state.tasks[idx],
-          resolution_notes: cleanNote,
-          updated_at: nowIso,
+          updated_at: noteCreatedAt,
         };
         state.history.push({
-          id: `hist-${Date.now()}`,
+          id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           task_id: taskId,
           actor_id: actorId,
           event_type: 'note_added',
-          field_name: 'resolution_notes',
+          field_name: 'technical_notes',
           old_value: null,
           new_value: null,
           note: cleanNote,
           metadata: {},
-          created_at: nowIso,
+          created_at: noteCreatedAt,
         });
 
         await dispatchServerDemoNotifications(state, {
@@ -748,7 +766,11 @@ export async function POST(request: Request) {
 
         const prev = state.tasks[idx];
         const actor = state.profiles.find((p) => p.id === actorId);
-        const next: Task = { ...prev, ...patch, updated_at: nowIso };
+        const normalizedPatch =
+          patch.resolution !== undefined
+            ? { ...patch, resolution: patch.resolution?.trim() || null }
+            : patch;
+        const next: Task = { ...prev, ...normalizedPatch, updated_at: nowIso };
         if (
           next.status === 'completed' &&
           (next.task_type || 'rma_incident') === 'cxc_incident' &&
@@ -759,17 +781,55 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
+        if (
+          next.status === 'completed' &&
+          (next.task_type || 'rma_incident') !== 'installation' &&
+          (normalizeTaskStatus(prev.status) !== 'completed' || Boolean(prev.resolution?.trim())) &&
+          !next.resolution?.trim()
+        ) {
+          return NextResponse.json(
+            { error: 'Para cerrar este parte es obligatorio indicar la resolución del problema.' },
+            { status: 400 }
+          );
+        }
 
-        if (patch.assigned_to !== undefined && patch.assigned_to !== prev.assigned_to) {
-          next.assigned_at = patch.assigned_to ? nowIso : null;
+        if (
+          normalizedPatch.resolution !== undefined &&
+          (next.resolution ?? null) !== (prev.resolution ?? null)
+        ) {
+          next.resolution_updated_at = nowIso;
+          next.resolution_updated_by = actorId;
         }
-        if (patch.status) {
-          next.status = normalizeTaskStatus(patch.status);
+
+        if (normalizedPatch.assigned_to !== undefined && normalizedPatch.assigned_to !== prev.assigned_to) {
+          next.assigned_at = normalizedPatch.assigned_to ? nowIso : null;
         }
-        if (patch.status === 'completed' && !next.completed_at) {
+        if (normalizedPatch.status) {
+          next.status = normalizeTaskStatus(normalizedPatch.status);
+        }
+        if (normalizedPatch.status === 'completed' && !next.completed_at) {
           next.completed_at = nowIso;
         }
         state.tasks[idx] = next;
+
+        if (
+          normalizedPatch.resolution !== undefined &&
+          (next.resolution ?? null) !== (prev.resolution ?? null) &&
+          next.resolution
+        ) {
+          state.history.push({
+            id: `hist-${Date.now()}-res`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'resolution',
+            old_value: prev.resolution ?? null,
+            new_value: next.resolution,
+            note: `Resolución registrada: ${next.resolution}`,
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
 
         if (patch.priority && patch.priority !== prev.priority) {
           state.history.push({

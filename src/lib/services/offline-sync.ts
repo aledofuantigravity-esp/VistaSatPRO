@@ -30,6 +30,12 @@ export async function syncOfflineActions(actor: Profile): Promise<number> {
           await updateTaskStatus(action.taskId, action.payload.status, actor);
         } else if (action.actionType === 'add_note' && action.payload.note) {
           await addTaskNote(action.taskId, action.payload.note, actor);
+        } else if (action.actionType === 'update_resolution') {
+          await updateTaskFields(
+            action.taskId,
+            { resolution: action.payload.resolution ?? null },
+            actor
+          );
         } else if (action.actionType === 'update_materials' && action.payload.materials) {
           await updateTaskFields(
             action.taskId,

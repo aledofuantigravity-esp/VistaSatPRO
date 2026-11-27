@@ -8,6 +8,7 @@ export interface OfflineAction {
   actionType:
     | 'status_change'
     | 'add_note'
+    | 'update_resolution'
     | 'update_materials'
     | 'update_cxc'
     | 'add_comment'
@@ -16,6 +17,7 @@ export interface OfflineAction {
   payload: {
     status?: TaskStatus;
     note?: string;
+    resolution?: string | null;
     materials?: MaterialItem[];
     cxc?: {
       equipment_sn?: string | null;

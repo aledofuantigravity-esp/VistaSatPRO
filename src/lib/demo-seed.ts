@@ -313,6 +313,9 @@ export function createInitialDemoState(): DemoDatabaseState {
       assigned_to: 'user-tech-1',
       assigned_at: hoursAgo(30),
       resolution_notes: 'Baterías sustituidas, test de carga al 100% superado (38 min autonomía).',
+      resolution: 'Baterías sustituidas, test de carga al 100% superado (38 min autonomía).',
+      resolution_updated_at: hoursAgo(4),
+      resolution_updated_by: 'user-tech-1',
       materials_used: [{ id: 'mat-4', name: 'Pack Batería RBC43', ref: 'APC-RBC43', qty: 1 }],
       client_signature_url: null,
       signer_name: 'Beatriz Gómez',
@@ -650,6 +653,9 @@ export function hydrateTasks(state: DemoDatabaseState, tasks: Task[]): Task[] {
     assignee: t.assigned_to ? state.profiles.find((p) => p.id === t.assigned_to) || null : null,
     creator: state.profiles.find((p) => p.id === t.created_by) || null,
     deleter: t.deleted_by ? state.profiles.find((p) => p.id === t.deleted_by) || null : null,
+    resolution_updater: t.resolution_updated_by
+      ? state.profiles.find((p) => p.id === t.resolution_updated_by) || null
+      : null,
     attachment_count: state.attachments.filter(
       (a) => a.task_id === t.id && a.attachment_kind !== 'installation_order'
     ).length,

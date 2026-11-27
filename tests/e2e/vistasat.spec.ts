@@ -195,11 +195,19 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
       page.getByText(/obligatorio introducir y guardar primero el Nº de Serie/i).first()
     ).toBeVisible();
 
-    // Rellenar nº de serie en la pantalla de detalle y ahora sí cerrar
+    // Rellenar nº de serie en la pantalla de detalle; sin resolución sigue bloqueado el cierre
     await page.getByPlaceholder(/SN-CXC-90412/i).fill('SN-CXC-E2E-001');
     await page.getByRole('button', { name: /Guardar datos CXC/i }).click();
     await expect(page.getByText('S/N: SN-CXC-E2E-001')).toBeVisible();
 
+    await page.getByRole('button', { name: /Cerrar Incidencia/i }).click();
+    await expect(
+      page.getByText(/obligatorio indicar la resolución del problema/i).first()
+    ).toBeVisible();
+
+    await page
+      .getByLabel('Resolución del problema')
+      .fill('Sustituido fusor y calibrado alimentador de papel CXC.');
     await page.getByRole('button', { name: /Cerrar Incidencia/i }).click();
     await expect(page.getByText('Completada').first()).toBeVisible();
 
@@ -615,7 +623,10 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
       await page.getByRole('button', { name: /En Proceso/i }).click();
       await expect(page.getByText('En Proceso').first()).toBeVisible();
 
-      // Al pulsar Cerrar Parte pasa automáticamente a Completada
+      // Al rellenar la resolución y pulsar Cerrar Parte pasa automáticamente a Completada
+      await page
+        .getByLabel('Resolución del problema')
+        .fill('Sustituida bomba hidráulica y verificada presión nominal.');
       await page.getByRole('button', { name: /Cerrar Parte/i }).click();
       await expect(page.getByText('Completada').first()).toBeVisible();
     } finally {
@@ -723,5 +734,104 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(
       page.getByRole('button', { name: /CSV Completo \(Partes y Materiales\)/i })
     ).toBeVisible();
+  });
+
+  test('14. Notas técnicas acumulativas (más reciente arriba + usuario + fecha/hora) y resolución obligatoria al cerrar salvo Instalaciones', async ({
+    page,
+  }) => {
+    await loginAsCoordinator(page);
+
+    // A) Incidencia RMA: notas acumulativas y resolución obligatoria
+    await page.goto('/tasks/new');
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByPlaceholder(/Impresora Ricoh/i).fill('Equipo RMA Notas y Resolución E2E');
+    await page.getByPlaceholder(/Describe síntomas/i).fill('Comprobación E2E notas y resolución.');
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+
+    await expect(
+      page.getByRole('heading', { name: /Notas Técnicas e Incidencias/i })
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Resolución$/i })).toBeVisible();
+    await expect(page.getByText('Obligatoria al cerrar')).toBeVisible();
+
+    // Registrar 2 notas consecutivas
+    const noteBox = page.getByLabel('Nueva nota técnica o incidencia');
+    await noteBox.fill('Primera nota técnica E2E');
+    await page.getByRole('button', { name: /Guardar nota/i }).click();
+    await expect(page.getByTestId('technical-note-item')).toHaveCount(1);
+
+    await noteBox.fill('Segunda nota más reciente E2E');
+    await page.getByRole('button', { name: /Guardar nota/i }).click();
+    const noteItems = page.getByTestId('technical-note-item');
+    await expect(noteItems).toHaveCount(2);
+
+    // La más reciente debe aparecer arriba con usuario y fecha/hora
+    await expect(noteItems.nth(0)).toContainText('Segunda nota más reciente E2E');
+    await expect(noteItems.nth(0)).toContainText('Laura Navarro');
+    await expect(noteItems.nth(0)).toContainText(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
+    await expect(noteItems.nth(1)).toContainText('Primera nota técnica E2E');
+    await expect(noteItems.nth(1)).toContainText('Laura Navarro');
+
+    // Bloqueo al cerrar por botón y por Cambiar Estado -> Completada sin resolución
+    await page.getByRole('button', { name: /Cerrar Parte/i }).click();
+    await expect(
+      page.getByText(/obligatorio indicar la resolución del problema/i).first()
+    ).toBeVisible();
+
+    await page.getByRole('button', { name: /Cambiar Estado/i }).click();
+    await page.getByRole('button', { name: /^Completada/i }).click();
+    await expect(
+      page.getByText(/obligatorio indicar la resolución del problema/i).first()
+    ).toBeVisible();
+
+    // Escribir resolución y pulsar Cerrar Parte directamente (guardado automático + cierre)
+    await page
+      .getByLabel('Resolución del problema')
+      .fill('Sustituido módulo de control y test OK.');
+    await page.getByRole('button', { name: /Cerrar Parte/i }).click();
+    await expect(page.getByText('Completada').first()).toBeVisible();
+    await expect(page.getByText('Registrada', { exact: true })).toBeVisible();
+
+    // Persistencia tras recargar
+    await page.reload();
+    await expect(page.getByTestId('technical-note-item').nth(0)).toContainText(
+      'Segunda nota más reciente E2E'
+    );
+    await expect(page.getByLabel('Resolución del problema')).toHaveValue(
+      'Sustituido módulo de control y test OK.'
+    );
+
+    // B) Parte de Instalación: admite notas ordenadas pero NO muestra ni exige Resolución
+    await page.goto('/tasks/new?type=installation');
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByPlaceholder(/Ricoh IM C3500/i).fill('Instalación Notas Sin Resolución E2E');
+    await page.getByPlaceholder(/solicitud de instalación/i).fill('Prueba instalación notas.');
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+
+    await expect(
+      page.getByRole('heading', { name: /Notas Técnicas e Incidencias/i })
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Resolución$/i })).toHaveCount(0);
+
+    const instNoteBox = page.getByLabel('Nueva nota técnica o incidencia');
+    await instNoteBox.fill('Incidencia instalación inicial E2E');
+    await page.getByRole('button', { name: /Guardar nota/i }).click();
+    await expect(page.getByTestId('technical-note-item')).toHaveCount(1);
+    await instNoteBox.fill('Nota final instalación E2E');
+    await page.getByRole('button', { name: /Guardar nota/i }).click();
+    await expect(page.getByTestId('technical-note-item').nth(0)).toContainText(
+      'Nota final instalación E2E'
+    );
+    await expect(page.getByTestId('technical-note-item').nth(0)).toContainText('Laura Navarro');
+
+    await page.getByRole('button', { name: /Finalizar Instalación/i }).click();
+    await page.getByRole('button', { name: /No, cerrar sin foto/i }).click();
+    await expect(page.getByText('Completada').first()).toBeVisible();
   });
 });

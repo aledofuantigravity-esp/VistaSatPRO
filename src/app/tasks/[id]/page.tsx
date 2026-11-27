@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   Pencil,
   RotateCcw,
-  Send,
   Wrench,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
@@ -28,7 +27,9 @@ import { TaskGallerySection } from '@/components/tasks/TaskGallerySection';
 import { TaskHeaderSection } from '@/components/tasks/TaskHeaderSection';
 import { TaskHistorySection } from '@/components/tasks/TaskHistorySection';
 import { TaskMaterialsSection } from '@/components/tasks/TaskMaterialsSection';
+import { TaskResolutionSection } from '@/components/tasks/TaskResolutionSection';
 import { TaskStatusSheet } from '@/components/tasks/TaskStatusSheet';
+import { TaskTechnicalNotesSection } from '@/components/tasks/TaskTechnicalNotesSection';
 import { Button } from '@/components/ui/Button';
 import { SignaturePadModal } from '@/components/ui/SignaturePadModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -45,6 +46,11 @@ import {
   uploadTaskAttachment,
 } from '@/lib/data-service';
 import { getSlaStatus } from '@/lib/sla';
+import {
+  isResolutionRequiredForClosure,
+  validateTaskClosureRequirements,
+  type TechnicalNoteEntry,
+} from '@/lib/task-notes';
 import { useAppCache } from '@/store/app-cache';
 import {
   resolveTaskType,
@@ -88,8 +94,14 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [loading, setLoading] = useState(!cachedDetail);
 
   // Estado de UI e interacciones
-  const [noteInput, setNoteInput] = useState('');
-  const [savingNote, setSavingNote] = useState(false);
+  const [pendingOfflineNotes, setPendingOfflineNotes] = useState<TechnicalNoteEntry[]>([]);
+  const [resolutionDraft, setResolutionDraft] = useState(
+    () => cachedDetail?.task?.resolution || ''
+  );
+  const [savingResolution, setSavingResolution] = useState(false);
+  const [resolutionError, setResolutionError] = useState<string | null>(null);
+  const resolutionDirtyRef = useRef(false);
+  const resolutionTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
@@ -121,6 +133,9 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           shouldLoadProfs ? listProfiles() : Promise.resolve(useAppCache.getState().profiles),
         ]);
         setTask(detail.task);
+        if (!resolutionDirtyRef.current) {
+          setResolutionDraft(detail.task?.resolution || '');
+        }
         setHistory(detail.history);
         setAttachments(detail.attachments);
         setComments(detail.comments);
@@ -133,8 +148,13 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   );
 
   useEffect(() => {
+    resolutionDirtyRef.current = false;
     const t = setTimeout(() => void load(), 0);
     const handler = () => {
+      if (!suppressReloadRef.current) void load(true);
+    };
+    const offlineSyncedHandler = () => {
+      setPendingOfflineNotes([]);
       if (!suppressReloadRef.current) void load(true);
     };
     const notifHandler = (ev: Event) => {
@@ -146,12 +166,12 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     };
     window.addEventListener('vistasat:demo-updated', handler);
     window.addEventListener('vistasat:notification-received', notifHandler);
-    window.addEventListener('vistasat:offline-synced', handler);
+    window.addEventListener('vistasat:offline-synced', offlineSyncedHandler);
     return () => {
       clearTimeout(t);
       window.removeEventListener('vistasat:demo-updated', handler);
       window.removeEventListener('vistasat:notification-received', notifHandler);
-      window.removeEventListener('vistasat:offline-synced', handler);
+      window.removeEventListener('vistasat:offline-synced', offlineSyncedHandler);
     };
   }, [load, taskId]);
 
@@ -203,6 +223,45 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     (a) => !isInstallationOrderAttachment(a) && !isPhysicalWorkOrderAttachment(a)
   );
 
+  const prepareTaskClosure = async (): Promise<boolean> => {
+    const validationMsg = validateTaskClosureRequirements(task, resolutionDraft);
+    if (validationMsg) {
+      setCloseError(validationMsg);
+      if (
+        isResolutionRequiredForClosure(taskType) &&
+        !resolutionDraft.trim() &&
+        !task.resolution?.trim()
+      ) {
+        setResolutionError(validationMsg);
+        resolutionTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        resolutionTextareaRef.current?.focus();
+      }
+      showTempMessage(validationMsg);
+      return false;
+    }
+
+    const cleanDraft = resolutionDraft.trim();
+    const savedClean = (task.resolution || '').trim();
+    if (isResolutionRequiredForClosure(taskType) && cleanDraft && cleanDraft !== savedClean) {
+      await updateTaskFields(task.id, { resolution: cleanDraft }, profile);
+      resolutionDirtyRef.current = false;
+      setResolutionDraft(cleanDraft);
+      setTask((prev) =>
+        prev
+          ? {
+              ...prev,
+              resolution: cleanDraft,
+              resolution_updated_at: new Date().toISOString(),
+              resolution_updated_by: profile.id,
+              resolution_updater: profile,
+            }
+          : prev
+      );
+    }
+    setResolutionError(null);
+    return true;
+  };
+
   const handleStatusChange = async (newStatus: TaskStatus) => {
     setShowStatusSheet(false);
     setCloseError(null);
@@ -215,12 +274,16 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       setShowFinishInstallModal(true);
       return;
     }
-    if (newStatus === 'completed' && taskType === 'cxc_incident' && !task.equipment_sn?.trim()) {
-      const msg =
-        'Para cerrar una Incidencia CXC es obligatorio introducir y guardar primero el Nº de Serie.';
-      setCloseError(msg);
-      showTempMessage(msg);
-      return;
+    if (newStatus === 'completed') {
+      try {
+        const ok = await prepareTaskClosure();
+        if (!ok) return;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'No se pudo guardar la resolución.';
+        setCloseError(msg);
+        showTempMessage(msg);
+        return;
+      }
     }
 
     const prevStatus = task.status;
@@ -265,23 +328,69 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     await load(true);
   };
 
-  const handleAddNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!noteInput.trim()) return;
-    setSavingNote(true);
+  const handleAddTechnicalNote = async (noteText: string) => {
+    const res = await addTaskNote(task.id, noteText, profile);
+    if (res.offlineQueued) {
+      const nowIso = new Date(
+        Math.max(
+          Date.now(),
+          ...pendingOfflineNotes.map((n) => (Date.parse(n.createdAt) || 0) + 1)
+        )
+      ).toISOString();
+      setPendingOfflineNotes((prev) => [
+        {
+          id: `offline-note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          text: noteText.trim(),
+          authorName: profile.full_name,
+          createdAt: nowIso,
+          pendingSync: true,
+        },
+        ...prev,
+      ]);
+      showTempMessage('Sin conexión: nota técnica guardada en cola offline.');
+    } else {
+      showTempMessage('Nota técnica registrada.');
+      await load(true);
+    }
+  };
+
+  const handleSaveResolution = async () => {
+    const clean = resolutionDraft.trim();
+    if (task.status === 'completed' && isResolutionRequiredForClosure(taskType) && !clean) {
+      const msg = 'Para cerrar este parte es obligatorio indicar la resolución del problema.';
+      setResolutionError(msg);
+      showTempMessage(msg);
+      return;
+    }
+    setSavingResolution(true);
+    setResolutionError(null);
     try {
-      const res = await addTaskNote(task.id, noteInput, profile);
-      const savedText = noteInput.trim();
-      setNoteInput('');
+      const res = await updateTaskFields(task.id, { resolution: clean || null }, profile);
+      resolutionDirtyRef.current = false;
+      setResolutionDraft(clean);
+      setTask((prev) =>
+        prev
+          ? {
+              ...prev,
+              resolution: clean || null,
+              resolution_updated_at: new Date().toISOString(),
+              resolution_updated_by: profile.id,
+              resolution_updater: profile,
+            }
+          : prev
+      );
       if (res.offlineQueued) {
-        setTask((prev) => (prev ? { ...prev, resolution_notes: savedText } : prev));
-        showTempMessage('Sin conexión: nota encolada en IndexedDB.');
+        showTempMessage('Sin conexión: resolución guardada en cola offline.');
       } else {
-        showTempMessage('Nota técnica registrada en historial.');
+        showTempMessage('Resolución guardada correctamente.');
         await load(true);
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'No se pudo guardar la resolución.';
+      setResolutionError(msg);
+      showTempMessage(msg);
     } finally {
-      setSavingNote(false);
+      setSavingResolution(false);
     }
   };
 
@@ -292,13 +401,16 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       setShowFinishInstallModal(true);
       return;
     }
-    if (taskType === 'cxc_incident' && !task.equipment_sn?.trim()) {
-      const msg =
-        'Para cerrar una Incidencia CXC es obligatorio introducir y guardar primero el Nº de Serie.';
+    try {
+      const ok = await prepareTaskClosure();
+      if (!ok) return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'No se pudo guardar la resolución.';
       setCloseError(msg);
       showTempMessage(msg);
       return;
     }
+
     const prevStatus = task.status;
     setTask((prev) => (prev ? { ...prev, status: 'completed' } : prev));
     try {
@@ -568,44 +680,32 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         isDeleted={isDeleted}
       />
 
-      {/* Notas Técnicas / Incidencias / Avance de tarea */}
-      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
-        <h2 className="text-sm font-bold text-navy uppercase tracking-wider">
-          {taskType === 'installation'
-            ? 'Finalización de Instalación · Incidencias y Observaciones'
-            : taskType === 'task'
-            ? 'Informe de Avance de la Tarea'
-            : 'Notas Técnicas / Incidencias'}
-        </h2>
-        {task.resolution_notes && (
-          <div className="p-3 bg-navy/5 text-sm text-charcoal border-l-4 border-navy">
-            <span className="text-[11px] font-bold uppercase text-navy block mb-1">
-              Última nota registrada:
-            </span>
-            {task.resolution_notes}
-          </div>
-        )}
-        {!isDeleted && (
-          <form onSubmit={handleAddNote} className="space-y-2">
-            <textarea
-              rows={3}
-              value={noteInput}
-              onChange={(e) => setNoteInput(e.target.value)}
-              placeholder={
-                taskType === 'installation'
-                  ? 'Anota incidencias durante la instalación o comentarios finales...'
-                  : taskType === 'task'
-                  ? 'Informa del progreso de la tarea...'
-                  : 'Añade diagnóstico, actuaciones realizadas o incidencias...'
-              }
-              className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
-            />
-            <Button type="submit" size="sm" isLoading={savingNote} disabled={!noteInput.trim()}>
-              <Send size={14} /> Guardar nota en historial
-            </Button>
-          </form>
-        )}
-      </div>
+      <TaskTechnicalNotesSection
+        task={task}
+        taskType={taskType}
+        history={history}
+        pendingOfflineNotes={pendingOfflineNotes}
+        isDeleted={isDeleted}
+        onAddNote={handleAddTechnicalNote}
+      />
+
+      {isResolutionRequiredForClosure(taskType) && (
+        <TaskResolutionSection
+          task={task}
+          history={history}
+          draftValue={resolutionDraft}
+          saving={savingResolution}
+          error={resolutionError}
+          isDeleted={isDeleted}
+          textareaRef={resolutionTextareaRef}
+          onChangeDraft={(val) => {
+            resolutionDirtyRef.current = true;
+            setResolutionDraft(val);
+            if (resolutionError && val.trim()) setResolutionError(null);
+          }}
+          onSave={handleSaveResolution}
+        />
+      )}
 
       <TaskMaterialsSection
         task={task}

@@ -439,9 +439,6 @@ export async function addTaskNote(
       actionType: 'add_note',
       payload: { note: cleanNote },
     });
-    useAppCache.getState().patchTaskOptimistic(taskId, {
-      resolution_notes: cleanNote,
-    });
     return { offlineQueued: true };
   }
 
@@ -459,13 +456,23 @@ export async function addTaskNote(
     return {};
   }
 
-  const { data, error } = await supabase
+  const { error: histError } = await supabase.from('task_history').insert({
+    task_id: taskId,
+    actor_id: actor.id,
+    event_type: 'note_added',
+    field_name: 'technical_notes',
+    note: cleanNote,
+  });
+  if (histError) {
+    captureMonitoringError(histError, { scope: 'addTaskNote', taskId });
+    throw new Error(histError.message);
+  }
+
+  const { data: taskRow } = await supabase
     .from('tasks')
-    .update({ resolution_notes: cleanNote })
-    .eq('id', taskId)
     .select('code')
+    .eq('id', taskId)
     .single();
-  if (error) throw new Error(error.message);
 
   useAppCache.getState().invalidateTaskDetail(taskId);
   useAppCache.getState().invalidateTasks();
@@ -474,7 +481,7 @@ export async function addTaskNote(
     taskId,
     actorId: actor.id,
     type: 'comment_added',
-    title: `Nueva nota en ${data.code}`,
+    title: `Nueva nota técnica en ${taskRow?.code || 'parte'}`,
     body: `${actor.full_name}: "${cleanNote.slice(0, 90)}"`,
   });
 
@@ -508,26 +515,48 @@ export async function updateTaskFields(
     client_signature_url: string | null;
     signer_name: string | null;
     resolution_notes: string | null;
+    resolution: string | null;
   }>,
   actor: Profile
 ): Promise<{ offlineQueued?: boolean }> {
-  // Soporte offline para actualización de materiales o lecturas CXC
+  const normalizedPatch =
+    patch.resolution !== undefined
+      ? { ...patch, resolution: patch.resolution?.trim() || null }
+      : patch;
+
+  // Soporte offline para resolución, actualización de materiales o lecturas CXC
   if (!isOnline()) {
-    const keys = Object.keys(patch);
+    const keys = Object.keys(normalizedPatch);
+    const onlyResolution = keys.length === 1 && keys[0] === 'resolution';
     const onlyMaterials = keys.length === 1 && keys[0] === 'materials_used';
     const isCxcUpdate = keys.every((k) =>
       ['equipment_sn', 'meter_bw', 'meter_color'].includes(k)
     );
 
-    if (onlyMaterials && patch.materials_used) {
+    if (onlyResolution) {
+      await enqueueOfflineAction({
+        taskId,
+        actorId: actor.id,
+        actionType: 'update_resolution',
+        payload: { resolution: normalizedPatch.resolution ?? null },
+      });
+      useAppCache.getState().patchTaskOptimistic(taskId, {
+        resolution: normalizedPatch.resolution ?? null,
+        resolution_updated_at: new Date().toISOString(),
+        resolution_updated_by: actor.id,
+      });
+      return { offlineQueued: true };
+    }
+
+    if (onlyMaterials && normalizedPatch.materials_used) {
       await enqueueOfflineAction({
         taskId,
         actorId: actor.id,
         actionType: 'update_materials',
-        payload: { materials: patch.materials_used },
+        payload: { materials: normalizedPatch.materials_used },
       });
       useAppCache.getState().patchTaskOptimistic(taskId, {
-        materials_used: patch.materials_used,
+        materials_used: normalizedPatch.materials_used,
       });
       return { offlineQueued: true };
     }
@@ -539,13 +568,13 @@ export async function updateTaskFields(
         actionType: 'update_cxc',
         payload: {
           cxc: {
-            equipment_sn: patch.equipment_sn,
-            meter_bw: patch.meter_bw,
-            meter_color: patch.meter_color,
+            equipment_sn: normalizedPatch.equipment_sn,
+            meter_bw: normalizedPatch.meter_bw,
+            meter_color: normalizedPatch.meter_color,
           },
         },
       });
-      useAppCache.getState().patchTaskOptimistic(taskId, patch);
+      useAppCache.getState().patchTaskOptimistic(taskId, normalizedPatch);
       return { offlineQueued: true };
     }
 
@@ -558,7 +587,7 @@ export async function updateTaskFields(
     await demoPost({
       action: 'update_task_fields',
       taskId,
-      patch,
+      patch: normalizedPatch,
       actorId: actor.id,
     });
     useAppCache.getState().invalidateTaskDetail(taskId);
@@ -568,7 +597,7 @@ export async function updateTaskFields(
 
   const { data, error } = await supabase
     .from('tasks')
-    .update(patch)
+    .update(normalizedPatch)
     .eq('id', taskId)
     .select('code')
     .single();

@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import { extractTechnicalNotes } from '@/lib/task-notes';
 import {
   type Attachment,
   type Task,
@@ -262,9 +263,6 @@ export function generateTaskPDF(
         ? 'No se ha adjuntado parte de trabajo físico'
         : 'Pendiente de finalización';
     addRow('Parte trabajo físico', physicalOrderStatus);
-    if (task.resolution_notes) {
-      addRow('Incidencias / Notas', task.resolution_notes);
-    }
   } else if (taskType === 'cxc_incident') {
     addSectionTitle('Equipo, Contadores y Descripción CXC');
     addRow('Equipo / Modelo', task.equipment_ref);
@@ -278,26 +276,54 @@ export function generateTaskPDF(
       task.meter_color != null ? task.meter_color.toLocaleString('es-ES') : 'No registrado'
     );
     addRow('Descripción CXC', task.problem_desc);
-    if (task.resolution_notes) {
-      addRow('Notas / Resolución', task.resolution_notes);
+    if (task.resolution) {
+      addRow('Resolución', task.resolution);
     }
   } else if (taskType === 'task') {
-    addSectionTitle('Descripción y Avance de la Tarea');
+    addSectionTitle('Descripción y Resolución de la Tarea');
     addRow('Tarea asignada', task.problem_desc);
-    if (task.resolution_notes) {
-      addRow('Último informe', task.resolution_notes);
+    if (task.resolution) {
+      addRow('Resolución', task.resolution);
     }
   } else {
     addSectionTitle('Equipo y Descripción del Problema');
     addRow('Equipo / Modelo', task.equipment_ref);
     addRow('Nº de Serie', task.equipment_sn);
     addRow('Descripción', task.problem_desc);
-    if (task.resolution_notes) {
-      addRow('Notas resolución', task.resolution_notes);
+    if (task.resolution) {
+      addRow('Resolución', task.resolution);
     }
   }
 
   y += 3;
+
+  // ─── Notas Técnicas e Incidencias (más reciente primero) ─────────────────
+  const technicalNotes = extractTechnicalNotes(task, history);
+  if (technicalNotes.length > 0) {
+    addSectionTitle('Notas Técnicas e Incidencias');
+    doc.setFontSize(8.5);
+    for (const noteItem of technicalNotes) {
+      if (y > 268) {
+        doc.addPage();
+        y = 20;
+      }
+      const ts = new Date(noteItem.createdAt).toLocaleString('es-ES', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      });
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 33, 105);
+      doc.text(`${noteItem.authorName} · ${ts}`, 14, y);
+      y += 4.5;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(34, 34, 34);
+      const lines = doc.splitTextToSize(noteItem.text, contentWidth);
+      doc.text(lines, 14, y);
+      y += lines.length * 4.5 + 3;
+    }
+    y += 2;
+  }
 
   // ─── Materiales y Piezas Empleadas ───────────────────────────────────────
   if (task.materials_used && task.materials_used.length > 0) {

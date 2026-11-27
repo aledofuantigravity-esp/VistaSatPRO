@@ -146,6 +146,9 @@ export interface Task {
   assigned_to: string | null;
   assigned_at: string | null;
   resolution_notes: string | null;
+  resolution?: string | null;
+  resolution_updated_at?: string | null;
+  resolution_updated_by?: string | null;
   materials_used: MaterialItem[];
   client_signature_url: string | null;
   signer_name: string | null;
@@ -175,6 +178,7 @@ export interface Task {
   assignee?: Profile | null;
   creator?: Profile | null;
   deleter?: Profile | null;
+  resolution_updater?: Profile | null;
   attachment_count?: number;
 }
 
