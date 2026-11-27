@@ -118,7 +118,8 @@ export async function POST(request: Request) {
               body: 'Las notificaciones Push en segundo plano funcionan correctamente.',
               taskId: null,
               type: 'generic',
-            })
+            }),
+            { TTL: 86400, urgency: 'high' }
           );
           sent++;
         } catch (err: unknown) {
@@ -264,7 +265,8 @@ export async function POST(request: Request) {
                 endpoint: sub.endpoint,
                 keys: { p256dh: sub.p256dh, auth: sub.auth },
               },
-              JSON.stringify({ title, body, taskId, type })
+              JSON.stringify({ title, body, taskId, type }),
+              { TTL: 86400, urgency: 'high' }
             );
             pushCount++;
           } catch (err: unknown) {

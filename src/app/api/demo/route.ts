@@ -854,6 +854,35 @@ export async function POST(request: Request) {
         }
 
         if (
+          patch.physical_work_order_attached !== undefined &&
+          patch.physical_work_order_attached !== (prev.physical_work_order_attached ?? null)
+        ) {
+          state.history.push({
+            id: `hist-${Date.now()}-pwo`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'physical_work_order_attached',
+            old_value:
+              prev.physical_work_order_attached == null
+                ? null
+                : String(prev.physical_work_order_attached),
+            new_value:
+              patch.physical_work_order_attached == null
+                ? null
+                : String(patch.physical_work_order_attached),
+            note:
+              patch.physical_work_order_attached === true
+                ? 'Parte de trabajo físico adjuntado'
+                : patch.physical_work_order_attached === false
+                ? 'Instalación finalizada sin adjuntar parte de trabajo físico'
+                : 'Estado de parte de trabajo físico restablecido',
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
+        if (
           (patch.meter_bw !== undefined && patch.meter_bw !== (prev.meter_bw ?? null)) ||
           (patch.meter_color !== undefined && patch.meter_color !== (prev.meter_color ?? null))
         ) {
@@ -1031,6 +1060,8 @@ export async function POST(request: Request) {
           note:
             resolvedKind === 'installation_order'
               ? `Pedido de instalación adjunto (${fileName})`
+              : resolvedKind === 'physical_work_order'
+              ? `Parte de trabajo físico adjunto (${fileName})`
               : caption
               ? `Foto adjunta: ${caption}`
               : `Foto adjunta (${fileName})`,

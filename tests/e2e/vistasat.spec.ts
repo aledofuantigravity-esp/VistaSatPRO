@@ -339,9 +339,120 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     ).toBeDisabled();
     await expect(
       page.getByRole('button', { name: /Activar Push en este dispositivo/i })
-    ).toHaveCount(0);
+    ).toBeVisible();
     await expect(
       page.getByRole('button', { name: /Guardar preferencias de avisos/i })
     ).toHaveCount(0);
+  });
+
+  test('8. Finalizar instalación: diálogo de parte físico (Sí con foto y No sin foto) + PDF', async ({
+    page,
+  }) => {
+    await loginAsCoordinator(page);
+
+    // PNG válido de 2x2 píxeles para pruebas de subida
+    const samplePng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
+      'base64'
+    );
+
+    // Caso A: Finalizar instalación eligiendo "No, cerrar sin foto"
+    await page.goto('/tasks/new?type=installation');
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByPlaceholder(/Ricoh IM C3500/i).fill('Instalación Sin Parte Físico E2E');
+    await page.getByPlaceholder(/solicitud de instalación/i).fill('Prueba cierre sin foto física.');
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+
+    await page.getByRole('button', { name: /Finalizar Instalación/i }).click();
+    await expect(
+      page.getByText(/¿Deseas añadir una foto del parte de trabajo físico antes de finalizar\?/i)
+    ).toBeVisible();
+    await page.getByRole('button', { name: /No, cerrar sin foto/i }).click();
+
+    await expect(page.getByText('No se ha adjuntado parte de trabajo físico')).toBeVisible();
+    await expect(page.getByText('Completada').first()).toBeVisible();
+
+    // Caso B: Finalizar instalación eligiendo "Sí, añadir foto" (galería) y descargar PDF
+    await page.goto('/tasks/new?type=installation');
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByPlaceholder(/Ricoh IM C3500/i).fill('Instalación Con Parte Físico E2E');
+    await page.getByPlaceholder(/solicitud de instalación/i).fill('Prueba cierre con foto física.');
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+
+    await page.getByRole('button', { name: /Finalizar Instalación/i }).click();
+    await page.getByRole('button', { name: /Sí, añadir foto/i }).click();
+    await expect(page.getByText(/Usar Cámara/i).last()).toBeVisible();
+    await expect(page.getByText(/Galería de Fotos/i)).toBeVisible();
+
+    // Adjuntar imagen en el input de galería del diálogo
+    const dialog = page.getByRole('dialog');
+    await dialog.locator('input[type="file"]').last().setInputFiles({
+      name: 'parte-fisico-firmado.png',
+      mimeType: 'image/png',
+      buffer: samplePng,
+    });
+    await expect(dialog.getByText('parte-fisico-firmado.png')).toBeVisible();
+    await dialog.getByRole('button', { name: /Subir y Finalizar Instalación/i }).click();
+
+    await expect(page.getByRole('heading', { name: /Parte de Trabajo Físico/i })).toBeVisible();
+    await expect(page.getByText('parte-fisico-firmado.png', { exact: true })).toBeVisible();
+
+    // Descargar PDF de instalación y comprobar que incrusta la imagen del parte físico
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /Parte de Instalación \(PDF\)/i }).click(),
+    ]);
+    const pdfPath = await download.path();
+    expect(pdfPath).toBeTruthy();
+    const fs = await import('fs');
+    const pdfContent = fs.readFileSync(pdfPath!, 'latin1');
+    expect(pdfContent.startsWith('%PDF-')).toBe(true);
+    expect(pdfContent).toContain('/Subtype /Image');
+  });
+
+  test('9. PDF de Incidencia RMA incluye fotografías adjuntas en formato lineal', async ({
+    page,
+  }) => {
+    await loginAsCoordinator(page);
+
+    const samplePng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
+      'base64'
+    );
+
+    await page.goto('/tasks/new');
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByPlaceholder(/Describe síntomas/i).fill('Pieza dañada con foto para PDF E2E.');
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+
+    await page
+      .getByPlaceholder(/Descripción opcional antes de seleccionar foto/i)
+      .fill('Fusor dañado en rodillo');
+    await page.locator('input[type="file"][multiple]').setInputFiles({
+      name: 'pieza-danada.png',
+      mimeType: 'image/png',
+      buffer: samplePng,
+    });
+    await expect(page.getByText('Fusor dañado en rodillo', { exact: true })).toBeVisible();
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /Descargar PDF/i }).click(),
+    ]);
+    const pdfPath = await download.path();
+    expect(pdfPath).toBeTruthy();
+    const fs = await import('fs');
+    const pdfContent = fs.readFileSync(pdfPath!, 'latin1');
+    expect(pdfContent.startsWith('%PDF-')).toBe(true);
+    expect(pdfContent).toContain('/Subtype /Image');
   });
 });

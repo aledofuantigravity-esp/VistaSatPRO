@@ -828,6 +828,7 @@ export async function updateTaskFields(
     scheduled_date: string | null;
     merchandise_check_done: boolean | null;
     merchandise_check_notes: string | null;
+    physical_work_order_attached: boolean | null;
     meter_bw: number | null;
     meter_color: number | null;
     materials_used: MaterialItem[];
@@ -863,6 +864,7 @@ export async function updateTaskFields(
       scheduled_date: _omitSched,
       merchandise_check_done: _omitMerch,
       merchandise_check_notes: _omitMerchNotes,
+      physical_work_order_attached: _omitPhysicalWorkOrder,
       meter_bw: _omitBw,
       meter_color: _omitColor,
       ...legacyPatch
@@ -872,6 +874,7 @@ export async function updateTaskFields(
     void _omitSched;
     void _omitMerch;
     void _omitMerchNotes;
+    void _omitPhysicalWorkOrder;
     void _omitBw;
     void _omitColor;
     if (Object.keys(legacyPatch).length === 0) return;
@@ -1097,7 +1100,12 @@ export async function uploadTaskAttachment(
       : file.type === 'image/webp'
       ? 'webp'
       : 'jpg';
-  const prefix = kind === 'installation_order' ? 'pedido' : 'foto';
+  const prefix =
+    kind === 'installation_order'
+      ? 'pedido'
+      : kind === 'physical_work_order'
+      ? 'parte-fisico'
+      : 'foto';
   const path = `${taskId}/${prefix}-${Date.now()}.${ext}`;
   const { error: uploadError } = await supabase.storage
     .from('task-attachments')
@@ -1128,6 +1136,8 @@ export async function uploadTaskAttachment(
     const fallbackCaption =
       kind === 'installation_order'
         ? `[PEDIDO_INSTALACION] ${caption || file.name}`.trim()
+        : kind === 'physical_work_order'
+        ? `[PARTE_FISICO] ${caption || file.name}`.trim()
         : caption || null;
     const retry = await supabase
       .from('attachments')
@@ -1157,6 +1167,8 @@ export async function uploadTaskAttachment(
     note:
       kind === 'installation_order'
         ? `Pedido de instalación adjunto: ${file.name}`
+        : kind === 'physical_work_order'
+        ? `Parte de trabajo físico adjunto: ${file.name}`
         : caption || `Adjunto: ${file.name}`,
   });
 

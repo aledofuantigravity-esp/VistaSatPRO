@@ -43,7 +43,7 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export type TaskType = 'installation' | 'rma_incident' | 'cxc_incident' | 'task';
 
-export type AttachmentKind = 'photo' | 'installation_order';
+export type AttachmentKind = 'photo' | 'installation_order' | 'physical_work_order';
 
 export type TaskStatus =
   | 'pending'
@@ -149,6 +149,7 @@ export interface Task {
   merchandise_check_notes?: string | null;
   merchandise_checked_at?: string | null;
   merchandise_checked_by?: string | null;
+  physical_work_order_attached?: boolean | null;
   meter_bw?: number | null;
   meter_color?: number | null;
   // Auditoría y borrado lógico

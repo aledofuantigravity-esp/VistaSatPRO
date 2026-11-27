@@ -9,21 +9,33 @@ import {
   TASK_TYPE_META,
 } from '@/types/database';
 
+export interface PdfImageItem {
+  dataUrl: string;
+  format: 'JPEG' | 'PNG';
+  width: number;
+  height: number;
+  label: string;
+  capturedAt?: string;
+}
+
 /**
  * Genera y descarga un PDF corporativo adaptado al tipo de tarea:
- * - Instalación: Parte de Instalación profesional (fecha acordada, cotejo de mercancía, fotos, incidencias y firma)
- * - Incidencia CXC: Incluye nº de serie obligatorio, contadores B/N y Color, piezas y firma
- * - Incidencia RMA / Tarea: Parte SAT estándar o de tarea general
+ * - Instalación: Parte de Instalación profesional (fecha acordada, cotejo, parte físico, fotos lineales y firma)
+ * - Incidencia CXC: Incluye nº de serie obligatorio, contadores B/N y Color, piezas, fotos lineales y firma
+ * - Incidencia RMA / Tarea: Parte SAT estándar o de tarea general con fotos lineales adjuntas
  */
 export function generateTaskPDF(
   task: Task,
   history: TaskHistoryItem[],
-  installationPhotos: Array<{ dataUrl: string; label: string }> = []
+  photos: PdfImageItem[] = [],
+  physicalWorkOrderPhotos: PdfImageItem[] = []
 ): Blob {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const contentWidth = pageWidth - 28;
   const taskType = resolveTaskType(task);
   let y = 0;
+  let sectionNum = 1;
 
   const headerSubtitle =
     taskType === 'installation'
@@ -70,21 +82,22 @@ export function generateTaskPDF(
 
   y = 46;
 
-  // Helper para títulos de sección
+  // Helper para títulos de sección numerados dinámicamente
   const addSectionTitle = (title: string) => {
     if (y > 265) {
       doc.addPage();
       y = 20;
     }
+    const numbered = `${sectionNum++}. ${title}`;
     doc.setFillColor(248, 247, 247);
-    doc.rect(14, y - 5, pageWidth - 28, 8, 'F');
+    doc.rect(14, y - 5, contentWidth, 8, 'F');
     doc.setDrawColor(0, 33, 105);
     doc.setLineWidth(0.8);
     doc.line(14, y - 5, 14, y + 3);
     doc.setTextColor(0, 33, 105);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text(title.toUpperCase(), 18, y + 0.5);
+    doc.text(numbered.toUpperCase(), 18, y + 0.5);
     y += 10;
   };
 
@@ -106,8 +119,99 @@ export function generateTaskPDF(
     y += lines.length * 4.8 + 2;
   };
 
-  // ─── 1. Datos del Cliente y Ubicación ────────────────────────────────────
-  addSectionTitle('1. Datos del Cliente y Servicio');
+  // Helper para renderizar imágenes en formato lineal profesional (1 por bloque vertical)
+  const renderLinearImageSection = (
+    title: string,
+    items: PdfImageItem[],
+    options: { maxImgW: number; maxImgH: number; badgePrefix: string }
+  ) => {
+    if (items.length === 0) return;
+
+    // Evitar título huérfano al final de página
+    if (y > 220) {
+      doc.addPage();
+      y = 20;
+    }
+    addSectionTitle(title);
+
+    for (let i = 0; i < items.length; i++) {
+      const img = items[i];
+      const safeW = Math.max(1, img.width);
+      const safeH = Math.max(1, img.height);
+      const scale = Math.min(options.maxImgW / safeW, options.maxImgH / safeH);
+      const drawW = Math.max(20, safeW * scale);
+      const drawH = Math.max(20, safeH * scale);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      const captionLines = doc.splitTextToSize(img.label || 'Fotografía adjunta', contentWidth - 10);
+      const headerH = 7;
+      const topPad = 4;
+      const midGap = 4;
+      const captionH = captionLines.length * 4.2 + 3;
+      const cardH = headerH + topPad + drawH + midGap + captionH + 2;
+
+      if (y + cardH > 278) {
+        doc.addPage();
+        y = 20;
+      }
+
+      // Contenedor lineal de tarjeta
+      doc.setDrawColor(218, 222, 230);
+      doc.setLineWidth(0.35);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(14, y, contentWidth, cardH, 'FD');
+
+      // Barra superior de tarjeta
+      doc.setFillColor(246, 247, 250);
+      doc.rect(14, y, contentWidth, headerH, 'F');
+      doc.setDrawColor(218, 222, 230);
+      doc.line(14, y + headerH, 14 + contentWidth, y + headerH);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(0, 33, 105);
+      doc.text(`${options.badgePrefix} ${i + 1} de ${items.length}`, 18, y + 4.8);
+
+      if (img.capturedAt) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(110, 115, 128);
+        doc.text(img.capturedAt, 14 + contentWidth - 4, y + 4.8, { align: 'right' });
+      }
+
+      // Imagen centrada preservando proporción exacta
+      const imgX = 14 + (contentWidth - drawW) / 2;
+      const imgY = y + headerH + topPad;
+      try {
+        doc.addImage(img.dataUrl, img.format, imgX, imgY, drawW, drawH);
+        doc.setDrawColor(232, 234, 238);
+        doc.setLineWidth(0.25);
+        doc.rect(imgX, imgY, drawW, drawH);
+      } catch {
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text('No se pudo renderizar esta imagen', pageWidth / 2, imgY + drawH / 2, {
+          align: 'center',
+        });
+      }
+
+      // Pie descriptivo
+      const captionY = imgY + drawH + midGap + 2.5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(53, 55, 64);
+      doc.text(captionLines, 19, captionY);
+
+      y += cardH + 6;
+    }
+
+    y += 2;
+  };
+
+  // ─── Datos del Cliente y Ubicación ───────────────────────────────────────
+  addSectionTitle('Datos del Cliente y Servicio');
   addRow('Cliente', task.customer?.name || 'Cliente no especificado');
   addRow('CIF / NIF', task.customer?.tax_id);
   addRow('Contacto sitio', task.site_contact_name || task.customer?.contact_name);
@@ -126,9 +230,9 @@ export function generateTaskPDF(
 
   y += 3;
 
-  // ─── 2. Detalle Operativo según Tipo ──────────────────────────────────────
+  // ─── Detalle Operativo según Tipo ────────────────────────────────────────
   if (taskType === 'installation') {
-    addSectionTitle('2. Solicitud, Planificación y Cotejo de Mercancía');
+    addSectionTitle('Solicitud, Planificación y Cotejo de Mercancía');
     addRow('Equipo / Sistema', task.equipment_ref);
     addRow('Nº de Serie', task.equipment_sn);
     addRow('Solicitud instalación', task.problem_desc);
@@ -151,11 +255,18 @@ export function generateTaskPDF(
     if (task.merchandise_check_notes) {
       addRow('Obs. cotejo', task.merchandise_check_notes);
     }
+    const physicalOrderStatus =
+      physicalWorkOrderPhotos.length > 0 || task.physical_work_order_attached === true
+        ? 'Adjuntado'
+        : task.physical_work_order_attached === false || task.status === 'completed'
+        ? 'No se ha adjuntado parte de trabajo físico'
+        : 'Pendiente de finalización';
+    addRow('Parte trabajo físico', physicalOrderStatus);
     if (task.resolution_notes) {
       addRow('Incidencias / Notas', task.resolution_notes);
     }
   } else if (taskType === 'cxc_incident') {
-    addSectionTitle('2. Equipo, Contadores y Descripción CXC');
+    addSectionTitle('Equipo, Contadores y Descripción CXC');
     addRow('Equipo / Modelo', task.equipment_ref);
     addRow('Nº de Serie (obl.)', task.equipment_sn || 'No especificado');
     addRow(
@@ -171,13 +282,13 @@ export function generateTaskPDF(
       addRow('Notas / Resolución', task.resolution_notes);
     }
   } else if (taskType === 'task') {
-    addSectionTitle('2. Descripción y Avance de la Tarea');
+    addSectionTitle('Descripción y Avance de la Tarea');
     addRow('Tarea asignada', task.problem_desc);
     if (task.resolution_notes) {
       addRow('Último informe', task.resolution_notes);
     }
   } else {
-    addSectionTitle('2. Equipo y Descripción del Problema');
+    addSectionTitle('Equipo y Descripción del Problema');
     addRow('Equipo / Modelo', task.equipment_ref);
     addRow('Nº de Serie', task.equipment_sn);
     addRow('Descripción', task.problem_desc);
@@ -188,9 +299,9 @@ export function generateTaskPDF(
 
   y += 3;
 
-  // ─── 3. Materiales y Piezas Empleadas ────────────────────────────────────
+  // ─── Materiales y Piezas Empleadas ───────────────────────────────────────
   if (task.materials_used && task.materials_used.length > 0) {
-    addSectionTitle('3. Materiales y Repuestos Utilizados');
+    addSectionTitle('Materiales y Repuestos Utilizados');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(102, 102, 102);
@@ -218,9 +329,9 @@ export function generateTaskPDF(
     y += 3;
   }
 
-  // ─── 4. Trazabilidad Cronológica ─────────────────────────────────────────
+  // ─── Trazabilidad Cronológica ────────────────────────────────────────────
   if (history.length > 0) {
-    addSectionTitle('4. Historial de Actuaciones (Audit Trail)');
+    addSectionTitle('Historial de Actuaciones (Audit Trail)');
     const chronological = [...history].sort((a, b) =>
       a.created_at.localeCompare(b.created_at)
     );
@@ -251,40 +362,33 @@ export function generateTaskPDF(
     y += 3;
   }
 
-  // ─── 5. Fotografías de la Instalación (si aplica) ────────────────────────
-  if (taskType === 'installation' && installationPhotos.length > 0) {
-    addSectionTitle(`5. Fotografías de la Instalación (${installationPhotos.length})`);
-    for (const photo of installationPhotos.slice(0, 6)) {
-      if (y > 220) {
-        doc.addPage();
-        y = 20;
-      }
-      try {
-        const format = photo.dataUrl.includes('image/png') ? 'PNG' : 'JPEG';
-        doc.addImage(photo.dataUrl, format, 14, y, 72, 48);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(102, 102, 102);
-        doc.text(photo.label.slice(0, 60), 90, y + 6);
-        y += 52;
-      } catch {
-        // Si alguna imagen no puede embeberse, se omite sin romper el PDF
-      }
-    }
-    y += 3;
+  // ─── Fotografías Adjuntas (TODOS los tipos de parte, formato lineal) ────
+  if (photos.length > 0) {
+    renderLinearImageSection(
+      taskType === 'installation'
+        ? `Fotografías de la Instalación (${photos.length})`
+        : `Fotografías Adjuntas (${photos.length})`,
+      photos,
+      { maxImgW: 166, maxImgH: 92, badgePrefix: 'Foto' }
+    );
   }
 
-  // ─── Firma Digital del Cliente ────────────────────────────────────────────
+  // ─── Parte de Trabajo Físico (específico de Instalaciones, alta nitidez) ─
+  if (taskType === 'installation' && physicalWorkOrderPhotos.length > 0) {
+    renderLinearImageSection('Parte de Trabajo Físico', physicalWorkOrderPhotos, {
+      maxImgW: 170,
+      maxImgH: 190,
+      badgePrefix: 'Parte físico',
+    });
+  }
+
+  // ─── Firma Digital del Cliente ───────────────────────────────────────────
   if (task.client_signature_url) {
     if (y > 235) {
       doc.addPage();
       y = 20;
     }
-    addSectionTitle(
-      taskType === 'installation' && installationPhotos.length > 0
-        ? '6. Conformidad y Firma del Cliente'
-        : '5. Conformidad y Firma del Cliente'
-    );
+    addSectionTitle('Conformidad y Firma del Cliente');
     if (task.signer_name) {
       addRow('Firmante', task.signer_name);
     }
@@ -318,6 +422,7 @@ export function generateTaskPDF(
 async function urlToDataUrl(url: string): Promise<string> {
   if (url.startsWith('data:')) return url;
   const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const blob = await res.blob();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -325,6 +430,91 @@ async function urlToDataUrl(url: string): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+}
+
+function loadHtmlImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = (err) => reject(err);
+    img.src = src;
+  });
+}
+
+/**
+ * Descarga y normaliza una imagen para jsPDF:
+ * - Preserva orientación EXIF y proporciones reales (naturalWidth × naturalHeight)
+ * - Convierte WEBP/PNG/JPG a JPEG optimizado (máx. 1600 px) con fondo blanco
+ */
+async function prepareImageForPdf(
+  url: string,
+  label: string,
+  capturedAt?: string
+): Promise<PdfImageItem | null> {
+  try {
+    const rawDataUrl = await urlToDataUrl(url);
+    if (!rawDataUrl.startsWith('data:image/')) return null;
+
+    if (typeof document === 'undefined') {
+      const format = rawDataUrl.includes('image/png') ? 'PNG' : 'JPEG';
+      return { dataUrl: rawDataUrl, format, width: 1200, height: 900, label, capturedAt };
+    }
+
+    const img = await loadHtmlImage(rawDataUrl);
+    const naturalW = img.naturalWidth || 1200;
+    const naturalH = img.naturalHeight || 900;
+    const maxDim = 1600;
+    const ratio = Math.min(1, maxDim / Math.max(naturalW, naturalH));
+    const targetW = Math.max(1, Math.round(naturalW * ratio));
+    const targetH = Math.max(1, Math.round(naturalH * ratio));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      const format = rawDataUrl.includes('image/png') ? 'PNG' : 'JPEG';
+      return { dataUrl: rawDataUrl, format, width: naturalW, height: naturalH, label, capturedAt };
+    }
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, targetW, targetH);
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+
+    const normalizedUrl = canvas.toDataURL('image/jpeg', 0.85);
+    return {
+      dataUrl: normalizedUrl,
+      format: 'JPEG',
+      width: targetW,
+      height: targetH,
+      label,
+      capturedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isImageAttachment(att: Attachment): boolean {
+  if (att.mime_type) {
+    return att.mime_type.startsWith('image/');
+  }
+  return /\.(jpe?g|png|webp|gif|bmp)$/i.test(att.file_name);
+}
+
+function isOrderAttachment(att: Attachment): boolean {
+  return (
+    att.attachment_kind === 'installation_order' ||
+    Boolean(att.caption?.startsWith('[PEDIDO_INSTALACION]'))
+  );
+}
+
+function isPhysicalOrderAttachment(att: Attachment): boolean {
+  return (
+    att.attachment_kind === 'physical_work_order' ||
+    Boolean(att.caption?.startsWith('[PARTE_FISICO]'))
+  );
 }
 
 export async function downloadTaskPDF(
@@ -343,36 +533,54 @@ export async function downloadTaskPDF(
   }
 
   const taskType = resolveTaskType(task);
-  const installationPhotos: Array<{ dataUrl: string; label: string }> = [];
-  if (taskType === 'installation') {
-    const photos = attachments.filter(
-      (a) =>
-        a.attachment_kind !== 'installation_order' &&
-        !a.caption?.startsWith('[PEDIDO_INSTALACION]') &&
-        (a.mime_type?.startsWith('image/') ?? true)
+
+  const generalImageAttachments = attachments.filter(
+    (a) => !isOrderAttachment(a) && !isPhysicalOrderAttachment(a) && isImageAttachment(a)
+  );
+  const physicalImageAttachments = attachments.filter(
+    (a) => isPhysicalOrderAttachment(a) && isImageAttachment(a)
+  );
+
+  const photos: PdfImageItem[] = [];
+  for (const att of generalImageAttachments) {
+    const capturedAt = att.created_at
+      ? new Date(att.created_at).toLocaleString('es-ES', {
+          dateStyle: 'short',
+          timeStyle: 'short',
+        })
+      : undefined;
+    const prepared = await prepareImageForPdf(
+      att.public_url,
+      att.caption || att.file_name,
+      capturedAt
     );
-    for (const att of photos.slice(0, 6)) {
-      try {
-        const dataUrl = await urlToDataUrl(att.public_url);
-        if (dataUrl.startsWith('data:image/')) {
-          installationPhotos.push({
-            dataUrl,
-            label: att.caption || att.file_name,
-          });
-        }
-      } catch {
-        // Ignorar si falla descarga individual
-      }
-    }
+    if (prepared) photos.push(prepared);
   }
 
-  const blob = generateTaskPDF(preparedTask, history, installationPhotos);
+  const physicalWorkOrderPhotos: PdfImageItem[] = [];
+  for (const att of physicalImageAttachments) {
+    const capturedAt = att.created_at
+      ? new Date(att.created_at).toLocaleString('es-ES', {
+          dateStyle: 'short',
+          timeStyle: 'short',
+        })
+      : undefined;
+    const cleanCaption = att.caption?.replace(/^\[PARTE_FISICO\]\s*/, '') || 'Parte de trabajo físico';
+    const prepared = await prepareImageForPdf(att.public_url, cleanCaption, capturedAt);
+    if (prepared) physicalWorkOrderPhotos.push(prepared);
+  }
+
+  const blob = generateTaskPDF(preparedTask, history, photos, physicalWorkOrderPhotos);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download =
     taskType === 'installation'
       ? `${task.code}_parte_instalacion.pdf`
+      : taskType === 'cxc_incident'
+      ? `${task.code}_parte_CXC.pdf`
+      : taskType === 'task'
+      ? `${task.code}_parte_tarea.pdf`
       : `${task.code}_parte_SAT.pdf`;
   document.body.appendChild(link);
   link.click();

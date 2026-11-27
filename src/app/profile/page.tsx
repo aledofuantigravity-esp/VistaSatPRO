@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Bell,
+  BellRing,
   Check,
   Download,
   KeyRound,
@@ -11,9 +12,11 @@ import {
   Monitor,
   Moon,
   RotateCcw,
+  Send,
   Shield,
   Smartphone,
   Sun,
+  Trash2,
   User as UserIcon,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
@@ -25,10 +28,20 @@ import { useTheme, type ThemePreference } from '@/hooks/useTheme';
 import {
   changeOwnPassword,
   listPushSubscriptions,
+  removePushSubscription,
   resetServerDemoData,
+  savePushSubscription,
+  sendServerTestPush,
   updateProfile,
 } from '@/lib/data-service';
 import { normalizeNotificationPreferences } from '@/lib/notification-preferences';
+import {
+  detectDeviceLabel,
+  getCurrentDevicePushEndpoint,
+  getPushSupportStatus,
+  showLocalBrowserNotification,
+  subscribeToBrowserPush,
+} from '@/lib/push-client';
 import { validatePasswordStrength } from '@/lib/security';
 import {
   ROLE_LABELS,
@@ -88,6 +101,12 @@ function ProfileContentInner({
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
 
   const [subs, setSubs] = useState<PushSubscriptionRecord[]>([]);
+  const [currentEndpoint, setCurrentEndpoint] = useState<string | null>(null);
+  const [activatingPush, setActivatingPush] = useState(false);
+  const [testingPush, setTestingPush] = useState(false);
+  const [pushFeedback, setPushFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
+    null
+  );
 
   // Cambio de contraseña
   const [currentPassword, setCurrentPassword] = useState('');
@@ -98,8 +117,12 @@ function ProfileContentInner({
 
   const loadSubs = useCallback(async () => {
     await Promise.resolve();
-    const data = await listPushSubscriptions(profile.id);
+    const [data, endpoint] = await Promise.all([
+      listPushSubscriptions(profile.id),
+      getCurrentDevicePushEndpoint(),
+    ]);
     setSubs(data);
+    setCurrentEndpoint(endpoint);
   }, [profile.id]);
 
   useEffect(() => {
@@ -109,6 +132,82 @@ function ProfileContentInner({
 
   const isCoord = profile.role === 'admin' || profile.role === 'coordinator';
   const isAdmin = profile.role === 'admin';
+  const isCurrentDeviceLinked = Boolean(
+    currentEndpoint && subs.some((s) => s.endpoint === currentEndpoint)
+  );
+  const pushSupportStatus = getPushSupportStatus();
+
+  const handleActivatePushDevice = async (forceResubscribe = false) => {
+    setActivatingPush(true);
+    setPushFeedback(null);
+    try {
+      const sub = await subscribeToBrowserPush({ forceResubscribe });
+      const label = detectDeviceLabel();
+      await savePushSubscription(profile.id, sub, label);
+      await loadSubs();
+      setPushFeedback({
+        type: 'ok',
+        text: `Dispositivo "${label}" vinculado. Recibirás avisos Push incluso con la app cerrada.`,
+      });
+    } catch (err) {
+      setPushFeedback({
+        type: 'err',
+        text:
+          err instanceof Error
+            ? err.message
+            : 'No se pudieron activar las notificaciones Push en este dispositivo.',
+      });
+    } finally {
+      setActivatingPush(false);
+    }
+  };
+
+  const handleTestPush = async () => {
+    setTestingPush(true);
+    setPushFeedback(null);
+    try {
+      const count = await sendServerTestPush(profile.id);
+      if (count > 0) {
+        setPushFeedback({
+          type: 'ok',
+          text: `Notificación Push de prueba enviada a ${count} dispositivo(s) vinculados.`,
+        });
+      } else {
+        await showLocalBrowserNotification(
+          'VistaSatPRO — Prueba Local',
+          'Notificación verificada en este dispositivo.'
+        );
+        setPushFeedback({
+          type: 'ok',
+          text: 'Prueba local mostrada. En producción con VAPID llegará también con la app cerrada.',
+        });
+      }
+    } catch (err) {
+      setPushFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Error enviando notificación de prueba.',
+      });
+    } finally {
+      setTestingPush(false);
+    }
+  };
+
+  const handleRemoveDevice = async (subId: string) => {
+    setPushFeedback(null);
+    try {
+      await removePushSubscription(subId);
+      await loadSubs();
+      setPushFeedback({
+        type: 'ok',
+        text: 'Dispositivo antiguo desvinculado de tu cuenta.',
+      });
+    } catch (err) {
+      setPushFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'No se pudo desvincular el dispositivo.',
+      });
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -368,19 +467,85 @@ function ProfileContentInner({
         </div>
       </div>
 
-      {/* Dispositivos Push (solo lectura) */}
+      {/* Dispositivos Push (vinculación de dispositivo propio para entrega con la app cerrada) */}
       <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-3 border border-border/60">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
-          <Smartphone size={18} className="text-magenta" />
-          <h2 className="text-base font-bold text-charcoal">
-            Dispositivos Push vinculados ({subs.length})
-          </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+          <div className="flex items-center gap-2">
+            <Smartphone size={18} className="text-magenta" />
+            <h2 className="text-base font-bold text-charcoal">
+              Dispositivos Push vinculados ({subs.length})
+            </h2>
+          </div>
+          {isCurrentDeviceLinked ? (
+            <span className="px-2 py-0.5 text-[11px] font-bold uppercase bg-success/15 text-success rounded-sm">
+              Este dispositivo activo
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 text-[11px] font-bold uppercase bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 rounded-sm">
+              Este dispositivo sin vincular
+            </span>
+          )}
         </div>
 
         <p className="text-xs text-mid-grey leading-relaxed">
-          La activación, pruebas y revocación de avisos Push son administradas exclusivamente
-          por el Administrador desde la pestaña de Usuarios.
+          Si has cambiado de móvil o ordenador, activa las notificaciones Push aquí para vincular
+          este dispositivo y recibir alertas <strong>aunque tengas la aplicación cerrada</strong>.
+          Las reglas sobre qué tipos de aviso recibes las sigue gestionando el Administrador.
         </p>
+
+        {!notifPrefs.push_enabled && (
+          <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border-l-4 border-amber-500 text-xs text-charcoal">
+            Puedes vincular este dispositivo ahora, pero actualmente el Administrador tiene
+            desactivado el canal Push para tu usuario.
+          </div>
+        )}
+
+        {pushSupportStatus === 'ios_requires_install' && (
+          <div className="p-3 bg-navy/5 border-l-4 border-navy text-xs text-dark-grey">
+            <strong>iPhone / iPad:</strong> para recibir avisos con la app cerrada, pulsa{' '}
+            <em>Compartir → Añadir a pantalla de inicio</em> en Safari y abre VistaSatPRO desde el
+            icono instalado.
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="accent"
+            size="sm"
+            isLoading={activatingPush}
+            onClick={() => handleActivatePushDevice(isCurrentDeviceLinked)}
+          >
+            <BellRing size={15} />{' '}
+            {isCurrentDeviceLinked
+              ? 'Re-vincular este dispositivo'
+              : 'Activar Push en este dispositivo'}
+          </Button>
+
+          {subs.length > 0 && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              isLoading={testingPush}
+              onClick={handleTestPush}
+            >
+              <Send size={14} /> Probar Push
+            </Button>
+          )}
+        </div>
+
+        {pushFeedback && (
+          <div
+            className={`p-3 border-l-4 text-xs font-semibold ${
+              pushFeedback.type === 'ok'
+                ? 'bg-success/10 border-success text-success'
+                : 'bg-danger/10 border-danger text-danger'
+            }`}
+          >
+            {pushFeedback.text}
+          </div>
+        )}
 
         {subs.length === 0 ? (
           <p className="text-xs text-mid-grey bg-off-white p-3 border border-border rounded-sm">
@@ -388,22 +553,41 @@ function ProfileContentInner({
           </p>
         ) : (
           <div className="space-y-2">
-            {subs.map((sub) => (
-              <div
-                key={sub.id}
-                className="flex items-center gap-2.5 p-2.5 bg-off-white border border-border rounded-sm"
-              >
-                <Smartphone size={16} className="text-navy flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-charcoal truncate">
-                    {sub.device_label || 'Dispositivo registrado'}
-                  </p>
-                  <p className="text-[11px] text-mid-grey">
-                    Activo desde {new Date(sub.created_at).toLocaleDateString('es-ES')}
-                  </p>
+            {subs.map((sub) => {
+              const isThisDevice = Boolean(currentEndpoint && sub.endpoint === currentEndpoint);
+              return (
+                <div
+                  key={sub.id}
+                  className="flex items-center justify-between gap-2.5 p-2.5 bg-off-white border border-border rounded-sm"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Smartphone size={16} className="text-navy flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-charcoal truncate flex items-center gap-1.5">
+                        {sub.device_label || 'Dispositivo registrado'}
+                        {isThisDevice && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-success/15 text-success rounded-xs uppercase">
+                            Actual
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[11px] text-mid-grey">
+                        Activo desde {new Date(sub.created_at).toLocaleDateString('es-ES')}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveDevice(sub.id)}
+                    className="p-1.5 text-mid-grey hover:text-danger flex-shrink-0"
+                    aria-label={`Desvincular ${sub.device_label || 'dispositivo'}`}
+                    title="Desvincular dispositivo antiguo"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

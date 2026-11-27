@@ -24,10 +24,15 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { CxcMetersSection } from '@/components/tasks/CxcMetersSection';
+import { FinishInstallationModal } from '@/components/tasks/FinishInstallationModal';
 import {
   InstallationWorkflowSection,
   isInstallationOrderAttachment,
 } from '@/components/tasks/InstallationWorkflowSection';
+import {
+  isPhysicalWorkOrderAttachment,
+  PhysicalWorkOrderSection,
+} from '@/components/tasks/PhysicalWorkOrderSection';
 import { TaskCommentsSection } from '@/components/tasks/TaskCommentsSection';
 import { TaskGallerySection } from '@/components/tasks/TaskGallerySection';
 import { Button } from '@/components/ui/Button';
@@ -44,6 +49,7 @@ import {
   softDeleteTask,
   updateTaskFields,
   updateTaskStatus,
+  uploadTaskAttachment,
 } from '@/lib/data-service';
 import { downloadTaskPDF } from '@/lib/pdf-generator';
 import { getSlaStatus, toDatetimeLocalValue } from '@/lib/sla';
@@ -95,6 +101,10 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [showFinishInstallModal, setShowFinishInstallModal] = useState(false);
+  const [finishingInstall, setFinishingInstall] = useState(false);
+  const [finishInstallError, setFinishInstallError] = useState<string | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   // Edición universal del parte
   const [showEditModal, setShowEditModal] = useState(false);
@@ -195,6 +205,15 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     setCloseError(null);
     if (
       newStatus === 'completed' &&
+      resolveTaskType(task) === 'installation' &&
+      task.status !== 'completed'
+    ) {
+      setFinishInstallError(null);
+      setShowFinishInstallModal(true);
+      return;
+    }
+    if (
+      newStatus === 'completed' &&
       resolveTaskType(task) === 'cxc_incident' &&
       !task.equipment_sn?.trim()
     ) {
@@ -272,6 +291,11 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
 
   const handleCloseTask = async () => {
     setCloseError(null);
+    if (resolveTaskType(task) === 'installation') {
+      setFinishInstallError(null);
+      setShowFinishInstallModal(true);
+      return;
+    }
     if (resolveTaskType(task) === 'cxc_incident' && !task.equipment_sn?.trim()) {
       const msg =
         'Para cerrar una Incidencia CXC es obligatorio introducir y guardar primero el Nº de Serie.';
@@ -290,11 +314,81 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     }
   };
 
+  const handleFinishInstallationWithoutPhoto = async () => {
+    setFinishingInstall(true);
+    setFinishInstallError(null);
+    try {
+      const hasExistingPhysical = attachments.some(isPhysicalWorkOrderAttachment);
+      await updateTaskFields(
+        task.id,
+        { physical_work_order_attached: hasExistingPhysical },
+        profile
+      );
+      await updateTaskStatus(task.id, 'completed', profile);
+      setShowFinishInstallModal(false);
+      showTempMessage(
+        hasExistingPhysical
+          ? 'Instalación finalizada correctamente.'
+          : 'Instalación finalizada sin parte de trabajo físico adjunto.'
+      );
+      await load();
+    } catch (err) {
+      setFinishInstallError(
+        err instanceof Error ? err.message : 'No se pudo finalizar la instalación.'
+      );
+    } finally {
+      setFinishingInstall(false);
+    }
+  };
+
+  const handleFinishInstallationWithPhoto = async (file: File) => {
+    setFinishingInstall(true);
+    setFinishInstallError(null);
+    try {
+      await uploadTaskAttachment(
+        task.id,
+        file,
+        'Parte de trabajo físico',
+        profile,
+        { kind: 'physical_work_order' }
+      );
+      await updateTaskFields(task.id, { physical_work_order_attached: true }, profile);
+      await updateTaskStatus(task.id, 'completed', profile);
+      setShowFinishInstallModal(false);
+      showTempMessage('Parte de trabajo físico adjuntado e instalación finalizada.');
+      await load();
+    } catch (err) {
+      setFinishInstallError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo adjuntar el parte de trabajo físico y finalizar.'
+      );
+    } finally {
+      setFinishingInstall(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    setGeneratingPdf(true);
+    try {
+      await downloadTaskPDF(task, history, attachments);
+    } catch (err) {
+      showTempMessage(
+        err instanceof Error ? err.message : 'No se pudo generar el documento PDF.'
+      );
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
   const isDeleted = Boolean(task.deleted_at);
   const sla = getSlaStatus(task);
   const taskType = resolveTaskType(task);
   const orderAttachments = attachments.filter(isInstallationOrderAttachment);
-  const photoAttachments = attachments.filter((a) => !isInstallationOrderAttachment(a));
+  const physicalWorkOrderAttachments = attachments.filter(isPhysicalWorkOrderAttachment);
+  const photoAttachments = attachments.filter(
+    (a) => !isInstallationOrderAttachment(a) && !isPhysicalWorkOrderAttachment(a)
+  );
 
   const openEditModal = () => {
     setEditError(null);
@@ -812,6 +906,18 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         onFeedback={showTempMessage}
       />
 
+      {/* Parte de Trabajo Físico (específico de Instalaciones) */}
+      {taskType === 'installation' && (
+        <PhysicalWorkOrderSection
+          task={task}
+          attachments={physicalWorkOrderAttachments}
+          currentUser={profile}
+          isDeleted={isDeleted}
+          onChanged={load}
+          onFeedback={showTempMessage}
+        />
+      )}
+
       {/* Cierre: Firma Digital + PDF */}
       <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-4">
         <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
@@ -860,10 +966,15 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           <Button
             type="button"
             variant="primary"
-            onClick={() => downloadTaskPDF(task, history, photoAttachments)}
+            isLoading={generatingPdf}
+            onClick={handleDownloadPdf}
           >
             <FileDown size={16} />{' '}
-            {taskType === 'installation' ? 'Parte de Instalación (PDF)' : 'Descargar PDF'}
+            {generatingPdf
+              ? 'Generando PDF...'
+              : taskType === 'installation'
+              ? 'Parte de Instalación (PDF)'
+              : 'Descargar PDF'}
           </Button>
 
           {!isDeleted && task.status !== 'completed' && (
@@ -1304,6 +1415,19 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         onClose={() => setShowSignatureModal(false)}
         onSave={handleSaveSignature}
       />
+
+      {showFinishInstallModal && (
+        <FinishInstallationModal
+          taskCode={task.code}
+          submitting={finishingInstall}
+          error={finishInstallError}
+          onClose={() => {
+            if (!finishingInstall) setShowFinishInstallModal(false);
+          }}
+          onFinishWithoutPhoto={handleFinishInstallationWithoutPhoto}
+          onFinishWithPhoto={handleFinishInstallationWithPhoto}
+        />
+      )}
     </div>
   );
 }

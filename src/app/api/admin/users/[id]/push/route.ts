@@ -129,7 +129,8 @@ export async function POST(
             body: 'Tu dispositivo está recibiendo correctamente notificaciones Push del equipo.',
             taskId: null,
             type: 'generic',
-          })
+          }),
+          { TTL: 86400, urgency: 'high' }
         );
         sent++;
       } catch (err: unknown) {

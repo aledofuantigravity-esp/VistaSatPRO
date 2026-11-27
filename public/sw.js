@@ -1,8 +1,8 @@
-// Service Worker v4 — VistaSatPRO
+// Service Worker v5 — VistaSatPRO
 // Estrategia limpia compatible con Next.js App Router (sin interceptar RSC, /api/ ni URLs firmadas)
 
-const STATIC_CACHE = 'vistasat-static-v4';
-const MEDIA_CACHE = 'vistasat-media-v4';
+const STATIC_CACHE = 'vistasat-static-v5';
+const MEDIA_CACHE = 'vistasat-media-v5';
 const OFFLINE_URL = '/offline.html';
 
 const STATIC_ASSETS = [
@@ -135,6 +135,7 @@ self.addEventListener('push', (event) => {
     badge: '/icons/badge-72.png?v=2',
     tag: taskId ? `task-${taskId}` : `generic-${Date.now()}`,
     renotify: true,
+    requireInteraction: type === 'sla_alert',
     data: {
       taskId,
       url: taskId ? `/tasks/${taskId}` : '/dashboard',

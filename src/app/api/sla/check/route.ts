@@ -217,7 +217,8 @@ async function runSlaCheck(request: Request) {
                   endpoint: sub.endpoint,
                   keys: { p256dh: sub.p256dh, auth: sub.auth },
                 },
-                JSON.stringify({ title, body, taskId: t.id, type: 'sla_alert' })
+                JSON.stringify({ title, body, taskId: t.id, type: 'sla_alert' }),
+                { TTL: 86400, urgency: 'high' }
               );
               pushCount++;
             } catch (err: unknown) {

@@ -48,29 +48,104 @@ async function resolveVapidPublicKey(): Promise<string | null> {
   return null;
 }
 
-export async function subscribeToBrowserPush(): Promise<{
+export function detectDeviceLabel(): string {
+  if (typeof navigator === 'undefined') return 'Dispositivo web';
+  const ua = navigator.userAgent;
+  const os = /iPhone|iPad|iPod/.test(ua)
+    ? 'iOS'
+    : /Android/i.test(ua)
+    ? 'Android'
+    : /Windows/i.test(ua)
+    ? 'Windows'
+    : /Mac OS X|Macintosh/i.test(ua)
+    ? 'macOS'
+    : /Linux/i.test(ua)
+    ? 'Linux'
+    : 'Dispositivo';
+  const browser = /Edg\//i.test(ua)
+    ? 'Edge'
+    : /Chrome\//i.test(ua) && !/Edg\//i.test(ua)
+    ? 'Chrome'
+    : /Firefox\//i.test(ua)
+    ? 'Firefox'
+    : /Safari\//i.test(ua) && !/Chrome\//i.test(ua)
+    ? 'Safari'
+    : 'Navegador';
+  const isStandalone =
+    typeof window !== 'undefined' &&
+    (window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as Navigator & { standalone?: boolean }).standalone === true);
+  return `${os} · ${browser}${isStandalone ? ' (PWA)' : ''}`;
+}
+
+export async function getCurrentDevicePushEndpoint(): Promise<string | null> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+    if (!reg || !reg.pushManager) return null;
+    const sub = await reg.pushManager.getSubscription();
+    return sub?.endpoint || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function subscribeToBrowserPush(options?: {
+  forceResubscribe?: boolean;
+}): Promise<{
   endpoint: string;
   p256dh: string;
   auth: string;
-} | null> {
+}> {
   const status = getPushSupportStatus();
-  if (status !== 'supported') return null;
+  if (status === 'ios_requires_install') {
+    throw new Error(
+      'En iPhone/iPad primero debes añadir VistaSatPRO a la pantalla de inicio (Compartir → Añadir a pantalla de inicio) y abrirla desde el icono.'
+    );
+  }
+  if (status !== 'supported') {
+    throw new Error(
+      'Este navegador no soporta notificaciones Push en segundo plano. Usa Chrome, Edge, Firefox o Safari PWA.'
+    );
+  }
 
   const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return null;
+  if (permission !== 'granted') {
+    throw new Error(
+      'Permiso de notificaciones denegado. Habilita las notificaciones para VistaSatPRO en los ajustes del navegador o del móvil.'
+    );
+  }
 
   const vapidPublicKey = await resolveVapidPublicKey();
   if (!vapidPublicKey) {
-    return {
-      endpoint: `local-demo://device/${navigator.userAgent.slice(0, 24)}/${Date.now()}`,
-      p256dh: 'demo-p256dh-key',
-      auth: 'demo-auth-secret',
-    };
+    if (!isSupabaseConfigured()) {
+      return {
+        endpoint: `local-demo://device/${navigator.userAgent.slice(0, 24)}/${Date.now()}`,
+        p256dh: 'demo-p256dh-key',
+        auth: 'demo-auth-secret',
+      };
+    }
+    throw new Error(
+      'Falta configurar la clave pública VAPID (NEXT_PUBLIC_VAPID_PUBLIC_KEY) en el servidor para enviar notificaciones Push con la app cerrada.'
+    );
   }
 
   try {
-    const registration = await navigator.serviceWorker.ready;
+    let registration = await navigator.serviceWorker.getRegistration('/sw.js');
+    if (!registration) {
+      registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    }
+    registration = await navigator.serviceWorker.ready;
+
     let subscription = await registration.pushManager.getSubscription();
+    if (subscription && options?.forceResubscribe) {
+      try {
+        await subscription.unsubscribe();
+      } catch {
+        // Ignorar si ya había caducado
+      }
+      subscription = null;
+    }
 
     if (!subscription) {
       const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
@@ -82,7 +157,7 @@ export async function subscribeToBrowserPush(): Promise<{
 
     const json = subscription.toJSON();
     if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-      return null;
+      throw new Error('El navegador no devolvió las claves de suscripción Push.');
     }
 
     return {
@@ -90,13 +165,19 @@ export async function subscribeToBrowserPush(): Promise<{
       p256dh: json.keys.p256dh,
       auth: json.keys.auth,
     };
-  } catch {
-    // Fallback si el navegador o localhost bloquea PushManager
-    return {
-      endpoint: `local-demo://device/${navigator.userAgent.slice(0, 24)}/${Date.now()}`,
-      p256dh: 'demo-p256dh-key',
-      auth: 'demo-auth-secret',
-    };
+  } catch (err) {
+    if (!isSupabaseConfigured()) {
+      return {
+        endpoint: `local-demo://device/${navigator.userAgent.slice(0, 24)}/${Date.now()}`,
+        p256dh: 'demo-p256dh-key',
+        auth: 'demo-auth-secret',
+      };
+    }
+    throw new Error(
+      err instanceof Error
+        ? err.message
+        : 'No se pudo suscribir este dispositivo al servicio Push del navegador.'
+    );
   }
 }
 
