@@ -11,7 +11,11 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { deleteTaskAttachment, uploadTaskAttachment } from '@/lib/data-service';
+import {
+  deleteTaskAttachment,
+  refreshSignedUrl,
+  uploadTaskAttachment,
+} from '@/lib/data-service';
 import type { Attachment, Profile } from '@/types/database';
 
 interface TaskGallerySectionProps {
@@ -37,14 +41,31 @@ export function TaskGallerySection({
   const [uploading, setUploading] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [offlinePhotos, setOfflinePhotos] = useState<Attachment[]>([]);
+  const [refreshedUrls, setRefreshedUrls] = useState<Record<string, string>>({});
+  const retriedIdsRef = useRef<Set<string>>(new Set());
 
   // Lightbox con navegación y zoom
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const [zoom, setZoom] = useState<1 | 1.75 | 2.5>(1);
   const touchStartX = useRef<number | null>(null);
 
+  const visibleAttachments = [...offlinePhotos, ...attachments];
   const activeAttachment =
-    lightboxIdx !== null && attachments[lightboxIdx] ? attachments[lightboxIdx] : null;
+    lightboxIdx !== null && visibleAttachments[lightboxIdx]
+      ? visibleAttachments[lightboxIdx]
+      : null;
+
+  const getDisplayUrl = (att: Attachment) => refreshedUrls[att.id] || att.public_url;
+
+  const handleImageError = async (att: Attachment) => {
+    if (retriedIdsRef.current.has(att.id)) return;
+    retriedIdsRef.current.add(att.id);
+    const fresh = await refreshSignedUrl(att.storage_path || att.public_url);
+    if (fresh) {
+      setRefreshedUrls((prev) => ({ ...prev, [att.id]: fresh }));
+    }
+  };
 
   const openLightbox = (index: number) => {
     setZoom(1);
@@ -57,17 +78,21 @@ export function TaskGallerySection({
   };
 
   const goPrev = () => {
-    if (attachments.length === 0) return;
+    if (visibleAttachments.length === 0) return;
     setZoom(1);
     setLightboxIdx((prev) =>
-      prev === null ? 0 : (prev - 1 + attachments.length) % attachments.length
+      prev === null
+        ? 0
+        : (prev - 1 + visibleAttachments.length) % visibleAttachments.length
     );
   };
 
   const goNext = () => {
-    if (attachments.length === 0) return;
+    if (visibleAttachments.length === 0) return;
     setZoom(1);
-    setLightboxIdx((prev) => (prev === null ? 0 : (prev + 1) % attachments.length));
+    setLightboxIdx((prev) =>
+      prev === null ? 0 : (prev + 1) % visibleAttachments.length
+    );
   };
 
   useEffect(() => {
@@ -78,16 +103,29 @@ export function TaskGallerySection({
       } else if (e.key === 'ArrowLeft') {
         setZoom(1);
         setLightboxIdx((prev) =>
-          prev === null ? 0 : (prev - 1 + attachments.length) % attachments.length
+          prev === null
+            ? 0
+            : (prev - 1 + visibleAttachments.length) % visibleAttachments.length
         );
       } else if (e.key === 'ArrowRight') {
         setZoom(1);
-        setLightboxIdx((prev) => (prev === null ? 0 : (prev + 1) % attachments.length));
+        setLightboxIdx((prev) =>
+          prev === null ? 0 : (prev + 1) % visibleAttachments.length
+        );
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [lightboxIdx, attachments.length]);
+  }, [lightboxIdx, visibleAttachments.length]);
+
+  useEffect(() => {
+    const onOfflineSynced = () => {
+      setOfflinePhotos([]);
+      void onChanged();
+    };
+    window.addEventListener('vistasat:offline-synced', onOfflineSynced);
+    return () => window.removeEventListener('vistasat:offline-synced', onOfflineSynced);
+  }, [onChanged]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -95,17 +133,36 @@ export function TaskGallerySection({
     setUploading(true);
     try {
       let uploadedCount = 0;
+      let queuedCount = 0;
       for (const file of files) {
-        await uploadTaskAttachment(taskId, file, caption.trim() || undefined, currentUser);
-        uploadedCount++;
+        const res = await uploadTaskAttachment(
+          taskId,
+          file,
+          caption.trim() || undefined,
+          currentUser
+        );
+        if (res.offlineQueued) {
+          queuedCount++;
+          setOfflinePhotos((prev) => [res, ...prev]);
+        } else {
+          uploadedCount++;
+        }
       }
       setCaption('');
-      onFeedback(
-        uploadedCount === 1
-          ? 'Fotografía adjuntada al parte.'
-          : `${uploadedCount} fotografías adjuntadas al parte.`
-      );
-      await onChanged();
+      if (queuedCount > 0) {
+        onFeedback(
+          queuedCount === 1
+            ? 'Sin conexión: fotografía comprimida y guardada en cola offline.'
+            : `Sin conexión: ${queuedCount} fotografías guardadas en cola offline.`
+        );
+      } else {
+        onFeedback(
+          uploadedCount === 1
+            ? 'Fotografía adjuntada al parte.'
+            : `${uploadedCount} fotografías adjuntadas al parte.`
+        );
+        await onChanged();
+      }
     } catch (err) {
       onFeedback(err instanceof Error ? err.message : 'No se pudo subir la fotografía.');
     } finally {
@@ -115,6 +172,11 @@ export function TaskGallerySection({
   };
 
   const handleDelete = async (att: Attachment) => {
+    if (att.id.startsWith('offline-')) {
+      setOfflinePhotos((prev) => prev.filter((item) => item.id !== att.id));
+      setConfirmDeleteId(null);
+      return;
+    }
     setDeletingId(att.id);
     try {
       await deleteTaskAttachment(taskId, att, currentUser);
@@ -131,6 +193,7 @@ export function TaskGallerySection({
 
   const canDeleteAttachment = (att: Attachment) =>
     !isDeleted &&
+    !att.id.startsWith('offline-') &&
     (currentUser.role === 'admin' ||
       currentUser.role === 'coordinator' ||
       att.uploaded_by === currentUser.id);
@@ -140,16 +203,16 @@ export function TaskGallerySection({
   };
 
   return (
-    <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
+    <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
-          <Camera size={16} className="text-magenta" /> {title} ({attachments.length})
+        <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
+          <Camera size={16} className="text-magenta" /> {title} ({visibleAttachments.length})
         </h2>
 
         {!isDeleted && (
           <div className="flex flex-wrap items-center gap-2">
             <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy-dark min-h-[40px]">
-              <Camera size={15} /> {uploading ? 'Subiendo...' : 'Usar Cámara'}
+              <Camera size={15} /> {uploading ? 'Optimizando...' : 'Usar Cámara'}
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/*"
@@ -159,8 +222,8 @@ export function TaskGallerySection({
                 disabled={uploading}
               />
             </label>
-            <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-off-white dark:bg-bg-input border border-navy dark:border-slate-400 text-navy dark:text-slate-100 text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy/5 dark:hover:bg-white/10 min-h-[40px]">
-              <ImagePlus size={15} /> {uploading ? 'Subiendo...' : 'Subir de Galería'}
+            <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-off-white border border-navy text-navy text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy/5 min-h-[40px]">
+              <ImagePlus size={15} /> {uploading ? 'Optimizando...' : 'Subir de Galería'}
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/*"
@@ -184,13 +247,13 @@ export function TaskGallerySection({
         />
       )}
 
-      {attachments.length === 0 ? (
+      {visibleAttachments.length === 0 ? (
         <p className="text-xs text-mid-grey">
           Aún no hay fotografías adjuntas. Usa la cámara o galería del móvil.
         </p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {attachments.map((att, index) => (
+          {visibleAttachments.map((att, index) => (
             <div
               key={att.id}
               className="relative group rounded-sm overflow-hidden border border-border bg-off-white flex flex-col"
@@ -198,17 +261,23 @@ export function TaskGallerySection({
               <button
                 type="button"
                 onClick={() => openLightbox(index)}
-                className="aspect-square w-full overflow-hidden block"
+                className="aspect-square w-full overflow-hidden block relative"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={att.public_url}
+                  src={getDisplayUrl(att)}
                   alt={att.caption || att.file_name}
+                  onError={() => void handleImageError(att)}
                   className="w-full h-full object-cover transition-transform group-hover:scale-105"
                 />
+                {att.id.startsWith('offline-') && (
+                  <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-warning text-charcoal text-[10px] font-bold rounded-xs">
+                    Pendiente red
+                  </span>
+                )}
               </button>
 
-              <div className="p-2 flex items-center justify-between gap-1 text-[11px] bg-white dark:bg-surface border-t border-border">
+              <div className="p-2 flex items-center justify-between gap-1 text-[11px] bg-white border-t border-border">
                 <span className="truncate text-dark-grey font-medium">
                   {att.caption || att.file_name}
                 </span>
@@ -253,7 +322,7 @@ export function TaskGallerySection({
         </div>
       )}
 
-      {/* Visor Lightbox mejorado con zoom y swipe (M7) */}
+      {/* Visor Lightbox mejorado con zoom y swipe */}
       {activeAttachment && (
         <div
           className="fixed inset-0 z-50 bg-black/92 flex flex-col justify-between p-4 select-none"
@@ -272,13 +341,12 @@ export function TaskGallerySection({
             }
           }}
         >
-          {/* Barra superior */}
           <div
             className="flex items-center justify-between text-white z-10"
             onClick={(e) => e.stopPropagation()}
           >
             <span className="text-xs font-bold">
-              {(lightboxIdx ?? 0) + 1} / {attachments.length}
+              {(lightboxIdx ?? 0) + 1} / {visibleAttachments.length}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -309,12 +377,11 @@ export function TaskGallerySection({
             </div>
           </div>
 
-          {/* Imagen central */}
           <div
             className="flex-1 flex items-center justify-center relative overflow-auto my-2"
             onClick={(e) => e.stopPropagation()}
           >
-            {attachments.length > 1 && (
+            {visibleAttachments.length > 1 && (
               <button
                 type="button"
                 onClick={goPrev}
@@ -327,14 +394,15 @@ export function TaskGallerySection({
 
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={activeAttachment.public_url}
+              src={getDisplayUrl(activeAttachment)}
               alt={activeAttachment.caption || activeAttachment.file_name}
+              onError={() => void handleImageError(activeAttachment)}
               onClick={cycleZoom}
               className="max-w-full max-h-[76dvh] object-contain transition-transform duration-200 cursor-zoom-in"
               style={{ transform: `scale(${zoom})` }}
             />
 
-            {attachments.length > 1 && (
+            {visibleAttachments.length > 1 && (
               <button
                 type="button"
                 onClick={goNext}
@@ -346,7 +414,6 @@ export function TaskGallerySection({
             )}
           </div>
 
-          {/* Pie con descripción */}
           <div
             className="text-center text-white space-y-0.5"
             onClick={(e) => e.stopPropagation()}

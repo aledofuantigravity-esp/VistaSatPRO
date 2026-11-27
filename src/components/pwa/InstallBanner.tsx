@@ -42,7 +42,7 @@ export function InstallBanner() {
       className="fixed bottom-0 left-0 right-0 z-50 animate-slide-up"
       style={{ paddingBottom: 'var(--safe-bottom)' }}
     >
-      <div className="mx-4 mb-4 bg-white dark:bg-surface rounded-lg shadow-elevated border border-border overflow-hidden">
+      <div className="mx-4 mb-4 bg-white rounded-lg shadow-elevated border border-border overflow-hidden">
         <div className="h-1 bg-magenta" />
 
         <div className="p-4 flex items-start gap-3">

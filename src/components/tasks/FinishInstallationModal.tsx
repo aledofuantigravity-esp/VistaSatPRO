@@ -79,7 +79,7 @@ export function FinishInstallationModal({
       aria-labelledby="finish-install-title"
     >
       <div
-        className="bg-white dark:bg-surface w-full sm:max-w-lg rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden max-h-[92dvh] flex flex-col"
+        className="bg-white w-full sm:max-w-lg rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden max-h-[92dvh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabecera */}
@@ -159,7 +159,7 @@ export function FinishInstallationModal({
           ) : (
             <>
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-navy dark:text-sky-300">
+                <p className="text-xs font-bold uppercase tracking-wider text-navy">
                   Adjuntar foto del parte de trabajo físico
                 </p>
                 <button
@@ -188,7 +188,7 @@ export function FinishInstallationModal({
                   />
                 </label>
 
-                <label className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-off-white dark:bg-bg-input border border-navy dark:border-slate-400 text-navy dark:text-slate-100 text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy/5 dark:hover:bg-white/10 min-h-[46px] rounded-xs">
+                <label className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-off-white border border-navy text-navy text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy/5 min-h-[46px] rounded-xs">
                   <ImagePlus size={16} /> Galería de Fotos
                   <input
                     type="file"

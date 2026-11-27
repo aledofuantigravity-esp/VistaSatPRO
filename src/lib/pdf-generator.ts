@@ -592,6 +592,7 @@ export interface ReportPdfInput {
   filters: {
     dateFrom?: string;
     dateTo?: string;
+    typeLabel?: string;
     technicianName?: string;
     customerName?: string;
     statusLabel?: string;
@@ -603,6 +604,17 @@ export interface ReportPdfInput {
     closeRate: number;
     avgHours: string;
   };
+  resolutionByType?: Array<{
+    label: string;
+    count: number;
+    formatted: string;
+  }>;
+  topParts?: Array<{
+    name: string;
+    ref?: string;
+    qty: number;
+    taskCount: number;
+  }>;
   techStats: Array<{
     name: string;
     total: number;
@@ -676,6 +688,7 @@ export function downloadReportPDF(input: ReportPdfInput): void {
   const filterParts = [
     input.filters.dateFrom ? `Desde: ${input.filters.dateFrom}` : 'Desde: inicio',
     input.filters.dateTo ? `Hasta: ${input.filters.dateTo}` : 'Hasta: hoy',
+    `Tipo: ${input.filters.typeLabel || 'Todos'}`,
     `Técnico: ${input.filters.technicianName || 'Todos'}`,
     `Cliente: ${input.filters.customerName || 'Todos'}`,
     `Estado: ${input.filters.statusLabel || 'Todos'}`,
@@ -697,7 +710,56 @@ export function downloadReportPDF(input: ReportPdfInput): void {
     14,
     y
   );
-  y += 10;
+  y += 9;
+
+  // Tiempos medios por tipo de parte
+  if (input.resolutionByType && input.resolutionByType.length > 0) {
+    ensureSpace(24);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(0, 33, 105);
+    doc.text('Tiempo medio de cierre por tipo de parte:', 14, y);
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(34, 34, 34);
+    for (const item of input.resolutionByType) {
+      doc.text(
+        `• ${item.label}: ${item.formatted} (${item.count} cierre${item.count === 1 ? '' : 's'})`,
+        16,
+        y
+      );
+      y += 4.8;
+    }
+    y += 4;
+  }
+
+  // Repuestos más consumidos
+  if (input.topParts && input.topParts.length > 0) {
+    addSection('Repuestos Más Consumidos');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(102, 102, 102);
+    doc.text('Material / Repuesto', 14, y);
+    doc.text('Ref.', 118, y);
+    doc.text('Partes', 156, y, { align: 'right' });
+    doc.text('Unid.', pageWidth - 14, y, { align: 'right' });
+    y += 2;
+    doc.setDrawColor(221, 221, 221);
+    doc.line(14, y, pageWidth - 14, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(34, 34, 34);
+    for (const part of input.topParts.slice(0, 12)) {
+      ensureSpace(8);
+      doc.text(part.name.slice(0, 44), 14, y);
+      doc.text((part.ref || '—').slice(0, 18), 118, y);
+      doc.text(String(part.taskCount), 156, y, { align: 'right' });
+      doc.text(String(part.qty), pageWidth - 14, y, { align: 'right' });
+      y += 5.5;
+    }
+    y += 4;
+  }
 
   // Rendimiento por técnico
   if (input.techStats.length > 0) {

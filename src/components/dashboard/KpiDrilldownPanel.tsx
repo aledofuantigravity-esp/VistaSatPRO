@@ -35,36 +35,36 @@ const KPI_META: Record<
     titleCoord: 'Partes Pendientes',
     titleTech: 'Mis Partes Pendientes',
     subtitle: 'Partes abiertos pendientes de iniciar intervención.',
-    icon: <Clock size={18} className="text-petrol dark:text-sky-300" />,
-    accentClass: 'border-petrol/40 dark:border-sky-400/40',
+    icon: <Clock size={18} className="text-petrol" />,
+    accentClass: 'border-petrol/40',
   },
   in_progress: {
     titleCoord: 'Partes En Proceso',
     titleTech: 'Mis Partes En Proceso',
     subtitle: 'Intervenciones activas actualmente en curso.',
-    icon: <Wrench size={18} className="text-navy dark:text-sky-300" />,
-    accentClass: 'border-navy/40 dark:border-sky-400/40',
+    icon: <Wrench size={18} className="text-navy" />,
+    accentClass: 'border-navy/40',
   },
   urgent_high: {
     titleCoord: 'Partes Urgentes y Prioridad Alta',
     titleTech: 'Mis Partes Urgentes y Prioridad Alta',
     subtitle: 'Partes activos marcados con prioridad Urgente o Alta.',
-    icon: <AlertTriangle size={18} className="text-magenta dark:text-pink-300" />,
-    accentClass: 'border-magenta/40 dark:border-pink-400/40',
+    icon: <AlertTriangle size={18} className="text-magenta" />,
+    accentClass: 'border-magenta/40',
   },
   sla_risk: {
     titleCoord: 'Alertas SLA (Vencidos / Vencen Hoy)',
     titleTech: 'Mis Alertas SLA (Vencidos / Vencen Hoy)',
     subtitle: 'Partes con fecha límite vencida o que cumplen hoy.',
-    icon: <ShieldAlert size={18} className="text-danger dark:text-red-300" />,
-    accentClass: 'border-danger/40 dark:border-red-400/40',
+    icon: <ShieldAlert size={18} className="text-danger" />,
+    accentClass: 'border-danger/40',
   },
   completed: {
     titleCoord: 'Últimos Partes Completados',
     titleTech: 'Mis Últimos Partes Completados',
     subtitle: 'Partes cerrados ordenados del más reciente al más antiguo.',
-    icon: <CheckCircle2 size={18} className="text-success dark:text-emerald-300" />,
-    accentClass: 'border-success/40 dark:border-emerald-400/40',
+    icon: <CheckCircle2 size={18} className="text-success" />,
+    accentClass: 'border-success/40',
   },
 };
 
@@ -82,7 +82,7 @@ export function KpiDrilldownPanel({
   return (
     <section
       aria-label={title}
-      className={`bg-white dark:bg-surface rounded-md shadow-card border-2 ${meta.accentClass} p-4 sm:p-5 space-y-4 min-w-0`}
+      className={`bg-white rounded-md shadow-card border-2 ${meta.accentClass} p-4 sm:p-5 space-y-4 min-w-0`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border pb-3 min-w-0">
         <div className="min-w-0">
@@ -91,7 +91,7 @@ export function KpiDrilldownPanel({
             <h2 className="text-sm sm:text-base font-bold text-charcoal">
               {title}
             </h2>
-            <span className="px-2 py-0.5 text-xs font-extrabold rounded-sm bg-navy/10 dark:bg-sky-500/20 text-navy dark:text-sky-300">
+            <span className="px-2 py-0.5 text-xs font-extrabold rounded-sm bg-navy/10 text-navy">
               {tasks.length}
             </span>
           </div>

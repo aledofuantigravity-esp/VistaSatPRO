@@ -36,6 +36,7 @@ import {
 } from '@/lib/notification-preferences';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { validatePasswordStrength } from '@/lib/security';
+import { useAppCache } from '@/store/app-cache';
 import {
   ROLE_LABELS,
   type NotificationPreferences,
@@ -64,10 +65,14 @@ function isUserRecentlyActive(u: Profile, liveIds: Set<string>, currentId: strin
 function UsersContent() {
   const { profile, onlineUserIds } = useAuth();
   const channelUid = useId();
-  const [users, setUsers] = useState<Profile[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const cachedProfiles = useAppCache((s) => s.profiles);
+  const profilesLoadedAt = useAppCache((s) => s.profilesLoadedAt);
+  const cachedTasks = useAppCache((s) => s.tasks);
+
+  const [users, setUsers] = useState<Profile[]>(cachedProfiles);
+  const [tasks, setTasks] = useState<Task[]>(cachedTasks);
   const liveOnlineIds = useMemo(() => new Set(onlineUserIds), [onlineUserIds]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!profilesLoadedAt);
   const [showCreate, setShowCreate] = useState(false);
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
 
@@ -110,15 +115,21 @@ function UsersContent() {
     return () => clearTimeout(t);
   }, [load]);
 
-  // Escucha en vivo de presencia y cambios en profiles para que el Admin vea quién está conectado
+  const loadProfilesOnly = useCallback(async () => {
+    if (!profileId || !profileRole) return;
+    const u = await listProfiles();
+    setUsers(u);
+  }, [profileId, profileRole]);
+
+  // Escucha en vivo de presencia y cambios en profiles sin re-descargar la lista completa de partes
   useEffect(() => {
     if (profileRole !== 'admin') return;
 
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
-        void load();
+        void loadProfilesOnly();
       }
-    }, 15000);
+    }, 60_000);
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
@@ -135,8 +146,15 @@ function UsersContent() {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'profiles' },
-        () => {
-          void load();
+        (payload) => {
+          const updated = payload.new as Profile | undefined;
+          if (!updated?.id) return;
+          useAppCache.getState().upsertProfile(updated);
+          setUsers((prev) =>
+            prev.some((p) => p.id === updated.id)
+              ? prev.map((p) => (p.id === updated.id ? updated : p))
+              : [...prev, updated]
+          );
         }
       )
       .subscribe();
@@ -145,7 +163,7 @@ function UsersContent() {
       clearInterval(interval);
       void supabase.removeChannel(channel);
     };
-  }, [profileRole, channelUid, load]);
+  }, [profileRole, channelUid, load, loadProfilesOnly]);
 
   if (!profile) return null;
 
@@ -311,7 +329,7 @@ function UsersContent() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-charcoal flex items-center gap-2">
-            <UsersIcon size={22} className="text-navy dark:text-sky-300" /> Equipo y Usuarios
+            <UsersIcon size={22} className="text-navy" /> Equipo y Usuarios
           </h1>
           <p className="text-xs text-mid-grey mt-0.5">
             Solo Administrador · {onlineCount} en línea ahora de {users.length} usuarios
@@ -326,7 +344,7 @@ function UsersContent() {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 bg-white dark:bg-surface rounded-md animate-pulse shadow-card" />
+            <div key={i} className="h-24 bg-white rounded-md animate-pulse shadow-card" />
           ))}
         </div>
       ) : (
@@ -345,7 +363,7 @@ function UsersContent() {
               <div
                 key={u.id}
                 onClick={() => openEditModal(u, 'profile')}
-                className={`bg-white dark:bg-surface rounded-md shadow-card hover:shadow-elevated transition-shadow cursor-pointer p-4 border-l-4 ${
+                className={`bg-white rounded-md shadow-card hover:shadow-elevated transition-shadow cursor-pointer p-4 border-l-4 ${
                   u.is_active ? 'border-navy' : 'border-light-grey opacity-65'
                 }`}
               >
@@ -403,7 +421,7 @@ function UsersContent() {
                       {notifSummary.extraBadges.map((b) => (
                         <span
                           key={b}
-                          className="px-2 py-0.5 text-[10px] font-semibold rounded-sm bg-navy/10 text-navy dark:text-sky-300"
+                          className="px-2 py-0.5 text-[10px] font-semibold rounded-sm bg-navy/10 text-navy"
                         >
                           {b}
                         </span>
@@ -411,7 +429,7 @@ function UsersContent() {
                     </div>
                   </div>
 
-                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-navy/10 dark:bg-white/10 text-navy dark:text-sky-300 text-xs font-bold rounded-sm flex-shrink-0">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-navy/10 text-navy text-xs font-bold rounded-sm flex-shrink-0">
                     {u.role === 'technician' ? <Wrench size={12} /> : <UserCheck size={12} />}
                     {ROLE_LABELS[u.role]}
                   </span>
@@ -437,7 +455,7 @@ function UsersContent() {
                     <button
                       type="button"
                       onClick={() => openEditModal(u, 'profile')}
-                      className="px-2.5 py-1.5 text-xs font-bold border border-border hover:bg-off-white inline-flex items-center gap-1 text-navy dark:text-sky-300"
+                      className="px-2.5 py-1.5 text-xs font-bold border border-border hover:bg-off-white inline-flex items-center gap-1 text-navy"
                     >
                       <Pencil size={13} /> Editar
                     </button>
@@ -482,7 +500,7 @@ function UsersContent() {
       {showCreate && (
         <div className="fixed inset-0 z-50 bg-charcoal/75 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div
-            className={`bg-white dark:bg-surface w-full ${
+            className={`bg-white w-full ${
               editingUser ? 'sm:max-w-2xl' : 'sm:max-w-md'
             } rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden flex flex-col max-h-[92dvh]`}
           >
@@ -557,7 +575,7 @@ function UsersContent() {
                     onClick={() => setModalTab('profile')}
                     className={`py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
                       modalTab === 'profile'
-                        ? 'border-navy dark:border-sky-400 text-navy dark:text-sky-300 bg-white dark:bg-surface'
+                        ? 'border-navy text-navy bg-white'
                         : 'border-transparent text-mid-grey hover:text-charcoal'
                     }`}
                   >
@@ -568,7 +586,7 @@ function UsersContent() {
                     onClick={() => setModalTab('notifications')}
                     className={`py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
                       modalTab === 'notifications'
-                        ? 'border-magenta text-magenta bg-white dark:bg-surface'
+                        ? 'border-magenta text-magenta bg-white'
                         : 'border-transparent text-mid-grey hover:text-charcoal'
                     }`}
                   >
@@ -682,7 +700,7 @@ function UsersContent() {
                     <div className="border-t border-border pt-4 space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <p className="text-xs font-bold uppercase tracking-wider text-navy dark:text-sky-300 flex items-center gap-1.5">
+                          <p className="text-xs font-bold uppercase tracking-wider text-navy flex items-center gap-1.5">
                             <Smartphone size={14} className="text-magenta" /> Dispositivos Push
                             vinculados ({notifSubs.length})
                           </p>

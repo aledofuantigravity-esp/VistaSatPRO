@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
-import { sendNotification, setVapidDetails } from 'web-push';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { isSupabaseConfigured } from '@/lib/supabase/config';
 import { captureMonitoringError } from '@/lib/monitoring';
 import { timingSafeEqualSecret } from '@/lib/server-security';
 import { evaluateUserNotificationDelivery } from '@/lib/notification-preferences';
-import { getServerVapidConfig } from '@/lib/vapid-server';
+import { sendWebPushBatch } from '@/lib/web-push-sender';
 import type { Profile, TaskPriority, TaskType } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +12,7 @@ export const dynamic = 'force-dynamic';
 /**
  * GET / POST /api/sla/check
  * Comprueba partes activos con fecha límite (`due_date`) que vencen hoy o ya están vencidos
- * y notifica una vez al día al técnico asignado vía in-app + Web Push.
+ * y notifica una vez al día al técnico asignado vía in-app + Web Push en paralelo.
  * Protegido de forma obligatoria (fail-closed) mediante `CRON_SECRET` o `INTERNAL_WEBHOOK_SECRET`.
  */
 async function runSlaCheck(request: Request) {
@@ -47,7 +46,7 @@ async function runSlaCheck(request: Request) {
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
 
-    let { data: tasks, error } = await supabaseAdmin
+    const { data: tasks, error } = await supabaseAdmin
       .from('tasks')
       .select('id, code, due_date, assigned_to, created_by, status, priority, task_type, customer:customers(name)')
       .is('deleted_at', null)
@@ -56,45 +55,14 @@ async function runSlaCheck(request: Request) {
       .not('status', 'in', '("completed","cancelled")')
       .lte('due_date', endOfDay.toISOString());
 
-    if (error?.code === '42703') {
-      const fb = await supabaseAdmin
-        .from('tasks')
-        .select('id, code, due_date, assigned_to, created_by, status, priority, customer:customers(name)')
-        .is('deleted_at', null)
-        .not('due_date', 'is', null)
-        .not('assigned_to', 'is', null)
-        .not('status', 'in', '("completed","cancelled")')
-        .lte('due_date', endOfDay.toISOString());
-      tasks = fb.data
-        ? fb.data.map((row) => ({ ...row, task_type: 'rma_incident' }))
-        : null;
-      error = fb.error;
-    }
-
     if (error) {
-      // Si la migración 0004 aún no se aplicó, salir sin error fatal
-      if (error.code === '42703') {
-        return NextResponse.json({ ok: true, skipped: 'migration_0004_pending', notified: 0 });
-      }
       throw new Error(error.message);
     }
 
-    const { data: initialActiveProfiles, error: profErr } = await supabaseAdmin
+    const { data: activeProfiles } = await supabaseAdmin
       .from('profiles')
       .select('id, role, is_active, notification_level, notification_preferences')
       .eq('is_active', true);
-
-    let activeProfiles = initialActiveProfiles;
-    if (profErr?.code === '42703') {
-      const fbProf = await supabaseAdmin
-        .from('profiles')
-        .select('id, role, is_active, notification_level')
-        .eq('is_active', true);
-      activeProfiles = (fbProf.data || []).map((p) => ({
-        ...p,
-        notification_preferences: null,
-      }));
-    }
 
     const typedProfiles = (activeProfiles || []) as Array<
       Pick<
@@ -103,15 +71,20 @@ async function runSlaCheck(request: Request) {
       >
     >;
 
-    const vapidCfg = getServerVapidConfig();
-    const vapidReady = Boolean(vapidCfg);
+    // Obtener en 1 consulta las alertas SLA ya enviadas hoy para evitar N+1
+    const { data: sentTodayRows } = await supabaseAdmin
+      .from('notifications')
+      .select('recipient_id, task_id')
+      .gte('created_at', startOfDay.toISOString())
+      .ilike('title', '%SLA%');
 
-    if (vapidCfg) {
-      setVapidDetails(vapidCfg.subject, vapidCfg.publicKey, vapidCfg.privateKey);
-    }
+    const sentTodayKeys = new Set(
+      (sentTodayRows || []).map((r) => `${r.recipient_id}:${r.task_id}`)
+    );
 
     let notified = 0;
     let pushCount = 0;
+    const inAppBatch: Array<Record<string, unknown>> = [];
 
     for (const t of tasks || []) {
       if (!t.due_date) continue;
@@ -134,7 +107,12 @@ async function runSlaCheck(request: Request) {
             minute: '2-digit',
           })}.`;
 
+      const pushUserIdsForTask: string[] = [];
+      const inAppCandidatesForTask: string[] = [];
+
       for (const candidate of typedProfiles) {
+        if (sentTodayKeys.has(`${candidate.id}:${t.id}`)) continue;
+
         const decision = evaluateUserNotificationDelivery({
           recipient: candidate,
           actorId: 'system-sla-cron',
@@ -151,82 +129,48 @@ async function runSlaCheck(request: Request) {
 
         if (!decision.inApp && !decision.push) continue;
 
-        // Evitar duplicados en el mismo día para el mismo parte y destinatario
-        const { data: existingToday } = await supabaseAdmin
-          .from('notifications')
-          .select('id')
-          .eq('recipient_id', candidate.id)
-          .eq('task_id', t.id)
-          .gte('created_at', startOfDay.toISOString())
-          .ilike('title', '%SLA%')
-          .limit(1);
+        sentTodayKeys.add(`${candidate.id}:${t.id}`);
+        if (decision.push) pushUserIdsForTask.push(candidate.id);
+        if (decision.inApp) inAppCandidatesForTask.push(candidate.id);
+      }
 
-        if (existingToday && existingToday.length > 0) continue;
+      const pushRes = await sendWebPushBatch({
+        supabaseAdmin,
+        userIds: pushUserIdsForTask,
+        payload: { title, body, taskId: t.id, type: 'sla_alert' },
+        scope: 'sla_alert',
+        route: '/api/sla/check',
+      });
+      pushCount += pushRes.pushCount;
 
-        if (decision.inApp) {
-          // Garantizar actor_id != recipient_id para cumplir CHECK en BD
-          const fallbackActor =
-            candidate.id !== t.created_by
-              ? t.created_by
-              : t.assigned_to && t.assigned_to !== candidate.id
-              ? t.assigned_to
-              : typedProfiles.find((p) => p.id !== candidate.id)?.id || t.created_by;
+      for (const recipientId of inAppCandidatesForTask) {
+        const fallbackActor =
+          recipientId !== t.created_by
+            ? t.created_by
+            : t.assigned_to && t.assigned_to !== recipientId
+            ? t.assigned_to
+            : typedProfiles.find((p) => p.id !== recipientId)?.id || t.created_by;
 
-          if (fallbackActor !== candidate.id) {
-            let { error: insErr } = await supabaseAdmin.from('notifications').insert({
-              recipient_id: candidate.id,
-              actor_id: fallbackActor,
-              task_id: t.id,
-              type: 'sla_alert',
-              title,
-              body,
-              push_sent: vapidReady && decision.push,
-            });
-            if (insErr?.code === '23514') {
-              const fbIns = await supabaseAdmin.from('notifications').insert({
-                recipient_id: candidate.id,
-                actor_id: fallbackActor,
-                task_id: t.id,
-                type: 'priority_changed',
-                title,
-                body,
-                push_sent: vapidReady && decision.push,
-              });
-              insErr = fbIns.error;
-            }
-            if (!insErr) notified++;
-          }
+        if (fallbackActor !== recipientId) {
+          inAppBatch.push({
+            recipient_id: recipientId,
+            actor_id: fallbackActor,
+            task_id: t.id,
+            type: 'sla_alert',
+            title,
+            body,
+            push_sent: pushRes.pushedUserIds.has(recipientId),
+          });
         }
+      }
+    }
 
-        if (decision.push && vapidReady) {
-          const { data: subs } = await supabaseAdmin
-            .from('push_subscriptions')
-            .select('id, endpoint, p256dh, auth')
-            .eq('user_id', candidate.id)
-            .eq('is_active', true);
-
-          for (const sub of subs || []) {
-            try {
-              await sendNotification(
-                {
-                  endpoint: sub.endpoint,
-                  keys: { p256dh: sub.p256dh, auth: sub.auth },
-                },
-                JSON.stringify({ title, body, taskId: t.id, type: 'sla_alert' }),
-                { TTL: 86400, urgency: 'high' }
-              );
-              pushCount++;
-            } catch (err: unknown) {
-              const statusCode = (err as { statusCode?: number })?.statusCode;
-              if (statusCode === 410 || statusCode === 404) {
-                await supabaseAdmin
-                  .from('push_subscriptions')
-                  .update({ is_active: false })
-                  .eq('id', sub.id);
-              }
-            }
-          }
-        }
+    if (inAppBatch.length > 0) {
+      const { error: insErr } = await supabaseAdmin.from('notifications').insert(inAppBatch);
+      if (!insErr) {
+        notified = inAppBatch.length;
+      } else {
+        captureMonitoringError(insErr, { route: '/api/sla/check', scope: 'batch_insert' });
       }
     }
 

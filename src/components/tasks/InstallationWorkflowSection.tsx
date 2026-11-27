@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   Calendar,
+  CalendarPlus,
   CheckSquare,
   Download,
   Eye,
@@ -19,6 +20,7 @@ import {
   updateTaskFields,
   uploadTaskAttachment,
 } from '@/lib/data-service';
+import { downloadInstallationIcs } from '@/lib/ics';
 import { isSafePreviewUrl } from '@/lib/security';
 import { toDatetimeLocalValue } from '@/lib/sla';
 import type { Attachment, Profile, Task } from '@/types/database';
@@ -171,9 +173,9 @@ export function InstallationWorkflowSection({
   return (
     <div className="space-y-4">
       {/* 1. Pedido de Instalación adjunto */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
+      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
+          <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
             <FileText size={16} className="text-magenta" /> Pedido de Instalación (
             {orderAttachments.length})
           </h2>
@@ -225,7 +227,7 @@ export function InstallationWorkflowSection({
                     download={att.file_name}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-border text-xs font-bold text-charcoal hover:bg-white dark:hover:bg-white/10"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-border text-xs font-bold text-charcoal hover:bg-white"
                   >
                     <Download size={13} />
                   </a>
@@ -250,16 +252,27 @@ export function InstallationWorkflowSection({
       </div>
 
       {/* 2. Fecha futura acordada para la instalación */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
-        <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
-          <Calendar size={16} className="text-magenta" /> Fecha Acordada para la Instalación
-        </h2>
+      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
+            <Calendar size={16} className="text-magenta" /> Fecha Acordada para la Instalación
+          </h2>
+          {task.scheduled_date && (
+            <button
+              type="button"
+              onClick={() => downloadInstallationIcs(task)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-off-white border border-border text-xs font-bold text-navy hover:bg-navy/5 rounded-xs"
+            >
+              <CalendarPlus size={14} className="text-magenta" /> Añadir a calendario (.ics)
+            </button>
+          )}
+        </div>
 
         <p className="text-xs text-dark-grey">
           {task.scheduled_date ? (
             <>
               Programada para:{' '}
-              <strong className="text-navy dark:text-sky-300">
+              <strong className="text-navy">
                 {new Date(task.scheduled_date).toLocaleString('es-ES', {
                   dateStyle: 'full',
                   timeStyle: 'short',
@@ -290,9 +303,9 @@ export function InstallationWorkflowSection({
       </div>
 
       {/* 3. Checklist: Cotejo de mercancía */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
+      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
+          <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
             <CheckSquare size={16} className="text-magenta" /> Checklist: Cotejo de Mercancía
           </h2>
 
@@ -305,7 +318,7 @@ export function InstallationWorkflowSection({
               No realizado
             </span>
           ) : (
-            <span className="px-2.5 py-1 text-xs font-extrabold uppercase bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 rounded-sm">
+            <span className="px-2.5 py-1 text-xs font-extrabold uppercase bg-amber-100 text-amber-800 rounded-sm">
               Pendiente
             </span>
           )}
@@ -380,7 +393,7 @@ export function InstallationWorkflowSection({
           onClick={() => setPreviewOrder(null)}
         >
           <div
-            className="bg-white dark:bg-surface w-full max-w-4xl h-[86dvh] rounded-lg shadow-elevated overflow-hidden flex flex-col"
+            className="bg-white w-full max-w-4xl h-[86dvh] rounded-lg shadow-elevated overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-navy text-white px-4 py-3 flex items-center justify-between gap-2">

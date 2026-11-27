@@ -36,7 +36,7 @@ export function getSlaStatus(task: Pick<Task, 'due_date' | 'status'>): SlaInfo |
       label: `VENCIDO (${formatted})`,
       shortLabel: 'VENCIDO',
       badgeClass:
-        'bg-danger/15 text-danger border border-danger/40 dark:bg-danger/25 dark:text-red-300',
+        'bg-danger/15 text-danger border border-danger/40',
       dueDateFormatted: formatted,
     };
   }
@@ -49,7 +49,7 @@ export function getSlaStatus(task: Pick<Task, 'due_date' | 'status'>): SlaInfo |
       label: `VENCE HOY (${due.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })})`,
       shortLabel: 'HOY',
       badgeClass:
-        'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40',
+        'bg-amber-100 text-amber-800 border border-amber-300',
       dueDateFormatted: formatted,
     };
   }
@@ -59,7 +59,7 @@ export function getSlaStatus(task: Pick<Task, 'due_date' | 'status'>): SlaInfo |
     label: `Límite: ${formatted}`,
     shortLabel: due.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }),
     badgeClass:
-      'bg-navy/10 text-navy border border-navy/20 dark:bg-white/10 dark:text-slate-200 dark:border-white/15',
+      'bg-navy/10 text-navy border border-navy/20',
     dueDateFormatted: formatted,
   };
 }

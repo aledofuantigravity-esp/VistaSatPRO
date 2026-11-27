@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import { sendNotification, setVapidDetails } from 'web-push';
 import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
 import { captureMonitoringError } from '@/lib/monitoring';
 import { evaluateUserNotificationDelivery } from '@/lib/notification-preferences';
-import { getServerVapidConfig } from '@/lib/vapid-server';
+import { sendWebPushBatch } from '@/lib/web-push-sender';
 import type { Profile, TaskPriority, TaskType } from '@/types/database';
 
 const pushPayloadSchema = z.union([
@@ -34,7 +33,7 @@ const pushPayloadSchema = z.union([
 
 /**
  * POST /api/push/send
- * Dispara notificaciones in-app + Web Push VAPID a destinatarios legítimos.
+ * Dispara notificaciones in-app + Web Push VAPID en paralelo a destinatarios legítimos.
  * Requiere sesión JWT activa y deriva actorId exclusivamente del servidor.
  */
 export async function POST(request: Request) {
@@ -79,53 +78,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Payload de notificación inválido' }, { status: 400 });
     }
 
-    const vapidCfg = getServerVapidConfig();
-    if (vapidCfg) {
-      setVapidDetails(vapidCfg.subject, vapidCfg.publicKey, vapidCfg.privateKey);
-    }
-    const vapidReady = Boolean(vapidCfg);
-
     // 2. Modo prueba de Push hacia los dispositivos del propio usuario
     if ('testSelf' in parsed.data && parsed.data.testSelf === true) {
-      if (!vapidReady) {
-        return NextResponse.json({ ok: true, pushCount: 0 });
-      }
-      const { data: subs } = await supabaseAdmin
-        .from('push_subscriptions')
-        .select('id, endpoint, p256dh, auth')
-        .eq('user_id', authUser.id)
-        .eq('is_active', true);
-
-      let sent = 0;
-      for (const sub of subs || []) {
-        try {
-          await sendNotification(
-            {
-              endpoint: sub.endpoint,
-              keys: { p256dh: sub.p256dh, auth: sub.auth },
-            },
-            JSON.stringify({
-              title: 'VistaSatPRO — Prueba Push Real',
-              body: 'Las notificaciones Push en segundo plano funcionan correctamente.',
-              taskId: null,
-              type: 'generic',
-            }),
-            { TTL: 86400, urgency: 'high' }
-          );
-          sent++;
-        } catch (err: unknown) {
-          const statusCode = (err as { statusCode?: number })?.statusCode;
-          if (statusCode === 410 || statusCode === 404 || statusCode === 403 || statusCode === 401) {
-            await supabaseAdmin
-              .from('push_subscriptions')
-              .update({ is_active: false })
-              .eq('id', sub.id);
-          }
-          console.error('[Push/testSelf] Error enviando Web Push:', statusCode, err);
-          captureMonitoringError(err, { route: '/api/push/send', scope: 'testSelf', statusCode });
-        }
-      }
-      return NextResponse.json({ ok: true, pushCount: sent });
+      const { pushCount } = await sendWebPushBatch({
+        supabaseAdmin,
+        userIds: [authUser.id],
+        payload: {
+          title: 'VistaSatPRO — Prueba Push Real',
+          body: 'Las notificaciones Push en segundo plano funcionan correctamente.',
+          taskId: null,
+          type: 'generic',
+        },
+        scope: 'testSelf',
+        route: '/api/push/send',
+      });
+      return NextResponse.json({ ok: true, pushCount });
     }
 
     const { taskId, type, title, body, isNewTask } = parsed.data as {
@@ -147,23 +114,11 @@ export async function POST(request: Request) {
     // Derivar actorId exclusivamente de la sesión verificada
     const actorId = authUser.id;
 
-    const { data: initialTask, error: taskErr } = await supabaseAdmin
+    const { data: task } = await supabaseAdmin
       .from('tasks')
       .select('id, assigned_to, created_by, deleted_by, status, priority, task_type')
       .eq('id', taskId)
       .single();
-
-    let task = initialTask;
-    if (taskErr?.code === '42703') {
-      const fallbackTask = await supabaseAdmin
-        .from('tasks')
-        .select('id, assigned_to, created_by, deleted_by, status, priority')
-        .eq('id', taskId)
-        .single();
-      task = fallbackTask.data
-        ? { ...fallbackTask.data, task_type: 'rma_incident' }
-        : null;
-    }
 
     if (!task) {
       return NextResponse.json({ error: 'Parte no encontrado' }, { status: 404 });
@@ -186,27 +141,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. Evaluar destinatarios según preferencias granulares de cada usuario activo
-    const { data: initialProfiles, error: profErr } = await supabaseAdmin
+    // 4. Evaluar destinatarios en memoria según preferencias granulares
+    const { data: candidateProfiles } = await supabaseAdmin
       .from('profiles')
       .select('id, role, is_active, notification_level, notification_preferences')
       .eq('is_active', true);
 
-    let candidateProfiles = initialProfiles;
-    if (profErr?.code === '42703') {
-      const fallbackProfs = await supabaseAdmin
-        .from('profiles')
-        .select('id, role, is_active, notification_level')
-        .eq('is_active', true);
-      candidateProfiles = (fallbackProfs.data || []).map((p) => ({
-        ...p,
-        notification_preferences: null,
-      }));
-    }
-
     const now = new Date();
-    let inAppCount = 0;
-    let pushCount = 0;
+    const pushTargetUserIds: string[] = [];
+    const inAppRecipientIds: string[] = [];
 
     for (const candidate of (candidateProfiles || []) as Array<
       Pick<
@@ -229,58 +172,36 @@ export async function POST(request: Request) {
         now,
       });
 
-      if (!decision.inApp && !decision.push) continue;
+      if (decision.push) pushTargetUserIds.push(candidate.id);
+      if (decision.inApp) inAppRecipientIds.push(candidate.id);
+    }
 
-      let pushedForCandidate = false;
-      if (decision.push && vapidReady) {
-        const { data: subs } = await supabaseAdmin
-          .from('push_subscriptions')
-          .select('id, endpoint, p256dh, auth')
-          .eq('user_id', candidate.id)
-          .eq('is_active', true);
+    // 5. Envío paralelo de todos los Web Push en una única ronda
+    const { pushCount, pushedUserIds } = await sendWebPushBatch({
+      supabaseAdmin,
+      userIds: pushTargetUserIds,
+      payload: { title, body, taskId, type },
+      scope: 'delivery',
+      route: '/api/push/send',
+    });
 
-        for (const sub of subs || []) {
-          try {
-            await sendNotification(
-              {
-                endpoint: sub.endpoint,
-                keys: { p256dh: sub.p256dh, auth: sub.auth },
-              },
-              JSON.stringify({ title, body, taskId, type }),
-              { TTL: 86400, urgency: 'high' }
-            );
-            pushCount++;
-            pushedForCandidate = true;
-          } catch (err: unknown) {
-            const statusCode = (err as { statusCode?: number })?.statusCode;
-            if (statusCode === 410 || statusCode === 404 || statusCode === 403 || statusCode === 401) {
-              await supabaseAdmin
-                .from('push_subscriptions')
-                .update({ is_active: false })
-                .eq('id', sub.id);
-            }
-            console.error('[Push] Error enviando Web Push:', statusCode, err);
-            captureMonitoringError(err, {
-              route: '/api/push/send',
-              scope: 'delivery',
-              statusCode,
-              recipientId: candidate.id,
-            });
-          }
-        }
-      }
-
-      if (decision.inApp) {
-        const { error: insertErr } = await supabaseAdmin.from('notifications').insert({
-          recipient_id: candidate.id,
-          actor_id: actorId,
-          task_id: taskId,
-          type,
-          title,
-          body,
-          push_sent: pushedForCandidate,
-        });
-        if (!insertErr) inAppCount++;
+    // 6. Inserción en lote de notificaciones in-app
+    let inAppCount = 0;
+    if (inAppRecipientIds.length > 0) {
+      const rows = inAppRecipientIds.map((recipientId) => ({
+        recipient_id: recipientId,
+        actor_id: actorId,
+        task_id: taskId,
+        type,
+        title,
+        body,
+        push_sent: pushedUserIds.has(recipientId),
+      }));
+      const { error: insertErr } = await supabaseAdmin.from('notifications').insert(rows);
+      if (!insertErr) {
+        inAppCount = rows.length;
+      } else {
+        captureMonitoringError(insertErr, { route: '/api/push/send', scope: 'batch_insert' });
       }
     }
 

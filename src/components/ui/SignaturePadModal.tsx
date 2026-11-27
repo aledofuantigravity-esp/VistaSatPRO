@@ -96,7 +96,7 @@ function SignaturePadModalBody({
 
   return (
     <div className="fixed inset-0 z-50 bg-charcoal/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white dark:bg-surface w-full sm:max-w-lg rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden">
+      <div className="bg-white w-full sm:max-w-lg rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden">
         <div className="bg-navy text-white px-5 py-4 flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold">Conformidad y Firma del Cliente</h3>

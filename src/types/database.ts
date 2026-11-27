@@ -82,6 +82,19 @@ export interface MaterialItem {
   qty: number;
 }
 
+export interface PartCatalogItem {
+  id: string;
+  name: string;
+  ref: string | null;
+  category: string | null;
+  unit_cost: number | null;
+  notes: string | null;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Profile {
   id: string;
   email: string;
@@ -239,29 +252,29 @@ export const TASK_STATUS_META: Record<
   pending: {
     label: 'Pendiente',
     color: '#666666',
-    bgClass: 'bg-mid-grey/15 dark:bg-slate-500/25',
-    textClass: 'text-dark-grey dark:text-slate-200',
+    bgClass: 'bg-mid-grey/15',
+    textClass: 'text-dark-grey',
     borderHex: '#666666',
   },
   in_progress: {
     label: 'En Proceso',
     color: '#004876',
-    bgClass: 'bg-petrol/20 dark:bg-cyan-500/20',
-    textClass: 'text-petrol dark:text-cyan-300',
+    bgClass: 'bg-petrol/20',
+    textClass: 'text-petrol',
     borderHex: '#004876',
   },
   completed: {
     label: 'Completada',
     color: '#1A7A4A',
-    bgClass: 'bg-success/15 dark:bg-emerald-500/20',
-    textClass: 'text-success dark:text-emerald-300',
+    bgClass: 'bg-success/15',
+    textClass: 'text-success',
     borderHex: '#1A7A4A',
   },
   cancelled: {
     label: 'Cancelada',
     color: '#353740',
-    bgClass: 'bg-dark-grey/15 dark:bg-slate-600/30',
-    textClass: 'text-dark-grey dark:text-slate-300',
+    bgClass: 'bg-dark-grey/15',
+    textClass: 'text-dark-grey',
     borderHex: '#353740',
   },
 };
@@ -291,26 +304,26 @@ export const TASK_PRIORITY_META: Record<
 > = {
   low: {
     label: 'Baja',
-    bgClass: 'bg-light-grey/20 dark:bg-slate-500/25',
-    textClass: 'text-mid-grey dark:text-slate-300',
+    bgClass: 'bg-light-grey/20',
+    textClass: 'text-mid-grey',
     dotColor: '#9B9B9B',
   },
   medium: {
     label: 'Media',
-    bgClass: 'bg-coral/20 dark:bg-orange-500/20',
-    textClass: 'text-burgundy dark:text-orange-300',
+    bgClass: 'bg-coral/20',
+    textClass: 'text-burgundy',
     dotColor: '#EA7267',
   },
   high: {
     label: 'Alta',
-    bgClass: 'bg-magenta/15 dark:bg-magenta/25',
-    textClass: 'text-magenta dark:text-pink-300',
+    bgClass: 'bg-magenta/15',
+    textClass: 'text-magenta',
     dotColor: '#CF095E',
   },
   urgent: {
     label: 'Urgente',
-    bgClass: 'bg-danger/15 dark:bg-red-500/25',
-    textClass: 'text-danger dark:text-red-300',
+    bgClass: 'bg-danger/15',
+    textClass: 'text-danger',
     dotColor: '#D40000',
   },
 };
@@ -336,32 +349,32 @@ export const TASK_TYPE_META: Record<
     label: 'Instalación',
     shortLabel: 'Instalación',
     description: 'Pedido adjunto, cotejo de mercancía, fecha acordada y parte de instalación.',
-    bgClass: 'bg-petrol/15 dark:bg-sky-500/20',
-    textClass: 'text-petrol dark:text-sky-300',
+    bgClass: 'bg-petrol/15',
+    textClass: 'text-petrol',
     borderColor: '#004876',
   },
   rma_incident: {
     label: 'Incidencia RMA',
     shortLabel: 'RMA',
     description: 'Parte de reparación y asistencia técnica SAT estándar.',
-    bgClass: 'bg-navy/10 dark:bg-white/10',
-    textClass: 'text-navy dark:text-slate-200',
+    bgClass: 'bg-navy/10',
+    textClass: 'text-navy',
     borderColor: '#002169',
   },
   cxc_incident: {
     label: 'Incidencia CXC',
     shortLabel: 'CXC',
     description: 'Contadores B/N y color, piezas a sustituir y nº de serie obligatorio al cerrar.',
-    bgClass: 'bg-magenta/15 dark:bg-magenta/25',
-    textClass: 'text-magenta dark:text-pink-300',
+    bgClass: 'bg-magenta/15',
+    textClass: 'text-magenta',
     borderColor: '#CF095E',
   },
   task: {
     label: 'Tarea',
     shortLabel: 'Tarea',
     description: 'Tarea general con seguimiento de avance hasta su finalización.',
-    bgClass: 'bg-plum/15 dark:bg-purple-500/20',
-    textClass: 'text-plum dark:text-purple-300',
+    bgClass: 'bg-plum/15',
+    textClass: 'text-plum',
     borderColor: '#5E3654',
   },
 };

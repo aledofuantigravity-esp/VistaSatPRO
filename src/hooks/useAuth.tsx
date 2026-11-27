@@ -19,6 +19,7 @@ import {
   syncOfflineActions,
 } from '@/lib/data-service';
 import { clearOfflineQueue } from '@/lib/offline-queue';
+import { useAppCache } from '@/store/app-cache';
 import type { Profile } from '@/types/database';
 
 interface AuthContextValue {
@@ -36,6 +37,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function purgeClientSessionData() {
+  useAppCache.getState().resetAll();
   try {
     await clearOfflineQueue();
   } catch {
@@ -166,17 +168,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [loadCurrentUser]);
 
-  // Sincronización automática de acciones offline al recuperar red
+  // Sincronización automática de acciones offline al recuperar red o mediante Background Sync del SW
   useEffect(() => {
     if (!profile) return;
     const handleOnline = () => {
-      syncOfflineActions(profile);
+      void syncOfflineActions(profile);
+    };
+    const handleSwSync = (event: MessageEvent) => {
+      if (event.data?.type === 'SYNC_OFFLINE_QUEUE') {
+        void syncOfflineActions(profile);
+      }
     };
     window.addEventListener('online', handleOnline);
-    if (navigator.onLine) {
-      syncOfflineActions(profile);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwSync);
     }
-    return () => window.removeEventListener('online', handleOnline);
+    if (navigator.onLine) {
+      void syncOfflineActions(profile);
+    }
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwSync);
+      }
+    };
   }, [profile]);
 
   // Presencia en tiempo real + heartbeat de última conexión

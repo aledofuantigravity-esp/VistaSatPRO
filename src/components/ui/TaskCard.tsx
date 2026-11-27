@@ -25,14 +25,14 @@ export function TaskCard({ task }: { task: Task }) {
 
   return (
     <div
-      className="bg-white dark:bg-surface rounded-md shadow-card border border-border/60 overflow-hidden transition-transform active:scale-[0.99]"
+      className="bg-white rounded-md shadow-card border border-border/60 overflow-hidden transition-transform active:scale-[0.99]"
       style={{ borderLeftWidth: '5px', borderLeftColor: statusColor }}
     >
       <Link href={`/tasks/${task.id}`} className="block p-4">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs font-extrabold tracking-wider text-navy dark:text-sky-300 uppercase">
+              <span className="text-xs font-extrabold tracking-wider text-navy uppercase">
                 {task.code}
               </span>
               <TaskTypeBadge taskType={taskType} />
@@ -44,7 +44,7 @@ export function TaskCard({ task }: { task: Task }) {
                 </span>
               )}
               {(task.attachment_count ?? 0) > 0 && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-off-white dark:bg-bg-input text-mid-grey border border-border rounded-xs">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-off-white text-mid-grey border border-border rounded-xs">
                   <Camera size={10} /> {task.attachment_count}
                 </span>
               )}
@@ -57,7 +57,7 @@ export function TaskCard({ task }: { task: Task }) {
         </div>
 
         {taskType === 'installation' && task.scheduled_date && (
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol dark:text-sky-300 mb-1">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol mb-1">
             <Calendar size={13} className="flex-shrink-0" />
             <span>
               Acordada:{' '}
@@ -70,7 +70,7 @@ export function TaskCard({ task }: { task: Task }) {
         )}
 
         {task.equipment_ref && (
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol dark:text-sky-300 mb-1.5">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol mb-1.5">
             <Wrench size={13} className="flex-shrink-0" />
             <span className="truncate">
               {task.equipment_ref}
@@ -91,20 +91,20 @@ export function TaskCard({ task }: { task: Task }) {
               <User size={13} />
               {task.assignee ? task.assignee.full_name : 'Sin asignar'}
             </span>
-            <ChevronRight size={16} className="text-navy dark:text-sky-300" />
+            <ChevronRight size={16} className="text-navy" />
           </div>
         </div>
       </Link>
 
       {/* Acciones rápidas en campo (1 toque) */}
       {(mapsUrl || phone) && (
-        <div className="grid grid-cols-2 border-t border-border/70 bg-off-white/70 dark:bg-bg-input/60 divide-x divide-border/70">
+        <div className="grid grid-cols-2 border-t border-border/70 bg-off-white/70 divide-x divide-border/70">
           {mapsUrl ? (
             <a
               href={mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-bold text-navy dark:text-slate-200 hover:bg-navy/5 dark:hover:bg-white/5 min-h-[44px]"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-bold text-navy hover:bg-navy/5 min-h-[44px]"
             >
               <MapPin size={14} className="text-magenta" />
               <span className="truncate">Abrir Maps</span>
@@ -115,9 +115,9 @@ export function TaskCard({ task }: { task: Task }) {
           {phone ? (
             <a
               href={`tel:${phone.replace(/\s+/g, '')}`}
-              className="flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-bold text-navy dark:text-slate-200 hover:bg-navy/5 dark:hover:bg-white/5 min-h-[44px]"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-bold text-navy hover:bg-navy/5 min-h-[44px]"
             >
-              <Phone size={14} className="text-petrol dark:text-sky-300" />
+              <Phone size={14} className="text-petrol" />
               <span className="truncate">Llamar</span>
             </a>
           ) : (

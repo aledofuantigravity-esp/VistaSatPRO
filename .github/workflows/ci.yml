@@ -20,8 +20,14 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      - name: Chequeo de tipos TypeScript
+        run: npx tsc --noEmit
+
       - name: Lint
         run: npm run lint
+
+      - name: Tests unitarios
+        run: npm run test:unit
 
       - name: Build de producción
         run: npm run build

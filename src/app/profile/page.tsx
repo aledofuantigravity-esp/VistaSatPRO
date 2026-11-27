@@ -286,10 +286,10 @@ function ProfileContentInner({
       {/* Formulario de datos y nivel de notificaciones (Decisión 2) */}
       <form
         onSubmit={handleSaveProfile}
-        className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-4 border border-border/60"
+        className="bg-white rounded-md shadow-card p-5 space-y-4 border border-border/60"
       >
         <div className="flex items-center gap-2 border-b border-border pb-3">
-          <UserIcon size={18} className="text-navy dark:text-sky-300" />
+          <UserIcon size={18} className="text-navy" />
           <h2 className="text-base font-bold text-charcoal">Datos Personales</h2>
         </div>
 
@@ -331,7 +331,7 @@ function ProfileContentInner({
       </form>
 
       {/* Preferencias detalladas de notificaciones y Push (solo lectura en Mi Perfil) */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-4 border border-border/60">
+      <div className="bg-white rounded-md shadow-card p-5 space-y-4 border border-border/60">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
           <div className="flex items-center gap-2">
             <Bell size={18} className="text-magenta" />
@@ -359,10 +359,10 @@ function ProfileContentInner({
       {/* Seguridad — Cambiar contraseña */}
       <form
         onSubmit={handleChangePassword}
-        className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-4 border border-border/60"
+        className="bg-white rounded-md shadow-card p-5 space-y-4 border border-border/60"
       >
         <div className="flex items-center gap-2 border-b border-border pb-3">
-          <KeyRound size={18} className="text-navy dark:text-sky-300" />
+          <KeyRound size={18} className="text-navy" />
           <h2 className="text-base font-bold text-charcoal">Seguridad y Contraseña</h2>
         </div>
 
@@ -432,7 +432,7 @@ function ProfileContentInner({
       </form>
 
       {/* Dispositivos Push (vinculación de dispositivo propio para entrega con la app cerrada) */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-3 border border-border/60">
+      <div className="bg-white rounded-md shadow-card p-5 space-y-3 border border-border/60">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
           <div className="flex items-center gap-2">
             <Smartphone size={18} className="text-magenta" />
@@ -445,7 +445,7 @@ function ProfileContentInner({
               Este dispositivo activo
             </span>
           ) : (
-            <span className="px-2 py-0.5 text-[11px] font-bold uppercase bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 rounded-sm">
+            <span className="px-2 py-0.5 text-[11px] font-bold uppercase bg-amber-100 text-amber-800 rounded-sm">
               Este dispositivo sin vincular
             </span>
           )}
@@ -458,7 +458,7 @@ function ProfileContentInner({
         </p>
 
         {!notifPrefs.push_enabled && (
-          <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border-l-4 border-amber-500 text-xs text-charcoal">
+          <div className="p-3 bg-amber-50 border-l-4 border-amber-500 text-xs text-charcoal">
             Puedes vincular este dispositivo ahora, pero actualmente el Administrador tiene
             desactivado el canal Push para tu usuario.
           </div>
@@ -525,7 +525,7 @@ function ProfileContentInner({
                   className="flex items-center justify-between gap-2.5 p-2.5 bg-off-white border border-border rounded-sm"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <Smartphone size={16} className="text-navy dark:text-sky-300 flex-shrink-0" />
+                    <Smartphone size={16} className="text-navy flex-shrink-0" />
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-charcoal truncate flex items-center gap-1.5">
                         {sub.device_label || 'Dispositivo registrado'}
@@ -557,7 +557,7 @@ function ProfileContentInner({
       </div>
 
       {/* Estado PWA */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-3 border border-border/60">
+      <div className="bg-white rounded-md shadow-card p-5 space-y-3 border border-border/60">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-sm font-bold text-charcoal">Instalación como App (PWA)</h2>
@@ -579,10 +579,10 @@ function ProfileContentInner({
 
       {/* Controles del Entorno de Prueba Simulado */}
       {isDemoMode && isCoord && (
-        <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 space-y-3 border border-magenta/30">
+        <div className="bg-white rounded-md shadow-card p-5 space-y-3 border border-magenta/30">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-bold text-navy dark:text-sky-300">Entorno de Prueba Simulado</h2>
+              <h2 className="text-sm font-bold text-navy">Entorno de Prueba Simulado</h2>
               <p className="text-xs text-mid-grey mt-0.5">
                 Los cambios están compartidos en el servidor. Puedes restaurar los datos
                 iniciales en cualquier momento.

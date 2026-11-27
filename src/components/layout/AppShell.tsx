@@ -15,6 +15,7 @@ import {
   Home,
   LogOut,
   Menu,
+  Package,
   PlusCircle,
   Search,
   User,
@@ -94,6 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { href: '/installations', label: 'Instalaciones', icon: CalendarClock, show: true },
     { href: '/tasks/new', label: 'Nueva Tarea', icon: PlusCircle, show: true },
     { href: '/customers', label: 'Clientes', icon: Building2, show: true },
+    { href: '/parts', label: 'Repuestos', icon: Package, show: true },
     { href: '/users', label: 'Equipo y Roles', icon: Users, show: isAdmin },
     { href: '/reports', label: 'Informes', icon: BarChart3, show: isCoord },
     { href: '/notifications', label: 'Notificaciones', icon: Bell, badge: unreadCount, show: true },
@@ -109,6 +111,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const moreLinks = [
     { href: '/customers', label: 'Clientes', icon: Building2, show: true },
+    { href: '/parts', label: 'Repuestos', icon: Package, show: true },
     { href: '/notifications', label: 'Notificaciones', icon: Bell, badge: unreadCount, show: true },
     { href: '/reports', label: 'Informes', icon: BarChart3, show: isCoord },
     { href: '/users', label: 'Equipo y Roles', icon: Users, show: isAdmin },
@@ -289,7 +292,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ─── TAB BAR INFERIOR MÓVIL (Fija) ───────────────────────────────── */}
       <nav
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-surface border-t border-border shadow-nav grid"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-border shadow-nav grid"
         style={{
           gridTemplateColumns: `repeat(${mobileTabs.length + 1}, minmax(0, 1fr))`,
           paddingBottom: 'var(--safe-bottom)',
@@ -304,7 +307,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               href={tab.href}
               onClick={() => setMoreMenuOpen(false)}
               className={`flex flex-col items-center justify-center py-2 min-h-[60px] relative transition-colors ${
-                active ? 'text-navy dark:text-white font-bold' : 'text-mid-grey font-medium'
+                active ? 'text-navy font-bold' : 'text-mid-grey font-medium'
               }`}
             >
               {active && (
@@ -321,7 +324,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onClick={() => setMoreMenuOpen((prev) => !prev)}
           className={`flex flex-col items-center justify-center py-2 min-h-[60px] relative transition-colors ${
             moreMenuOpen || isMoreActive
-              ? 'text-navy dark:text-white font-bold'
+              ? 'text-navy font-bold'
               : 'text-mid-grey font-medium'
           }`}
           aria-label="Más opciones"
@@ -348,7 +351,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onClick={() => setMoreMenuOpen(false)}
         >
           <div
-            className="w-full bg-white dark:bg-surface rounded-t-lg shadow-elevated p-5 space-y-4"
+            className="w-full bg-white rounded-t-lg shadow-elevated p-5 space-y-4"
             style={{ paddingBottom: 'max(var(--safe-bottom), 20px)' }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -386,7 +389,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   >
                     <Icon
                       size={19}
-                      className={active ? 'text-magenta' : 'text-navy dark:text-sky-300'}
+                      className={active ? 'text-magenta' : 'text-navy'}
                     />
                     <span className="text-xs font-bold truncate">{item.label}</span>
                     {item.badge && item.badge > 0 ? (

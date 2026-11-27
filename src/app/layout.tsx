@@ -5,7 +5,6 @@ import './globals.css';
 import { ServiceWorkerRegistration } from '@/components/pwa/ServiceWorkerRegistration';
 import { AuthProvider } from '@/hooks/useAuth';
 import { NotificationsProvider } from '@/hooks/useNotifications';
-import { ThemeProvider } from '@/hooks/useTheme';
 
 const montserrat = Montserrat({
   subsets: ['latin'],
@@ -85,11 +84,9 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body className="font-montserrat antialiased bg-off-white text-charcoal transition-colors">
-        <ThemeProvider>
-          <AuthProvider>
-            <NotificationsProvider>{children}</NotificationsProvider>
-          </AuthProvider>
-        </ThemeProvider>
+        <AuthProvider>
+          <NotificationsProvider>{children}</NotificationsProvider>
+        </AuthProvider>
         <ServiceWorkerRegistration />
       </body>
     </html>

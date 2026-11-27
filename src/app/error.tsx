@@ -19,7 +19,7 @@ export default function ErrorPage({
 
   return (
     <div className="min-h-[60dvh] flex flex-col items-center justify-center p-6 text-center space-y-4">
-      <div className="max-w-md bg-white dark:bg-surface p-6 rounded-md shadow-card border-l-4 border-danger space-y-3">
+      <div className="max-w-md bg-white p-6 rounded-md shadow-card border-l-4 border-danger space-y-3">
         <h2 className="text-lg font-bold text-charcoal">Ha ocurrido un error inesperado</h2>
         <p className="text-xs text-mid-grey">
           Hemos registrado la incidencia para revisarla. Puedes intentar recargar la vista actual.

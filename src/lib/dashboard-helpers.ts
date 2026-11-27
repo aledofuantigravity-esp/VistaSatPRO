@@ -109,7 +109,7 @@ export function getScheduledDateTag(
   if (Number.isNaN(d.getTime())) {
     return {
       label: 'Sin fecha',
-      badgeClass: 'bg-mid-grey/15 text-dark-grey dark:bg-slate-600/30 dark:text-slate-300',
+      badgeClass: 'bg-mid-grey/15 text-dark-grey',
       isPast: false,
     };
   }
@@ -117,7 +117,7 @@ export function getScheduledDateTag(
   if (d.getTime() < now.getTime()) {
     return {
       label: 'Fecha pasada',
-      badgeClass: 'bg-danger/15 text-danger dark:bg-red-500/25 dark:text-red-300',
+      badgeClass: 'bg-danger/15 text-danger',
       isPast: true,
     };
   }
@@ -129,7 +129,7 @@ export function getScheduledDateTag(
   if (diffDays === 0) {
     return {
       label: 'Hoy',
-      badgeClass: 'bg-magenta/15 text-magenta dark:bg-magenta/25 dark:text-pink-300',
+      badgeClass: 'bg-magenta/15 text-magenta',
       isPast: false,
     };
   }
@@ -137,14 +137,14 @@ export function getScheduledDateTag(
     return {
       label: 'Mañana',
       badgeClass:
-        'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300',
+        'bg-amber-100 text-amber-800',
       isPast: false,
     };
   }
 
   return {
     label: d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
-    badgeClass: 'bg-petrol/15 text-petrol dark:bg-sky-500/20 dark:text-sky-300',
+    badgeClass: 'bg-petrol/15 text-petrol',
     isPast: false,
   };
 }

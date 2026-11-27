@@ -16,7 +16,6 @@ import {
   YAxis,
 } from 'recharts';
 import { Clock, Layers, ShieldCheck, Timer, TrendingUp } from 'lucide-react';
-import { useTheme } from '@/hooks/useTheme';
 import {
   computeResolutionStatsByType,
   isOpenTask,
@@ -56,15 +55,7 @@ const TYPE_CHART_COLORS: Record<TaskType, string> = {
   task: '#5E3654',
 };
 
-const TYPE_CHART_COLORS_DARK: Record<TaskType, string> = {
-  installation: '#38BDF8',
-  rma_incident: '#818CF8',
-  cxc_incident: '#F472B6',
-  task: '#C084FC',
-};
-
 export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
-  const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [isDesktop, setIsDesktop] = useState(true);
   const [mobileTab, setMobileTab] = useState<MobileChartTab>('timeline');
@@ -84,13 +75,12 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
     };
   }, []);
 
-  const isDark = resolvedTheme === 'dark';
-  const axisStroke = isDark ? '#94A3B8' : '#666666';
-  const gridStroke = isDark ? '#2A354D' : '#E5E7EB';
+  const axisStroke = '#666666';
+  const gridStroke = '#E5E7EB';
   const tooltipStyle = {
-    backgroundColor: isDark ? '#182032' : '#FFFFFF',
-    borderColor: isDark ? '#2A354D' : '#DDDDDD',
-    color: isDark ? '#F1F5F9' : '#222222',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#DDDDDD',
+    color: '#222222',
     fontSize: '12px',
     borderRadius: '6px',
   };
@@ -138,7 +128,6 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
     const source = typeScope === 'active' ? tasks.filter(isOpenTask) : tasks;
     const total = source.length;
     const order: TaskType[] = ['installation', 'rma_incident', 'cxc_incident', 'task'];
-    const palette = isDark ? TYPE_CHART_COLORS_DARK : TYPE_CHART_COLORS;
 
     return {
       total,
@@ -151,11 +140,11 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
           shortName: TASK_TYPE_META[tt].shortLabel,
           count,
           pct,
-          color: palette[tt],
+          color: TYPE_CHART_COLORS[tt],
         };
       }),
     };
-  }, [tasks, typeScope, isDark]);
+  }, [tasks, typeScope]);
 
   // 3. Partes por Estado (Barras horizontales limpias con los 4 estados únicos)
   const statusData = useMemo(() => {
@@ -163,12 +152,9 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
     return statuses.map((st) => ({
       name: TASK_STATUS_META[st].label,
       count: tasks.filter((t) => normalizeTaskStatus(t.status) === st).length,
-      color:
-        isDark && st === 'cancelled'
-          ? '#64748B'
-          : TASK_STATUS_META[st].color,
+      color: TASK_STATUS_META[st].color,
     }));
-  }, [tasks, isDark]);
+  }, [tasks]);
 
   // 4. Semáforo SLA y Prioridades sobre partes activos
   const slaAndPriority = useMemo(() => {
@@ -215,7 +201,7 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
   return (
     <div className="space-y-4 min-w-0">
       {/* Estadística destacada: Tiempo Medio de Cierre por Tipo de Parte */}
-      <section className="bg-white dark:bg-surface rounded-md shadow-card p-4 sm:p-5 border border-border/60 space-y-3.5 min-w-0">
+      <section className="bg-white rounded-md shadow-card p-4 sm:p-5 border border-border/60 space-y-3.5 min-w-0">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 min-w-0">
           <div className="min-w-0">
             <h2 className="text-sm sm:text-base font-bold text-charcoal flex items-center gap-2">
@@ -227,7 +213,7 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
             </p>
           </div>
           <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-off-white border border-border rounded-sm self-start sm:self-auto">
-            <Clock size={14} className="text-navy dark:text-sky-300 flex-shrink-0" />
+            <Clock size={14} className="text-navy flex-shrink-0" />
             <span className="text-xs font-bold text-charcoal">
               Media global: {resolutionStats.global.formatted}
             </span>
@@ -243,8 +229,7 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
               item.avgHours !== null && maxAvgHours > 0
                 ? Math.max(8, Math.round((item.avgHours / maxAvgHours) * 100))
                 : 0;
-            const palette = isDark ? TYPE_CHART_COLORS_DARK : TYPE_CHART_COLORS;
-            const barColor = palette[item.taskType];
+            const barColor = TYPE_CHART_COLORS[item.taskType];
 
             return (
               <div
@@ -291,7 +276,7 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
       {/* Selector de gráfica en smartphone para evitar scroll infinito */}
       {!isDesktop && (
         <div
-          className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-white dark:bg-surface p-2 rounded-md border border-border/60 shadow-card"
+          className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-white p-2 rounded-md border border-border/60 shadow-card"
           role="tablist"
           aria-label="Selector de gráficas"
         >
@@ -312,7 +297,7 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
               className={`py-2 px-2 text-xs font-bold rounded-sm transition-colors text-center ${
                 mobileTab === tabItem.id
                   ? 'bg-navy text-white'
-                  : 'bg-off-white text-dark-grey hover:bg-navy/5 dark:hover:bg-white/10'
+                  : 'bg-off-white text-dark-grey hover:bg-navy/5'
               }`}
             >
               {tabItem.label}
@@ -325,11 +310,11 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
         {/* 1. Evolución últimos 14 días */}
         {showCard('timeline') && (
-          <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 sm:p-5 border border-border/60 min-w-0">
+          <div className="bg-white rounded-md shadow-card p-4 sm:p-5 border border-border/60 min-w-0">
             <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
               <div>
                 <h2 className="text-base font-bold text-charcoal flex items-center gap-2">
-                  <TrendingUp size={17} className="text-navy dark:text-sky-300" />
+                  <TrendingUp size={17} className="text-navy" />
                   Evolución Últimos 14 Días
                 </h2>
                 <p className="text-xs text-mid-grey mt-0.5">
@@ -339,8 +324,8 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
               <span
                 className={`px-2 py-0.5 text-[11px] font-bold rounded-xs ${
                   timelineTotals.net >= 0
-                    ? 'bg-success/15 text-success dark:bg-emerald-500/20 dark:text-emerald-300'
-                    : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'
+                    ? 'bg-success/15 text-success'
+                    : 'bg-amber-100 text-amber-800'
                 }`}
               >
                 Balance: {timelineTotals.net >= 0 ? `+${timelineTotals.net}` : timelineTotals.net}
@@ -362,18 +347,18 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
                       type="monotone"
                       dataKey="creados"
                       name="Abiertos"
-                      stroke={isDark ? '#38BDF8' : '#002169'}
-                      fill={isDark ? '#38BDF8' : '#002169'}
-                      fillOpacity={isDark ? 0.25 : 0.16}
+                      stroke="#002169"
+                      fill="#002169"
+                      fillOpacity={0.16}
                       strokeWidth={2}
                     />
                     <Area
                       type="monotone"
                       dataKey="cerrados"
                       name="Completados"
-                      stroke={isDark ? '#34D399' : '#1A7A4A'}
-                      fill={isDark ? '#34D399' : '#1A7A4A'}
-                      fillOpacity={isDark ? 0.25 : 0.18}
+                      stroke="#1A7A4A"
+                      fill="#1A7A4A"
+                      fillOpacity={0.18}
                       strokeWidth={2}
                     />
                   </AreaChart>
@@ -387,7 +372,7 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
 
         {/* 2. Distribución por Tipo de Parte (Donut + Leyenda) */}
         {showCard('types') && (
-          <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 sm:p-5 border border-border/60 min-w-0">
+          <div className="bg-white rounded-md shadow-card p-4 sm:p-5 border border-border/60 min-w-0">
             <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
               <div>
                 <h2 className="text-base font-bold text-charcoal flex items-center gap-2">
@@ -487,7 +472,7 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
 
         {/* 3. Partes por Estado (Barras horizontales limpias, legibles en móvil) */}
         {showCard('status') && (
-          <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 sm:p-5 border border-border/60 min-w-0">
+          <div className="bg-white rounded-md shadow-card p-4 sm:p-5 border border-border/60 min-w-0">
             <h2 className="text-base font-bold text-charcoal mb-0.5">Partes por Estado</h2>
             <p className="text-xs text-mid-grey mb-3">
               Distribución actual de la carga operativa
@@ -529,11 +514,11 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
 
         {/* 4. Salud SLA y Prioridades */}
         {showCard('sla') && (
-          <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 sm:p-5 border border-border/60 space-y-4 min-w-0">
+          <div className="bg-white rounded-md shadow-card p-4 sm:p-5 border border-border/60 space-y-4 min-w-0">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <h2 className="text-base font-bold text-charcoal flex items-center gap-2">
-                  <ShieldCheck size={17} className="text-success dark:text-emerald-300" />
+                  <ShieldCheck size={17} className="text-success" />
                   Salud SLA y Prioridades
                 </h2>
                 <p className="text-xs text-mid-grey mt-0.5">
@@ -544,7 +529,7 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
                 <button
                   type="button"
                   onClick={() => onSelectKpi('sla_risk')}
-                  className="text-[11px] font-bold text-danger dark:text-red-300 hover:underline uppercase"
+                  className="text-[11px] font-bold text-danger hover:underline uppercase"
                 >
                   Ver en riesgo →
                 </button>
@@ -599,19 +584,19 @@ export function DashboardCharts({ tasks, onSelectKpi }: DashboardChartsProps) {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
                 <div className="p-2 bg-off-white rounded-xs border border-border/70">
                   <span className="text-mid-grey block">Vencidos</span>
-                  <strong className="text-sm text-danger dark:text-red-300">
+                  <strong className="text-sm text-danger">
                     {slaAndPriority.overdue}
                   </strong>
                 </div>
                 <div className="p-2 bg-off-white rounded-xs border border-border/70">
                   <span className="text-mid-grey block">Vencen hoy</span>
-                  <strong className="text-sm text-amber-700 dark:text-amber-300">
+                  <strong className="text-sm text-amber-700">
                     {slaAndPriority.dueToday}
                   </strong>
                 </div>
                 <div className="p-2 bg-off-white rounded-xs border border-border/70">
                   <span className="text-mid-grey block">En plazo</span>
-                  <strong className="text-sm text-success dark:text-emerald-300">
+                  <strong className="text-sm text-success">
                     {slaAndPriority.onTrack}
                   </strong>
                 </div>

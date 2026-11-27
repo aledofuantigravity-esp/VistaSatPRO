@@ -77,14 +77,14 @@ export function DashboardOperationalLists({
   return (
     <div className="space-y-6 min-w-0">
       {/* Selector rápido de bloques para navegación ágil en smartphone y escritorio */}
-      <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-surface p-2.5 rounded-md border border-border/60 shadow-card">
+      <div className="flex flex-wrap items-center gap-2 bg-white p-2.5 rounded-md border border-border/60 shadow-card">
         <button
           type="button"
           onClick={() => setSectionView('all')}
           className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-colors ${
             sectionView === 'all'
               ? 'bg-navy text-white'
-              : 'bg-off-white text-dark-grey hover:bg-navy/5 dark:hover:bg-white/10'
+              : 'bg-off-white text-dark-grey hover:bg-navy/5'
           }`}
         >
           Todos los bloques
@@ -95,7 +95,7 @@ export function DashboardOperationalLists({
           className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-colors ${
             sectionView === 'open'
               ? 'bg-navy text-white'
-              : 'bg-off-white text-dark-grey hover:bg-navy/5 dark:hover:bg-white/10'
+              : 'bg-off-white text-dark-grey hover:bg-navy/5'
           }`}
         >
           Partes abiertos ({openTasks.length})
@@ -106,7 +106,7 @@ export function DashboardOperationalLists({
           className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-colors ${
             sectionView === 'scheduled'
               ? 'bg-navy text-white'
-              : 'bg-off-white text-dark-grey hover:bg-navy/5 dark:hover:bg-white/10'
+              : 'bg-off-white text-dark-grey hover:bg-navy/5'
           }`}
         >
           Inst. con fecha ({scheduledInstallations.length})
@@ -117,7 +117,7 @@ export function DashboardOperationalLists({
           className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-colors ${
             sectionView === 'unscheduled'
               ? 'bg-navy text-white'
-              : 'bg-off-white text-dark-grey hover:bg-navy/5 dark:hover:bg-white/10'
+              : 'bg-off-white text-dark-grey hover:bg-navy/5'
           }`}
         >
           Inst. sin fecha ({unscheduledInstallations.length})
@@ -134,7 +134,7 @@ export function DashboardOperationalLists({
                 <h2 className="text-base sm:text-lg font-bold text-charcoal">
                   {isCoord ? 'Partes Aún No Cerrados' : 'Mis Partes Aún No Cerrados'}
                 </h2>
-                <span className="px-2 py-0.5 text-xs font-extrabold rounded-sm bg-navy/10 dark:bg-sky-500/20 text-navy dark:text-sky-300">
+                <span className="px-2 py-0.5 text-xs font-extrabold rounded-sm bg-navy/10 text-navy">
                   {filteredOpenTasks.length}
                 </span>
               </div>
@@ -167,7 +167,7 @@ export function DashboardOperationalLists({
                   className={`px-2.5 py-1 text-[11px] font-bold rounded-sm border transition-colors ${
                     active
                       ? 'bg-navy text-white border-navy'
-                      : 'bg-white dark:bg-surface text-dark-grey border-border hover:border-navy dark:hover:border-sky-400'
+                      : 'bg-white text-dark-grey border-border hover:border-navy'
                   }`}
                 >
                   {opt.label} ({countForType})
@@ -177,7 +177,7 @@ export function DashboardOperationalLists({
           </div>
 
           {filteredOpenTasks.length === 0 ? (
-            <div className="bg-white dark:bg-surface rounded-md p-6 text-center shadow-card border border-border/60">
+            <div className="bg-white rounded-md p-6 text-center shadow-card border border-border/60">
               <CheckCircle2 size={28} className="text-success mx-auto mb-2" />
               <p className="text-sm font-bold text-charcoal">
                 {openTypeFilter === 'all'
@@ -209,7 +209,7 @@ export function DashboardOperationalLists({
                   <button
                     type="button"
                     onClick={() => setShowAllOpen((prev) => !prev)}
-                    className="px-4 py-2 text-xs font-bold uppercase tracking-wider border border-navy dark:border-sky-400 text-navy dark:text-sky-300 bg-white dark:bg-surface hover:bg-navy/5 dark:hover:bg-white/10 rounded-xs"
+                    className="px-4 py-2 text-xs font-bold uppercase tracking-wider border border-navy text-navy bg-white hover:bg-navy/5 rounded-xs"
                   >
                     {showAllOpen
                       ? 'Mostrar menos'
@@ -228,13 +228,13 @@ export function DashboardOperationalLists({
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 min-w-0">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <CalendarCheck2 size={18} className="text-petrol dark:text-sky-300 flex-shrink-0" />
+                <CalendarCheck2 size={18} className="text-petrol flex-shrink-0" />
                 <h2 className="text-base sm:text-lg font-bold text-charcoal">
                   {isCoord
                     ? 'Instalaciones con Fecha Asignada'
                     : 'Mis Instalaciones con Fecha Asignada'}
                 </h2>
-                <span className="px-2 py-0.5 text-xs font-extrabold rounded-sm bg-petrol/15 dark:bg-sky-500/20 text-petrol dark:text-sky-300">
+                <span className="px-2 py-0.5 text-xs font-extrabold rounded-sm bg-petrol/15 text-petrol">
                   {scheduledInstallations.length}
                 </span>
               </div>
@@ -252,7 +252,7 @@ export function DashboardOperationalLists({
           </div>
 
           {scheduledInstallations.length === 0 ? (
-            <div className="bg-white dark:bg-surface rounded-md p-6 text-center shadow-card border border-border/60">
+            <div className="bg-white rounded-md p-6 text-center shadow-card border border-border/60">
               <CalendarCheck2 size={28} className="text-mid-grey mx-auto mb-2" />
               <p className="text-sm font-bold text-charcoal">
                 No hay instalaciones programadas con fecha
@@ -275,7 +275,7 @@ export function DashboardOperationalLists({
                   <button
                     type="button"
                     onClick={() => setShowAllScheduled((prev) => !prev)}
-                    className="px-4 py-2 text-xs font-bold uppercase tracking-wider border border-navy dark:border-sky-400 text-navy dark:text-sky-300 bg-white dark:bg-surface hover:bg-navy/5 dark:hover:bg-white/10 rounded-xs"
+                    className="px-4 py-2 text-xs font-bold uppercase tracking-wider border border-navy text-navy bg-white hover:bg-navy/5 rounded-xs"
                   >
                     {showAllScheduled
                       ? 'Mostrar menos'
@@ -296,14 +296,14 @@ export function DashboardOperationalLists({
               <div className="flex items-center gap-2 flex-wrap">
                 <CalendarClock
                   size={18}
-                  className="text-amber-600 dark:text-amber-400 flex-shrink-0"
+                  className="text-amber-600 flex-shrink-0"
                 />
                 <h2 className="text-base sm:text-lg font-bold text-charcoal">
                   {isCoord
                     ? 'Instalaciones Pendientes de Fecha'
                     : 'Mis Instalaciones Sin Fecha Asignada'}
                 </h2>
-                <span className="px-2 py-0.5 text-xs font-extrabold rounded-sm bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+                <span className="px-2 py-0.5 text-xs font-extrabold rounded-sm bg-amber-100 text-amber-800">
                   {unscheduledInstallations.length}
                 </span>
               </div>
@@ -321,7 +321,7 @@ export function DashboardOperationalLists({
           </div>
 
           {unscheduledInstallations.length === 0 ? (
-            <div className="bg-white dark:bg-surface rounded-md p-6 text-center shadow-card border border-border/60">
+            <div className="bg-white rounded-md p-6 text-center shadow-card border border-border/60">
               <CheckCircle2 size={28} className="text-success mx-auto mb-2" />
               <p className="text-sm font-bold text-charcoal">
                 Todas las instalaciones tienen fecha acordada
@@ -344,7 +344,7 @@ export function DashboardOperationalLists({
                   <button
                     type="button"
                     onClick={() => setShowAllUnscheduled((prev) => !prev)}
-                    className="px-4 py-2 text-xs font-bold uppercase tracking-wider border border-navy dark:border-sky-400 text-navy dark:text-sky-300 bg-white dark:bg-surface hover:bg-navy/5 dark:hover:bg-white/10 rounded-xs"
+                    className="px-4 py-2 text-xs font-bold uppercase tracking-wider border border-navy text-navy bg-white hover:bg-navy/5 rounded-xs"
                   >
                     {showAllUnscheduled
                       ? 'Mostrar menos'
@@ -359,11 +359,11 @@ export function DashboardOperationalLists({
 
       {/* Aviso compacto al técnico si hay partes sin asignar en la bolsa común */}
       {!isCoord && unassignedPoolCount > 0 && (
-        <div className="bg-white dark:bg-surface rounded-md shadow-card border-l-4 border-petrol p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="bg-white rounded-md shadow-card border-l-4 border-petrol p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-start gap-2.5 min-w-0">
             <AlertCircle
               size={18}
-              className="text-petrol dark:text-sky-300 flex-shrink-0 mt-0.5"
+              className="text-petrol flex-shrink-0 mt-0.5"
             />
             <div className="min-w-0">
               <p className="text-sm font-bold text-charcoal">
@@ -414,7 +414,7 @@ function InstallationCard({
 
   return (
     <div
-      className={`bg-white dark:bg-surface rounded-md shadow-card border border-border/60 overflow-hidden min-w-0 border-l-4 ${
+      className={`bg-white rounded-md shadow-card border border-border/60 overflow-hidden min-w-0 border-l-4 ${
         mode === 'scheduled'
           ? scheduleTag?.isPast
             ? 'border-l-danger'
@@ -426,7 +426,7 @@ function InstallationCard({
         <div className="flex items-start justify-between gap-2 min-w-0">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs font-extrabold tracking-wider text-navy dark:text-sky-300 uppercase">
+              <span className="text-xs font-extrabold tracking-wider text-navy uppercase">
                 {task.code}
               </span>
               <TaskTypeBadge taskType="installation" />
@@ -437,7 +437,7 @@ function InstallationCard({
                   <CalendarCheck2 size={11} /> {scheduleTag.label}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-xs bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-xs bg-amber-100 text-amber-800">
                   <Clock size={11} /> {formatRelativeAge(task.created_at)}
                 </span>
               )}
@@ -451,7 +451,7 @@ function InstallationCard({
 
         {/* Destacado fecha programada o fecha de creación del parte */}
         {mode === 'scheduled' && task.scheduled_date ? (
-          <div className="p-2 bg-petrol/10 dark:bg-sky-500/15 border border-petrol/20 dark:border-sky-500/30 rounded-xs text-xs font-bold text-petrol dark:text-sky-300 flex items-center gap-1.5">
+          <div className="p-2 bg-petrol/10 border border-petrol/20 rounded-xs text-xs font-bold text-petrol flex items-center gap-1.5">
             <CalendarCheck2 size={14} className="flex-shrink-0" />
             <span>
               Cita:{' '}
@@ -465,7 +465,7 @@ function InstallationCard({
             </span>
           </div>
         ) : (
-          <div className="p-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-300/60 dark:border-amber-500/30 rounded-xs text-xs font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+          <div className="p-2 bg-amber-50 border border-amber-300/60 rounded-xs text-xs font-semibold text-amber-900 flex items-center gap-1.5">
             <CalendarClock size={14} className="flex-shrink-0" />
             <span>
               Parte del{' '}
@@ -492,9 +492,9 @@ function InstallationCard({
             <span
               className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-xs ${
                 task.merchandise_check_done === true
-                  ? 'bg-success/15 text-success dark:bg-emerald-500/20 dark:text-emerald-300'
+                  ? 'bg-success/15 text-success'
                   : task.merchandise_check_done === false
-                  ? 'bg-danger/15 text-danger dark:bg-red-500/25 dark:text-red-300'
+                  ? 'bg-danger/15 text-danger'
                   : 'bg-off-white text-mid-grey border border-border'
               }`}
             >
@@ -515,19 +515,19 @@ function InstallationCard({
                 </span>
               </span>
             )}
-            <ChevronRight size={16} className="text-navy dark:text-sky-300 flex-shrink-0" />
+            <ChevronRight size={16} className="text-navy flex-shrink-0" />
           </div>
         </div>
       </Link>
 
       {(mapsUrl || phone) && (
-        <div className="grid grid-cols-2 border-t border-border/70 bg-off-white/70 dark:bg-bg-input/60 divide-x divide-border/70">
+        <div className="grid grid-cols-2 border-t border-border/70 bg-off-white/70 divide-x divide-border/70">
           {mapsUrl ? (
             <a
               href={mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold text-navy dark:text-slate-200 hover:bg-navy/5 dark:hover:bg-white/5 min-h-[40px]"
+              className="flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold text-navy hover:bg-navy/5 min-h-[40px]"
             >
               <MapPin size={13} className="text-magenta flex-shrink-0" />
               <span className="truncate">Maps</span>
@@ -538,9 +538,9 @@ function InstallationCard({
           {phone ? (
             <a
               href={`tel:${phone.replace(/\s+/g, '')}`}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold text-navy dark:text-slate-200 hover:bg-navy/5 dark:hover:bg-white/5 min-h-[40px]"
+              className="flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold text-navy hover:bg-navy/5 min-h-[40px]"
             >
-              <Phone size={13} className="text-petrol dark:text-sky-300 flex-shrink-0" />
+              <Phone size={13} className="text-petrol flex-shrink-0" />
               <span className="truncate">Llamar</span>
             </a>
           ) : (

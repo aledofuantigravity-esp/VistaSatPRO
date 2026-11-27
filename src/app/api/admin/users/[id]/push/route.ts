@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
-import { sendNotification, setVapidDetails } from 'web-push';
 import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { checkRateLimit, getClientIp, rateLimitExceededResponse } from '@/lib/rate-limit';
 import { captureMonitoringError } from '@/lib/monitoring';
-import { getServerVapidConfig } from '@/lib/vapid-server';
+import { sendWebPushBatch } from '@/lib/web-push-sender';
 
 async function requireAdminSession() {
   const supabaseServer = await getSupabaseServerClient();
@@ -92,52 +91,21 @@ export async function POST(
     const auth = await requireAdminSession();
     if ('error' in auth && auth.error) return auth.error;
 
-    const vapidCfg = getServerVapidConfig();
-    if (!vapidCfg) {
-      return NextResponse.json(
-        { ok: true, sent: 0, message: 'VAPID no configurado en el servidor.' },
-        { status: 200 }
-      );
-    }
-
-    setVapidDetails(vapidCfg.subject, vapidCfg.publicKey, vapidCfg.privateKey);
-
     const { id: targetId } = await params;
-    const { data: subs } = await auth.supabaseAdmin
-      .from('push_subscriptions')
-      .select('id, endpoint, p256dh, auth')
-      .eq('user_id', targetId)
-      .eq('is_active', true);
+    const { pushCount } = await sendWebPushBatch({
+      supabaseAdmin: auth.supabaseAdmin,
+      userIds: [targetId],
+      payload: {
+        title: 'VistaSatPRO — Prueba de Administrador',
+        body: 'Tu dispositivo está recibiendo correctamente notificaciones Push del equipo.',
+        taskId: null,
+        type: 'generic',
+      },
+      scope: 'admin_test_user',
+      route: 'POST /api/admin/users/[id]/push',
+    });
 
-    let sent = 0;
-    for (const sub of subs || []) {
-      try {
-        await sendNotification(
-          {
-            endpoint: sub.endpoint,
-            keys: { p256dh: sub.p256dh, auth: sub.auth },
-          },
-          JSON.stringify({
-            title: 'VistaSatPRO — Prueba de Administrador',
-            body: 'Tu dispositivo está recibiendo correctamente notificaciones Push del equipo.',
-            taskId: null,
-            type: 'generic',
-          }),
-          { TTL: 86400, urgency: 'high' }
-        );
-        sent++;
-      } catch (err: unknown) {
-        const statusCode = (err as { statusCode?: number })?.statusCode;
-        if (statusCode === 410 || statusCode === 404) {
-          await auth.supabaseAdmin
-            .from('push_subscriptions')
-            .update({ is_active: false })
-            .eq('id', sub.id);
-        }
-      }
-    }
-
-    return NextResponse.json({ ok: true, sent });
+    return NextResponse.json({ ok: true, sent: pushCount });
   } catch (error) {
     captureMonitoringError(error, { route: 'POST /api/admin/users/[id]/push' });
     return NextResponse.json({ error: 'Error enviando Push de prueba' }, { status: 500 });

@@ -160,22 +160,22 @@ export function GlobalSearch({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-charcoal/70 dark:bg-black/75 backdrop-blur-xs flex items-start justify-center p-3 sm:pt-16"
+      className="fixed inset-0 z-50 bg-charcoal/70 backdrop-blur-xs flex items-start justify-center p-3 sm:pt-16"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Búsqueda global"
     >
       <div
-        className="w-full max-w-2xl bg-white dark:bg-surface border border-border rounded-lg shadow-elevated overflow-hidden"
+        className="w-full max-w-2xl bg-white border border-border rounded-lg shadow-elevated overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-off-white/60 dark:bg-bg-input">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-off-white/60">
           {loading ? (
             <Loader2 size={19} className="text-magenta animate-spin flex-shrink-0" />
           ) : (
-            <Search size={19} className="text-navy dark:text-slate-300 flex-shrink-0" />
+            <Search size={19} className="text-navy flex-shrink-0" />
           )}
           <input
             ref={inputRef}
@@ -231,7 +231,7 @@ export function GlobalSearch({
                           className={`w-full text-left px-3 py-2.5 rounded-sm flex items-center justify-between gap-3 transition-colors ${
                             isSelected
                               ? 'bg-navy text-white'
-                              : 'hover:bg-off-white dark:hover:bg-white/5 text-charcoal'
+                              : 'hover:bg-off-white text-charcoal'
                           }`}
                         >
                           <div className="min-w-0 flex-1">
@@ -249,7 +249,7 @@ export function GlobalSearch({
                               className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-sm flex-shrink-0 ${
                                 isSelected
                                   ? 'bg-white/20 text-white'
-                                  : 'bg-off-white dark:bg-bg-input text-dark-grey border border-border'
+                                  : 'bg-off-white text-dark-grey border border-border'
                               }`}
                             >
                               {item.badge}
@@ -266,7 +266,7 @@ export function GlobalSearch({
         </div>
 
         {/* Footer atajos */}
-        <div className="px-4 py-2 bg-off-white/80 dark:bg-bg-input border-t border-border text-[11px] text-mid-grey flex items-center justify-between">
+        <div className="px-4 py-2 bg-off-white/80 border-t border-border text-[11px] text-mid-grey flex items-center justify-between">
           <span>↑↓ Navegar · Enter Abrir · Esc Cerrar</span>
           <span className="hidden sm:inline font-semibold">Atajo: Ctrl+K</span>
         </div>

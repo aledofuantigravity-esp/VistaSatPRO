@@ -1,8 +1,8 @@
-// Service Worker v6 — VistaSatPRO
+// Service Worker v7 — VistaSatPRO
 // Estrategia limpia compatible con Next.js App Router (sin interceptar RSC, /api/ ni URLs firmadas)
 
-const STATIC_CACHE = 'vistasat-static-v6';
-const MEDIA_CACHE = 'vistasat-media-v6';
+const STATIC_CACHE = 'vistasat-static-v7';
+const MEDIA_CACHE = 'vistasat-media-v7';
 const OFFLINE_URL = '/offline.html';
 
 const STATIC_ASSETS = [
@@ -191,7 +191,16 @@ self.addEventListener('notificationclick', (event) => {
 // ─── BACKGROUND SYNC ─────────────────────────────────────────────────────────
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-pending-actions') {
-    event.waitUntil(Promise.resolve());
+    event.waitUntil(
+      self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage({ type: 'SYNC_OFFLINE_QUEUE' });
+          });
+        })
+        .catch(() => undefined)
+    );
   }
 });
 

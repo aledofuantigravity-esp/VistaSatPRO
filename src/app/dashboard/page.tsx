@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -16,7 +17,6 @@ import {
   Users,
   Wrench,
 } from 'lucide-react';
-import { DashboardCharts } from '@/components/dashboard/DashboardCharts';
 import { DashboardOperationalLists } from '@/components/dashboard/DashboardOperationalLists';
 import { KpiDrilldownPanel } from '@/components/dashboard/KpiDrilldownPanel';
 import { Button } from '@/components/ui/Button';
@@ -30,39 +30,60 @@ import {
   sortOpenTasksByPriorityAndAge,
   type DashboardKpiFilter,
 } from '@/lib/dashboard-helpers';
+import { useAppCache } from '@/store/app-cache';
 import type { Profile, Task } from '@/types/database';
+
+const DashboardCharts = dynamic(
+  () =>
+    import('@/components/dashboard/DashboardCharts').then((m) => m.DashboardCharts),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-64 bg-white rounded-md animate-pulse shadow-card" />
+    ),
+  }
+);
 
 export default function DashboardPage() {
   const { profile } = useAuth();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedTasks = useAppCache((s) => s.tasks);
+  const tasksLoadedAt = useAppCache((s) => s.tasksLoadedAt);
+
+  const [tasks, setTasks] = useState<Task[]>(cachedTasks);
+  const [loading, setLoading] = useState(!tasksLoadedAt);
   const [activeKpi, setActiveKpi] = useState<DashboardKpiFilter | null>(null);
 
   const profileId = profile?.id;
   const profileRole = profile?.role;
 
-  const loadData = useCallback(async () => {
-    if (!profileId || !profileRole) return;
-    await Promise.resolve();
-    setLoading(true);
-    try {
-      const viewer = { id: profileId, role: profileRole } as Profile;
-      const t = await listTasks(viewer);
-      setTasks(t);
-    } finally {
-      setLoading(false);
-    }
-  }, [profileId, profileRole]);
+  const loadData = useCallback(
+    async (silent = false) => {
+      if (!profileId || !profileRole) return;
+      await Promise.resolve();
+      const hasCached = useAppCache.getState().tasksLoadedAt !== null;
+      if (!silent && !hasCached) setLoading(true);
+      try {
+        const viewer = { id: profileId, role: profileRole } as Profile;
+        const t = await listTasks(viewer);
+        setTasks(t);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [profileId, profileRole]
+  );
 
   useEffect(() => {
     const t = setTimeout(() => void loadData(), 0);
-    const handler = () => void loadData();
+    const handler = () => void loadData(true);
     window.addEventListener('vistasat:demo-updated', handler);
     window.addEventListener('vistasat:notification-received', handler);
+    window.addEventListener('vistasat:offline-synced', handler);
     return () => {
       clearTimeout(t);
       window.removeEventListener('vistasat:demo-updated', handler);
       window.removeEventListener('vistasat:notification-received', handler);
+      window.removeEventListener('vistasat:offline-synced', handler);
     };
   }, [loadData]);
 
@@ -146,7 +167,7 @@ export default function DashboardPage() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="border-white/50 text-white hover:bg-white/10 dark:border-white/50"
+                    className="border-white/50 text-white hover:bg-white/10"
                   >
                     <Users size={15} /> Usuarios
                   </Button>
@@ -156,7 +177,7 @@ export default function DashboardPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="border-white/50 text-white hover:bg-white/10 dark:border-white/50"
+                  className="border-white/50 text-white hover:bg-white/10"
                 >
                   <Calendar size={15} /> Instalaciones
                 </Button>
@@ -165,7 +186,7 @@ export default function DashboardPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="border-white/50 text-white hover:bg-white/10 dark:border-white/50"
+                  className="border-white/50 text-white hover:bg-white/10"
                 >
                   <BarChart3 size={15} /> Informes
                 </Button>
@@ -182,7 +203,7 @@ export default function DashboardPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="border-white/50 text-white hover:bg-white/10 dark:border-white/50"
+                  className="border-white/50 text-white hover:bg-white/10"
                 >
                   Mis tareas <ArrowRight size={14} />
                 </Button>
@@ -191,7 +212,7 @@ export default function DashboardPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="border-white/50 text-white hover:bg-white/10 dark:border-white/50"
+                  className="border-white/50 text-white hover:bg-white/10"
                 >
                   <Calendar size={15} /> Instalaciones
                 </Button>
@@ -206,7 +227,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Tarjetas KPI interactivas (pulsando cada una despliega su filtro inmediato) */}
+      {/* Tarjetas KPI interactivas */}
       <div
         className={`grid gap-3 ${
           isCoord ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4'
@@ -316,7 +337,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Drill-down interactivo del KPI seleccionado */}
       {activeKpi && (
         <KpiDrilldownPanel
           activeKpi={activeKpi}
@@ -326,19 +346,14 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Gráficas y Tiempos Medios por Tipo (solo Administrador / Coordinador) */}
       {isCoord && !loading && (
         <DashboardCharts tasks={scopedTasks} onSelectKpi={toggleKpi} />
       )}
 
-      {/* Bloques operativos inferiores (en Técnico van justo arriba tras los KPIs) */}
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-36 bg-white dark:bg-surface rounded-md animate-pulse shadow-card"
-            />
+            <div key={i} className="h-36 bg-white rounded-md animate-pulse shadow-card" />
           ))}
         </div>
       ) : (
@@ -378,10 +393,10 @@ function KPICard({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`text-left bg-white dark:bg-surface rounded-md shadow-card p-3.5 sm:p-4 border-2 transition-all cursor-pointer min-w-0 flex flex-col justify-between gap-2 ${
+      className={`text-left bg-white rounded-md shadow-card p-3.5 sm:p-4 border-2 transition-all cursor-pointer min-w-0 flex flex-col justify-between gap-2 ${
         active
-          ? 'border-navy dark:border-sky-400 ring-2 ring-navy/20 dark:ring-sky-400/20'
-          : 'border-border/50 hover:border-navy/40 dark:hover:border-sky-400/40'
+          ? 'border-navy ring-2 ring-navy/20'
+          : 'border-border/50 hover:border-navy/40'
       } ${className}`}
     >
       <div className="flex items-start justify-between gap-2 w-full">
@@ -390,9 +405,7 @@ function KPICard({
         </div>
         <span
           className={`inline-flex items-center gap-0.5 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-xs ${
-            active
-              ? 'bg-navy text-white dark:bg-sky-500 dark:text-slate-950'
-              : 'text-mid-grey bg-off-white'
+            active ? 'bg-navy text-white' : 'text-mid-grey bg-off-white'
           }`}
         >
           {active ? (

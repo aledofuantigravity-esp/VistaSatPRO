@@ -321,7 +321,7 @@ function NewTaskContent() {
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-5">
       <div className="flex items-center gap-3">
-        <Link href="/tasks" className="p-2 bg-white dark:bg-surface border border-border text-navy dark:text-sky-300">
+        <Link href="/tasks" className="p-2 bg-white border border-border text-navy">
           <ArrowLeft size={18} />
         </Link>
         <div>
@@ -353,10 +353,10 @@ function NewTaskContent() {
             key={item.n}
             className={`py-2 px-3 text-xs font-bold text-center border-b-4 ${
               step === item.n
-                ? 'border-magenta bg-white dark:bg-surface text-navy dark:text-white'
+                ? 'border-magenta bg-white text-navy'
                 : step > item.n
-                ? 'border-success bg-white dark:bg-surface text-success'
-                : 'border-border bg-white/60 dark:bg-surface/60 text-mid-grey'
+                ? 'border-success bg-white text-success'
+                : 'border-border bg-white/60 text-mid-grey'
             }`}
           >
             {item.label}
@@ -365,7 +365,7 @@ function NewTaskContent() {
       </div>
 
       {/* Contenido de cada paso */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-4">
+      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-4">
         {step === 1 && (
           <>
             {/* Selector de Tipo de Tarea */}
@@ -384,13 +384,13 @@ function NewTaskContent() {
                       onClick={() => setTaskType(tType)}
                       className={`p-3 border-2 text-left transition-all rounded-sm flex items-start gap-2.5 ${
                         active
-                          ? 'border-magenta bg-navy/5 dark:bg-white/10'
+                          ? 'border-magenta bg-navy/5'
                           : 'border-border bg-off-white/60 hover:border-navy/40'
                       }`}
                     >
                       <span
                         className={`p-2 rounded-sm flex-shrink-0 ${
-                          active ? 'bg-navy text-white' : 'bg-white dark:bg-surface text-navy dark:text-sky-300 border border-border'
+                          active ? 'bg-navy text-white' : 'bg-white text-navy border border-border'
                         }`}
                       >
                         {getTypeIcon(tType)}
@@ -428,8 +428,8 @@ function NewTaskContent() {
             </div>
 
             {!customerId && (
-              <div className="p-3.5 bg-navy/5 dark:bg-white/5 border-l-4 border-magenta space-y-3">
-                <p className="text-xs font-bold uppercase text-navy dark:text-sky-300">
+              <div className="p-3.5 bg-navy/5 border-l-4 border-magenta space-y-3">
+                <p className="text-xs font-bold uppercase text-navy">
                   Datos del nuevo cliente (se dará de alta automáticamente)
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -442,7 +442,7 @@ function NewTaskContent() {
                       value={manualCustomerName}
                       onChange={(e) => setManualCustomerName(e.target.value)}
                       placeholder="Ej. Farmacia Central S.L."
-                      className="w-full px-3 py-2.5 bg-white dark:bg-bg-input border border-border text-charcoal"
+                      className="w-full px-3 py-2.5 bg-white border border-border text-charcoal"
                     />
                   </div>
                   <div>
@@ -454,7 +454,7 @@ function NewTaskContent() {
                       value={manualTaxId}
                       onChange={(e) => setManualTaxId(e.target.value)}
                       placeholder="Opcional"
-                      className="w-full px-3 py-2.5 bg-white dark:bg-bg-input border border-border text-charcoal"
+                      className="w-full px-3 py-2.5 bg-white border border-border text-charcoal"
                     />
                   </div>
                 </div>
@@ -528,7 +528,7 @@ function NewTaskContent() {
             {/* ── BLOQUE ESPECÍFICO: INSTALACIÓN ─────────────────────────── */}
             {taskType === 'installation' && (
               <>
-                <div className="p-3 bg-petrol/10 dark:bg-sky-500/15 border-l-4 border-petrol text-xs text-charcoal">
+                <div className="p-3 bg-petrol/10 border-l-4 border-petrol text-xs text-charcoal">
                   <strong>Solicitud de Instalación:</strong> Adjunta el pedido de instalación
                   (PDF o imagen) y asigna la fecha futura acordada con el cliente.
                 </div>
@@ -591,7 +591,7 @@ function NewTaskContent() {
                     <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
                       <FileUp size={13} className="text-magenta" /> Adjuntar Pedido de Instalación
                     </label>
-                    <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy dark:text-sky-300 cursor-pointer hover:bg-navy/5 min-h-[46px]">
+                    <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy cursor-pointer hover:bg-navy/5 min-h-[46px]">
                       <FileUp size={15} />
                       <span className="truncate">
                         {orderFile ? orderFile.name : 'Subir PDF o imagen (máx. 10 MB)'}
@@ -745,7 +745,7 @@ function NewTaskContent() {
                 {/* Piezas dinámicas con botón + */}
                 <div className="space-y-2 pt-2 border-t border-border">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold uppercase text-navy dark:text-sky-300">
+                    <label className="text-xs font-bold uppercase text-navy">
                       Piezas a utilizar (opcional)
                     </label>
                     <button
@@ -844,7 +844,7 @@ function NewTaskContent() {
                       className={`py-2.5 px-3 border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 min-h-[44px] ${
                         active
                           ? 'border-navy bg-navy text-white'
-                          : 'border-border bg-white dark:bg-bg-input text-dark-grey'
+                          : 'border-border bg-white text-dark-grey'
                       }`}
                     >
                       <span
@@ -885,10 +885,10 @@ function NewTaskContent() {
         {step === 3 && (
           <>
             {isTechnician ? (
-              <div className="p-4 bg-navy/5 dark:bg-white/5 border-l-4 border-navy flex items-start gap-3">
-                <UserCheck size={20} className="text-navy dark:text-sky-300 flex-shrink-0 mt-0.5" />
+              <div className="p-4 bg-navy/5 border-l-4 border-navy flex items-start gap-3">
+                <UserCheck size={20} className="text-navy flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-bold uppercase text-navy dark:text-sky-300">
+                  <p className="text-xs font-bold uppercase text-navy">
                     Asignación automática
                   </p>
                   <p className="text-sm text-charcoal mt-0.5">
@@ -898,10 +898,10 @@ function NewTaskContent() {
                 </div>
               </div>
             ) : singleTechnician ? (
-              <div className="p-4 bg-navy/5 dark:bg-sky-500/10 border-l-4 border-navy dark:border-sky-400 flex items-start gap-3">
-                <UserCheck size={20} className="text-navy dark:text-sky-300 flex-shrink-0 mt-0.5" />
+              <div className="p-4 bg-navy/5 border-l-4 border-navy flex items-start gap-3">
+                <UserCheck size={20} className="text-navy flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-bold uppercase text-navy dark:text-sky-300">
+                  <p className="text-xs font-bold uppercase text-navy">
                     Asignación automática (único técnico activo)
                   </p>
                   <p className="text-sm text-charcoal mt-0.5">
@@ -947,7 +947,7 @@ function NewTaskContent() {
 
             {/* Resumen */}
             <div className="p-4 bg-off-white border-l-4 border-navy space-y-1.5 text-sm">
-              <p className="text-xs font-bold uppercase text-navy dark:text-sky-300">
+              <p className="text-xs font-bold uppercase text-navy">
                 Resumen de la tarea
               </p>
               <p>

@@ -23,6 +23,7 @@ import {
   type AttachmentKind,
   type Customer,
   type MaterialItem,
+  type PartCatalogItem,
   type Profile,
   type PushSubscriptionRecord,
   type Task,
@@ -65,6 +66,28 @@ export async function GET(request: Request) {
     case 'customers': {
       const customers = [...state.customers].sort((a, b) => a.name.localeCompare(b.name));
       return NextResponse.json({ customers });
+    }
+
+    case 'customer_task_counts': {
+      const counts: Record<string, { total: number; active: number }> = {};
+      for (const t of state.tasks) {
+        if (t.deleted_at) continue;
+        const entry = counts[t.customer_id] || { total: 0, active: 0 };
+        entry.total += 1;
+        const st = normalizeTaskStatus(t.status);
+        if (st !== 'completed' && st !== 'cancelled') {
+          entry.active += 1;
+        }
+        counts[t.customer_id] = entry;
+      }
+      return NextResponse.json({ counts, revision: state.revision });
+    }
+
+    case 'parts_catalog': {
+      const parts = [...(state.partsCatalog || [])].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+      return NextResponse.json({ parts, revision: state.revision });
     }
 
     case 'tasks': {
@@ -359,6 +382,124 @@ export async function POST(request: Request) {
         state.customers[idx] = { ...state.customers[idx], ...patch, updated_at: nowIso };
         saveServerDemoDb(state);
         return NextResponse.json({ customer: state.customers[idx] });
+      }
+
+      case 'create_part_catalog': {
+        const payload = body.payload as {
+          name: string;
+          ref?: string | null;
+          category?: string | null;
+          unit_cost?: number | null;
+          notes?: string | null;
+          created_by?: string | null;
+        };
+        if (!Array.isArray(state.partsCatalog)) state.partsCatalog = [];
+        const created: PartCatalogItem = {
+          id: `part-${Date.now()}`,
+          name: payload.name.trim(),
+          ref: payload.ref?.trim() || null,
+          category: payload.category?.trim() || null,
+          unit_cost: payload.unit_cost ?? null,
+          notes: payload.notes?.trim() || null,
+          is_active: true,
+          created_by: payload.created_by || null,
+          created_at: nowIso,
+          updated_at: nowIso,
+        };
+        state.partsCatalog.push(created);
+        saveServerDemoDb(state);
+        return NextResponse.json({ part: created });
+      }
+
+      case 'update_part_catalog': {
+        const { partId, patch } = body as {
+          partId: string;
+          patch: Partial<PartCatalogItem>;
+        };
+        if (!Array.isArray(state.partsCatalog)) state.partsCatalog = [];
+        const idx = state.partsCatalog.findIndex((p) => p.id === partId);
+        if (idx === -1) {
+          return NextResponse.json({ error: 'Repuesto no encontrado' }, { status: 404 });
+        }
+        state.partsCatalog[idx] = { ...state.partsCatalog[idx], ...patch, updated_at: nowIso };
+        saveServerDemoDb(state);
+        return NextResponse.json({ part: state.partsCatalog[idx] });
+      }
+
+      case 'delete_part_catalog': {
+        const { partId } = body as { partId: string };
+        if (!Array.isArray(state.partsCatalog)) state.partsCatalog = [];
+        state.partsCatalog = state.partsCatalog.filter((p) => p.id !== partId);
+        saveServerDemoDb(state);
+        return NextResponse.json({ ok: true });
+      }
+
+      case 'bulk_update_tasks': {
+        const { taskIds, patch, actorId } = body as {
+          taskIds: string[];
+          patch: { assigned_to?: string | null; priority?: TaskPriority };
+          actorId: string;
+        };
+        const actor = state.profiles.find((p) => p.id === actorId);
+        let updatedCount = 0;
+
+        for (const tid of taskIds) {
+          const idx = state.tasks.findIndex((t) => t.id === tid && !t.deleted_at);
+          if (idx === -1) continue;
+          const prev = state.tasks[idx];
+          const next: Task = { ...prev, ...patch, updated_at: nowIso };
+
+          if (patch.assigned_to !== undefined && patch.assigned_to !== prev.assigned_to) {
+            next.assigned_at = patch.assigned_to ? nowIso : null;
+            const newTech = patch.assigned_to
+              ? state.profiles.find((p) => p.id === patch.assigned_to)?.full_name || patch.assigned_to
+              : 'Sin asignar';
+            state.history.push({
+              id: `hist-${Date.now()}-${updatedCount}-a`,
+              task_id: tid,
+              actor_id: actorId,
+              event_type: prev.assigned_to ? 'reassigned' : 'assigned',
+              field_name: 'assigned_to',
+              old_value: prev.assigned_to,
+              new_value: newTech,
+              note: `Asignación en lote: ${newTech}`,
+              metadata: {},
+              created_at: nowIso,
+            });
+          }
+
+          if (patch.priority && patch.priority !== prev.priority) {
+            state.history.push({
+              id: `hist-${Date.now()}-${updatedCount}-p`,
+              task_id: tid,
+              actor_id: actorId,
+              event_type: 'priority_changed',
+              field_name: 'priority',
+              old_value: prev.priority,
+              new_value: patch.priority,
+              note: `Prioridad en lote: ${TASK_PRIORITY_META[patch.priority].label}`,
+              metadata: {},
+              created_at: nowIso,
+            });
+          }
+
+          state.tasks[idx] = next;
+          updatedCount++;
+
+          await dispatchServerDemoNotifications(state, {
+            task: next,
+            actorId,
+            type:
+              patch.assigned_to !== undefined && patch.assigned_to !== prev.assigned_to
+                ? 'reassigned'
+                : 'priority_changed',
+            title: `Parte ${prev.code} actualizado en lote`,
+            body: `${actor?.full_name || 'Coordinación'} actualizó ${prev.code}.`,
+          });
+        }
+
+        saveServerDemoDb(state);
+        return NextResponse.json({ ok: true, updatedCount });
       }
 
       case 'create_task': {

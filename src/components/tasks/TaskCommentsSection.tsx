@@ -85,9 +85,9 @@ export function TaskCommentsSection({
   };
 
   return (
-    <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-4">
+    <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
+        <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
           <MessageSquare size={16} className="text-magenta" /> Chat Interno del Parte (
           {comments.length})
         </h2>
@@ -117,7 +117,7 @@ export function TaskCommentsSection({
                   <div className="flex items-center gap-2 mb-1">
                     <span
                       className={`font-bold ${
-                        isOwn ? 'text-white' : 'text-navy dark:text-sky-300'
+                        isOwn ? 'text-white' : 'text-navy'
                       }`}
                     >
                       {c.author?.full_name || 'Usuario'}

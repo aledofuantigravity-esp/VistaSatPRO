@@ -20,7 +20,14 @@ import { AppShell } from '@/components/layout/AppShell';
 import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
-import { createCustomer, listCustomers, listTasks, updateCustomer } from '@/lib/data-service';
+import {
+  createCustomer,
+  listCustomers,
+  listCustomerTaskCounts,
+  listTasksByCustomer,
+  updateCustomer,
+} from '@/lib/data-service';
+import { useAppCache } from '@/store/app-cache';
 import type { Customer, Profile, Task } from '@/types/database';
 
 export default function CustomersPage() {
@@ -33,14 +40,23 @@ export default function CustomersPage() {
 
 function CustomersContent() {
   const { profile } = useAuth();
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const cachedCustomers = useAppCache((s) => s.customers);
+  const customersLoadedAt = useAppCache((s) => s.customersLoadedAt);
+  const cachedCounts = useAppCache((s) => s.customerCounts);
+
+  const [customers, setCustomers] = useState<Customer[]>(cachedCustomers);
+  const [counts, setCounts] = useState<Record<string, { total: number; active: number }>>(
+    cachedCounts
+  );
   const [search, setSearch] = useState('');
   const [cityFilter, setCityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!customersLoadedAt);
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomerTasks, setSelectedCustomerTasks] = useState<Task[]>([]);
+  const [loadingCustomerTasks, setLoadingCustomerTasks] = useState(false);
+
   const [editing, setEditing] = useState<Customer | null>(null);
   const [showModal, setShowModal] = useState(false);
 
@@ -60,28 +76,62 @@ function CustomersContent() {
   const profileId = profile?.id;
   const profileRole = profile?.role;
 
-  const load = useCallback(async () => {
-    if (!profileId || !profileRole) return;
-    await Promise.resolve();
-    setLoading(true);
-    try {
-      const viewer = { id: profileId, role: profileRole } as Profile;
-      const [c, t] = await Promise.all([
-        listCustomers(),
-        listTasks(viewer, { includeDeleted: true }),
-      ]);
-      setCustomers(c);
-      setTasks(t);
-      setSelectedCustomer((prev) => (prev ? c.find((item) => item.id === prev.id) || null : null));
-    } finally {
-      setLoading(false);
-    }
-  }, [profileId, profileRole]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!profileId || !profileRole) return;
+      await Promise.resolve();
+      const hasCached = useAppCache.getState().customersLoadedAt !== null;
+      if (!silent && !hasCached) setLoading(true);
+      try {
+        const [c, taskCounts] = await Promise.all([
+          listCustomers(),
+          listCustomerTaskCounts(),
+        ]);
+        setCustomers(c);
+        setCounts(taskCounts);
+        setSelectedCustomer((prev) =>
+          prev ? c.find((item) => item.id === prev.id) || null : null
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [profileId, profileRole]
+  );
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);
-    return () => clearTimeout(t);
+    const handler = () => void load(true);
+    window.addEventListener('vistasat:demo-updated', handler);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('vistasat:demo-updated', handler);
+    };
   }, [load]);
+
+  // Cargar historial de partes bajo demanda solo cuando se abre la ficha del cliente
+  useEffect(() => {
+    if (!selectedCustomer || !profileId || !profileRole) return;
+    let active = true;
+    const t = setTimeout(() => {
+      setLoadingCustomerTasks(true);
+      const viewer = { id: profileId, role: profileRole } as Profile;
+      void listTasksByCustomer(selectedCustomer.id, viewer)
+        .then((list) => {
+          if (active) setSelectedCustomerTasks(list);
+        })
+        .catch(() => {
+          if (active) setSelectedCustomerTasks([]);
+        })
+        .finally(() => {
+          if (active) setLoadingCustomerTasks(false);
+        });
+    }, 0);
+    return () => {
+      active = false;
+      clearTimeout(t);
+    };
+  }, [selectedCustomer, profileId, profileRole]);
 
   // Abrir detalle automáticamente si viene `?selected=<id>` desde Búsqueda Global
   useEffect(() => {
@@ -183,7 +233,7 @@ function CustomersContent() {
         });
       }
       setShowModal(false);
-      await load();
+      await load(true);
     } finally {
       setSaving(false);
     }
@@ -193,24 +243,18 @@ function CustomersContent() {
     setTogglingActive(true);
     try {
       await updateCustomer(c.id, { is_active: !c.is_active });
-      await load();
+      await load(true);
     } finally {
       setTogglingActive(false);
     }
   };
-
-  const selectedCustomerTasks = selectedCustomer
-    ? tasks
-        .filter((t) => t.customer_id === selectedCustomer.id && !t.deleted_at)
-        .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    : [];
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-charcoal flex items-center gap-2">
-            <Building2 size={22} className="text-navy dark:text-sky-300" /> Directorio de Clientes
+            <Building2 size={22} className="text-navy" /> Directorio de Clientes
           </h1>
           <p className="text-xs text-mid-grey mt-0.5">
             {filtered.length} de {customers.length} clientes · Pulsa en cualquier ficha para ver su historial
@@ -230,13 +274,13 @@ function CustomersContent() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar cliente por nombre, CIF, dirección o contacto..."
-            className="w-full pl-10 pr-3 py-2.5 bg-white dark:bg-surface border border-border text-charcoal"
+            className="w-full pl-10 pr-3 py-2.5 bg-white border border-border text-charcoal"
           />
         </div>
         <select
           value={cityFilter}
           onChange={(e) => setCityFilter(e.target.value)}
-          className="px-3 py-2.5 bg-white dark:bg-surface border border-border text-sm text-charcoal"
+          className="px-3 py-2.5 bg-white border border-border text-sm text-charcoal"
           aria-label="Filtrar por ciudad"
         >
           <option value="all">Todas las ciudades</option>
@@ -249,7 +293,7 @@ function CustomersContent() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as 'active' | 'inactive' | 'all')}
-          className="px-3 py-2.5 bg-white dark:bg-surface border border-border text-sm text-charcoal"
+          className="px-3 py-2.5 bg-white border border-border text-sm text-charcoal"
           aria-label="Filtrar por estado"
         >
           <option value="active">Solo activos</option>
@@ -261,11 +305,11 @@ function CustomersContent() {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[1, 2].map((i) => (
-            <div key={i} className="h-36 bg-white dark:bg-surface rounded-md animate-pulse shadow-card" />
+            <div key={i} className="h-36 bg-white rounded-md animate-pulse shadow-card" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="bg-white dark:bg-surface rounded-md p-8 text-center shadow-card">
+        <div className="bg-white rounded-md p-8 text-center shadow-card">
           <p className="font-bold text-charcoal">No hay clientes que coincidan</p>
           <p className="text-sm text-mid-grey mt-1">
             Prueba a limpiar el filtro de ciudad o buscar otro término.
@@ -274,21 +318,12 @@ function CustomersContent() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filtered.map((c) => {
-            const activeTasks = tasks.filter(
-              (t) =>
-                t.customer_id === c.id &&
-                !t.deleted_at &&
-                t.status !== 'completed' &&
-                t.status !== 'cancelled'
-            ).length;
-            const totalTasks = tasks.filter(
-              (t) => t.customer_id === c.id && !t.deleted_at
-            ).length;
+            const cCount = counts[c.id] || { total: 0, active: 0 };
 
             return (
               <div
                 key={c.id}
-                className={`bg-white dark:bg-surface rounded-md shadow-card p-4 border-l-4 flex flex-col justify-between gap-3 transition-opacity ${
+                className={`bg-white rounded-md shadow-card p-4 border-l-4 flex flex-col justify-between gap-3 transition-opacity ${
                   c.is_active ? 'border-navy' : 'border-light-grey opacity-65'
                 }`}
               >
@@ -329,7 +364,7 @@ function CustomersContent() {
                   )}
                   {c.contact_phone && (
                     <p className="text-xs text-dark-grey flex items-center gap-1 mt-1">
-                      <Phone size={13} className="text-petrol dark:text-sky-300 flex-shrink-0" />
+                      <Phone size={13} className="text-petrol flex-shrink-0" />
                       {c.contact_name ? `${c.contact_name} · ` : ''}
                       {c.contact_phone}
                     </p>
@@ -344,9 +379,9 @@ function CustomersContent() {
 
                 <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
                   <span className="font-semibold text-mid-grey">
-                    Partes: <strong>{totalTasks}</strong>
-                    {activeTasks > 0 && (
-                      <span className="text-magenta font-bold"> ({activeTasks} activos)</span>
+                    Partes: <strong>{cCount.total}</strong>
+                    {cCount.active > 0 && (
+                      <span className="text-magenta font-bold"> ({cCount.active} activos)</span>
                     )}
                   </span>
                   <div className="flex items-center gap-3">
@@ -354,7 +389,7 @@ function CustomersContent() {
                       <button
                         type="button"
                         onClick={() => openEdit(c)}
-                        className="font-bold text-navy dark:text-sky-300 hover:underline inline-flex items-center gap-1"
+                        className="font-bold text-navy hover:underline inline-flex items-center gap-1"
                       >
                         <Pencil size={12} /> Editar
                       </button>
@@ -374,14 +409,14 @@ function CustomersContent() {
         </div>
       )}
 
-      {/* Modal / Drawer de Detalle completo del Cliente (M6) */}
+      {/* Modal / Drawer de Detalle completo del Cliente */}
       {selectedCustomer && (
         <div
           className="fixed inset-0 z-50 bg-charcoal/70 flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={() => setSelectedCustomer(null)}
         >
           <div
-            className="bg-white dark:bg-surface w-full sm:max-w-2xl rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden max-h-[92dvh] flex flex-col"
+            className="bg-white w-full sm:max-w-2xl rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden max-h-[92dvh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-navy text-white px-5 py-4 flex items-center justify-between">
@@ -408,7 +443,6 @@ function CustomersContent() {
             </div>
 
             <div className="p-5 overflow-y-auto space-y-5">
-              {/* Información y acciones */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-off-white p-4 rounded-sm border border-border">
                 <div className="space-y-1.5">
                   <p className="font-bold uppercase text-mid-grey">Dirección</p>
@@ -444,7 +478,7 @@ function CustomersContent() {
                     {selectedCustomer.contact_phone && (
                       <a
                         href={`tel:${selectedCustomer.contact_phone.replace(/\s+/g, '')}`}
-                        className="inline-flex items-center gap-1 text-navy dark:text-sky-300 font-bold hover:underline"
+                        className="inline-flex items-center gap-1 text-navy font-bold hover:underline"
                       >
                         <Phone size={12} /> {selectedCustomer.contact_phone}
                       </a>
@@ -452,7 +486,7 @@ function CustomersContent() {
                     {selectedCustomer.contact_email && (
                       <a
                         href={`mailto:${selectedCustomer.contact_email}`}
-                        className="inline-flex items-center gap-1 text-navy dark:text-sky-300 font-bold hover:underline"
+                        className="inline-flex items-center gap-1 text-navy font-bold hover:underline"
                       >
                         <Mail size={12} /> {selectedCustomer.contact_email}
                       </a>
@@ -461,17 +495,15 @@ function CustomersContent() {
                 </div>
               </div>
 
-              {/* Notas internas */}
               {selectedCustomer.notes && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border-l-4 border-amber-500 text-xs text-charcoal space-y-1">
-                  <p className="font-bold uppercase text-amber-800 dark:text-amber-300">
+                <div className="p-3 bg-amber-50 border-l-4 border-amber-500 text-xs text-charcoal space-y-1">
+                  <p className="font-bold uppercase text-amber-800">
                     Notas Operativas Internas
                   </p>
                   <p>{selectedCustomer.notes}</p>
                 </div>
               )}
 
-              {/* Acciones rápidas */}
               <div className="flex flex-wrap gap-2">
                 <Link href={`/tasks/new?customerId=${encodeURIComponent(selectedCustomer.id)}`}>
                   <Button size="sm" variant="accent">
@@ -502,10 +534,12 @@ function CustomersContent() {
 
               {/* Historial de partes del cliente */}
               <div className="space-y-2.5">
-                <h3 className="text-xs font-extrabold uppercase tracking-wider text-navy dark:text-sky-300">
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-navy">
                   Historial de Partes ({selectedCustomerTasks.length})
                 </h3>
-                {selectedCustomerTasks.length === 0 ? (
+                {loadingCustomerTasks ? (
+                  <div className="h-20 bg-off-white rounded-sm animate-pulse" />
+                ) : selectedCustomerTasks.length === 0 ? (
                   <p className="text-xs text-mid-grey py-3">
                     Este cliente aún no tiene partes de trabajo registrados.
                   </p>
@@ -519,7 +553,7 @@ function CustomersContent() {
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-extrabold text-navy dark:text-sky-300">
+                            <span className="text-xs font-extrabold text-navy">
                               {t.code}
                             </span>
                             <StatusBadge status={t.status} />
@@ -548,7 +582,7 @@ function CustomersContent() {
       {/* Modal Creación / Edición completa de Cliente */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-charcoal/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white dark:bg-surface w-full sm:max-w-lg rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden max-h-[90dvh] flex flex-col">
+          <div className="bg-white w-full sm:max-w-lg rounded-t-lg sm:rounded-lg shadow-elevated overflow-hidden max-h-[90dvh] flex flex-col">
             <div className="bg-navy text-white px-5 py-4 flex items-center justify-between">
               <h2 className="text-base font-bold">
                 {editing ? 'Editar Cliente' : 'Nuevo Cliente'}

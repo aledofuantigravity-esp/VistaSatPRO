@@ -90,6 +90,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/tasks') ||
     pathname.startsWith('/installations') ||
     pathname.startsWith('/customers') ||
+    pathname.startsWith('/parts') ||
     pathname.startsWith('/users') ||
     pathname.startsWith('/reports') ||
     pathname.startsWith('/notifications') ||

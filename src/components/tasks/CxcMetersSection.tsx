@@ -40,13 +40,17 @@ export function CxcMetersSection({
       const nextBw = bwInput.trim() === '' ? null : Math.max(0, parseInt(bwInput, 10) || 0);
       const nextColor =
         colorInput.trim() === '' ? null : Math.max(0, parseInt(colorInput, 10) || 0);
-      await updateTaskFields(
+      const res = await updateTaskFields(
         task.id,
         { equipment_sn: nextSn, meter_bw: nextBw, meter_color: nextColor },
         currentUser
       );
-      onFeedback('Nº de serie y contadores de copias actualizados.');
-      await onChanged();
+      if (res.offlineQueued) {
+        onFeedback('Sin conexión: contadores y nº de serie guardados en cola offline.');
+      } else {
+        onFeedback('Nº de serie y contadores de copias actualizados.');
+        await onChanged();
+      }
     } catch (err) {
       onFeedback(err instanceof Error ? err.message : 'No se pudieron guardar los datos CXC.');
     } finally {
@@ -55,9 +59,9 @@ export function CxcMetersSection({
   };
 
   return (
-    <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
+    <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
+        <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
           <Gauge size={16} className="text-magenta" /> Nº de Serie y Lectura de Copias (CXC)
         </h2>
         <span
@@ -72,7 +76,7 @@ export function CxcMetersSection({
       </div>
 
       {missingSerial && task.status !== 'completed' && !isDeleted && (
-        <div className="p-2.5 bg-amber-50 dark:bg-amber-500/10 border-l-4 border-amber-500 text-xs text-charcoal flex items-center gap-2">
+        <div className="p-2.5 bg-amber-50 border-l-4 border-amber-500 text-xs text-charcoal flex items-center gap-2">
           <AlertTriangle size={15} className="text-amber-600 flex-shrink-0" />
           <span>
             Introduce y guarda el <strong>Nº de Serie</strong> del equipo para poder cerrar esta

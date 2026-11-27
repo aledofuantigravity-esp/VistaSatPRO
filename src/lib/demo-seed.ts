@@ -8,6 +8,7 @@ import {
   type Attachment,
   type Customer,
   type NotificationType,
+  type PartCatalogItem,
   type Profile,
   type PushSubscriptionRecord,
   type Task,
@@ -19,6 +20,7 @@ export interface DemoDatabaseState {
   profiles: Profile[];
   passwords: Record<string, string>;
   customers: Customer[];
+  partsCatalog: PartCatalogItem[];
   tasks: Task[];
   history: TaskHistoryItem[];
   comments: TaskComment[];
@@ -460,6 +462,81 @@ export function createInitialDemoState(): DemoDatabaseState {
     },
   ];
 
+  const partsCatalog: PartCatalogItem[] = [
+    {
+      id: 'part-1',
+      name: 'Tóner Negro Ricoh IM C3500',
+      ref: '842255',
+      category: 'Consumibles CXC',
+      unit_cost: 68.5,
+      notes: 'Cartucho original alta capacidad',
+      is_active: true,
+      created_by: 'user-admin-1',
+      created_at: hoursAgo(600),
+      updated_at: hoursAgo(120),
+    },
+    {
+      id: 'part-2',
+      name: 'Unidad Tambor Imagen CXC',
+      ref: 'D0BQ2040',
+      category: 'Imagen / Fotoconductor',
+      unit_cost: 145.0,
+      notes: 'Vida útil 120.000 páginas',
+      is_active: true,
+      created_by: 'user-admin-1',
+      created_at: hoursAgo(580),
+      updated_at: hoursAgo(100),
+    },
+    {
+      id: 'part-3',
+      name: 'Kit Mantenimiento Fusor',
+      ref: 'FUS-IM-400',
+      category: 'Fusión y Calor',
+      unit_cost: 189.0,
+      notes: 'Incluye rodillo de presión y termistor',
+      is_active: true,
+      created_by: 'user-coord-1',
+      created_at: hoursAgo(550),
+      updated_at: hoursAgo(90),
+    },
+    {
+      id: 'part-4',
+      name: 'Rodillo Alimentación Papel',
+      ref: 'AF03-1090',
+      category: 'Arrastre / Bandejas',
+      unit_cost: 18.4,
+      notes: 'Bandeja 1 y bypass',
+      is_active: true,
+      created_by: 'user-coord-1',
+      created_at: hoursAgo(500),
+      updated_at: hoursAgo(80),
+    },
+    {
+      id: 'part-5',
+      name: 'Placa Controladora Principal',
+      ref: 'PCB-RMA-920',
+      category: 'Electrónica RMA',
+      unit_cost: 220.0,
+      notes: 'Repuesto certificado para equipos RMA',
+      is_active: true,
+      created_by: 'user-admin-1',
+      created_at: hoursAgo(480),
+      updated_at: hoursAgo(70),
+    },
+    {
+      id: 'part-6',
+      name: 'Válvula Solenoide 24V',
+      ref: 'VLV-24V-SAT',
+      category: 'Climatización / Hidráulica',
+      unit_cost: 54.0,
+      notes: 'Válvula estándar SAT',
+      is_active: true,
+      created_by: 'user-admin-1',
+      created_at: hoursAgo(450),
+      updated_at: hoursAgo(60),
+    },
+  ];
+
   return {
     profiles,
     passwords: {
@@ -469,6 +546,7 @@ export function createInitialDemoState(): DemoDatabaseState {
       'marta.soler@vistalegre.com': 'demo1234',
     },
     customers,
+    partsCatalog,
     tasks,
     history,
     comments,

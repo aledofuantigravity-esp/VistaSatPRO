@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   AlertTriangle,
   BookmarkPlus,
+  CheckSquare,
   Clock,
   Download,
   Filter,
@@ -17,14 +18,15 @@ import {
   X,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
-import { Button } from '@/components/ui/Button';
 import { PriorityBadge, StatusBadge, TaskTypeBadge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { TaskCard } from '@/components/ui/TaskCard';
 import { useAuth } from '@/hooks/useAuth';
 import { downloadCsv } from '@/lib/csv';
-import { listProfiles, listTasks, restoreTask } from '@/lib/data-service';
 import { isOpenTask, type DashboardKpiFilter } from '@/lib/dashboard-helpers';
+import { bulkUpdateTasks, listProfiles, listTasks, restoreTask } from '@/lib/data-service';
 import { getSlaStatus } from '@/lib/sla';
+import { useAppCache } from '@/store/app-cache';
 import {
   normalizeTaskStatus,
   resolveTaskType,
@@ -55,6 +57,7 @@ interface SavedFilterPreset {
 
 const ACTIVE_FILTERS_KEY = 'vistasat_tasks_filters_v1';
 const SAVED_PRESETS_KEY = 'vistasat_tasks_saved_filters_v1';
+const PAGE_SIZE = 30;
 
 const KPI_PRESET_LABELS: Record<DashboardKpiFilter, string> = {
   pending: 'Pendientes',
@@ -74,9 +77,13 @@ export default function TasksPage() {
 
 function TasksContent() {
   const { profile } = useAuth();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedTasks = useAppCache((s) => s.tasks);
+  const tasksLoadedAt = useAppCache((s) => s.tasksLoadedAt);
+  const cachedProfiles = useAppCache((s) => s.profiles);
+
+  const [tasks, setTasks] = useState<Task[]>(cachedTasks);
+  const [profiles, setProfiles] = useState<Profile[]>(cachedProfiles);
+  const [loading, setLoading] = useState(!tasksLoadedAt);
 
   const isCoord = profile?.role === 'admin' || profile?.role === 'coordinator';
 
@@ -94,13 +101,21 @@ function TasksContent() {
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
 
-  // Filtros favoritos (M8)
+  // Paginación incremental
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Selección y acciones en lote (solo Admin/Coordinador en pestañas activas)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkTech, setBulkTech] = useState<string>('');
+  const [bulkPriority, setBulkPriority] = useState<TaskPriority | ''>('');
+  const [applyingBulk, setApplyingBulk] = useState(false);
+
+  // Filtros favoritos
   const [presets, setPresets] = useState<SavedFilterPreset[]>([]);
   const [savingPreset, setSavingPreset] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [filtersHydrated, setFiltersHydrated] = useState(false);
 
-  // Cargar filtros guardados y query ?filter=...
   useEffect(() => {
     const hydrate = () => {
       try {
@@ -170,7 +185,6 @@ function TasksContent() {
     return () => clearTimeout(t);
   }, [isCoord]);
 
-  // Persistir filtros activos en localStorage
   useEffect(() => {
     if (!filtersHydrated) return;
     try {
@@ -190,35 +204,53 @@ function TasksContent() {
     } catch {
       // Silencioso
     }
-  }, [filtersHydrated, tab, typeFilter, statusFilter, priorityFilter, techFilter, dateFrom, dateTo, search]);
+  }, [
+    filtersHydrated,
+    tab,
+    typeFilter,
+    statusFilter,
+    priorityFilter,
+    techFilter,
+    dateFrom,
+    dateTo,
+    search,
+  ]);
 
   const profileId = profile?.id;
   const profileRole = profile?.role;
 
-  const load = useCallback(async () => {
-    if (!profileId || !profileRole) return;
-    await Promise.resolve();
-    setLoading(true);
-    try {
-      const viewer = { id: profileId, role: profileRole } as Profile;
-      const [t, p] = await Promise.all([
-        listTasks(viewer, { includeDeleted: true }),
-        isCoord ? listProfiles() : Promise.resolve([]),
-      ]);
-      setTasks(t);
-      setProfiles(p);
-    } finally {
-      setLoading(false);
-    }
-  }, [profileId, profileRole, isCoord]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!profileId || !profileRole) return;
+      await Promise.resolve();
+      const hasCached = useAppCache.getState().tasksLoadedAt !== null;
+      if (!silent && !hasCached) setLoading(true);
+      try {
+        const viewer = { id: profileId, role: profileRole } as Profile;
+        const shouldLoadProfs =
+          isCoord && useAppCache.getState().profiles.length === 0;
+        const [t, p] = await Promise.all([
+          listTasks(viewer, { includeDeleted: true }),
+          shouldLoadProfs ? listProfiles() : Promise.resolve(useAppCache.getState().profiles),
+        ]);
+        setTasks(t);
+        setProfiles(p);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [profileId, profileRole, isCoord]
+  );
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);
-    const handler = () => void load();
+    const handler = () => void load(true);
     window.addEventListener('vistasat:demo-updated', handler);
+    window.addEventListener('vistasat:offline-synced', handler);
     return () => {
       clearTimeout(t);
       window.removeEventListener('vistasat:demo-updated', handler);
+      window.removeEventListener('vistasat:offline-synced', handler);
     };
   }, [load]);
 
@@ -242,12 +274,8 @@ function TasksContent() {
       if (tab === 'overdue' && getSlaStatus(t)?.state !== 'overdue') return false;
 
       const normalizedStatus = normalizeTaskStatus(t.status);
-      if (kpiPreset === 'pending' && normalizedStatus !== 'pending') {
-        return false;
-      }
-      if (kpiPreset === 'in_progress' && normalizedStatus !== 'in_progress') {
-        return false;
-      }
+      if (kpiPreset === 'pending' && normalizedStatus !== 'pending') return false;
+      if (kpiPreset === 'in_progress' && normalizedStatus !== 'in_progress') return false;
       if (
         kpiPreset === 'urgent_high' &&
         (!isOpenTask(t) || (t.priority !== 'urgent' && t.priority !== 'high'))
@@ -260,9 +288,7 @@ function TasksContent() {
           return false;
         }
       }
-      if (kpiPreset === 'completed' && normalizedStatus !== 'completed') {
-        return false;
-      }
+      if (kpiPreset === 'completed' && normalizedStatus !== 'completed') return false;
 
       if (typeFilter !== 'all' && resolveTaskType(t) !== typeFilter) return false;
       if (statusFilter !== 'all' && normalizedStatus !== statusFilter) return false;
@@ -310,9 +336,15 @@ function TasksContent() {
     search,
   ]);
 
-  const exportCSV = () => {
+  const paginatedTasks = useMemo(
+    () => filteredTasks.slice(0, visibleCount),
+    [filteredTasks, visibleCount]
+  );
+
+  const exportTasksCsv = (sourceList: Task[], suffix = '') => {
     const headers = [
       'Código',
+      'Tipo',
       'Cliente',
       'Equipo',
       'Estado',
@@ -323,8 +355,9 @@ function TasksContent() {
       'Fecha Apertura',
       'Fecha Cierre',
     ];
-    const rows = filteredTasks.map((t) => [
+    const rows = sourceList.map((t) => [
       t.code,
+      TASK_TYPE_META[resolveTaskType(t)].label,
       t.customer?.name || '',
       t.equipment_ref || '',
       TASK_STATUS_META[t.status].label,
@@ -337,7 +370,7 @@ function TasksContent() {
     ]);
 
     downloadCsv(
-      `VistaSatPRO_partes_${new Date().toISOString().slice(0, 10)}.csv`,
+      `VistaSatPRO_partes${suffix}_${new Date().toISOString().slice(0, 10)}.csv`,
       headers,
       rows
     );
@@ -356,6 +389,11 @@ function TasksContent() {
     Boolean(dateTo) ||
     Boolean(search.trim());
 
+  const resetPaginationAndSelection = () => {
+    setVisibleCount(PAGE_SIZE);
+    setSelectedIds(new Set());
+  };
+
   const clearFilters = () => {
     setKpiPreset(null);
     setTypeFilter('all');
@@ -365,6 +403,7 @@ function TasksContent() {
     setDateFrom('');
     setDateTo('');
     setSearch('');
+    resetPaginationAndSelection();
   };
 
   const handleSavePreset = (e: React.FormEvent) => {
@@ -403,6 +442,7 @@ function TasksContent() {
     setDateFrom(p.dateFrom);
     setDateTo(p.dateTo);
     setSearch(p.search);
+    resetPaginationAndSelection();
   };
 
   const removePreset = (id: string) => {
@@ -421,16 +461,69 @@ function TasksContent() {
       await restoreTask(taskId, profile);
       setFeedbackBanner(`Parte ${code} restaurado y devuelto a la lista activa.`);
       setTimeout(() => setFeedbackBanner(null), 4000);
-      await load();
+      await load(true);
     } catch (err) {
-      setFeedbackBanner(
-        err instanceof Error ? err.message : 'No se pudo restaurar el parte.'
-      );
+      setFeedbackBanner(err instanceof Error ? err.message : 'No se pudo restaurar el parte.');
       setTimeout(() => setFeedbackBanner(null), 4000);
     } finally {
       setRestoringId(null);
     }
   };
+
+  const toggleSelect = (taskId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const toggleSelectVisible = () => {
+    const allVisibleSelected =
+      paginatedTasks.length > 0 && paginatedTasks.every((t) => selectedIds.has(t.id));
+    if (allVisibleSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedTasks.map((t) => t.id)));
+    }
+  };
+
+  const handleApplyBulk = async () => {
+    if (selectedIds.size === 0) return;
+    const patch: { assigned_to?: string | null; priority?: TaskPriority } = {};
+    if (bulkTech !== '') {
+      patch.assigned_to = bulkTech === '__unassigned__' ? null : bulkTech;
+    }
+    if (bulkPriority !== '') {
+      patch.priority = bulkPriority;
+    }
+    if (Object.keys(patch).length === 0) return;
+
+    setApplyingBulk(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const count = await bulkUpdateTasks(ids, patch, profile);
+      setSelectedIds(new Set());
+      setBulkTech('');
+      setBulkPriority('');
+      setFeedbackBanner(
+        `Actualización en lote aplicada a ${count} parte${count === 1 ? '' : 's'}.`
+      );
+      setTimeout(() => setFeedbackBanner(null), 4000);
+      await load(true);
+    } catch (err) {
+      setFeedbackBanner(
+        err instanceof Error ? err.message : 'Error aplicando la actualización en lote.'
+      );
+      setTimeout(() => setFeedbackBanner(null), 4000);
+    } finally {
+      setApplyingBulk(false);
+    }
+  };
+
+  const canBulkAct = isCoord && tab !== 'trash';
+  const remainingCount = Math.max(0, filteredTasks.length - paginatedTasks.length);
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
@@ -459,7 +552,11 @@ function TasksContent() {
             </Button>
           </Link>
           {isCoord && (
-            <Button variant="secondary" size="sm" onClick={exportCSV}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => exportTasksCsv(filteredTasks)}
+            >
               <Download size={15} /> CSV
             </Button>
           )}
@@ -479,11 +576,12 @@ function TasksContent() {
               onClick={() => {
                 setKpiPreset(null);
                 setTab('all');
+                resetPaginationAndSelection();
               }}
               className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
                 tab === 'all'
                   ? 'bg-navy text-white'
-                  : 'bg-white dark:bg-surface text-mid-grey border border-border'
+                  : 'bg-white text-mid-grey border border-border'
               }`}
             >
               Todos ({activeTasks.length})
@@ -493,11 +591,12 @@ function TasksContent() {
             onClick={() => {
               setKpiPreset(null);
               setTab('mine');
+              resetPaginationAndSelection();
             }}
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
               tab === 'mine'
                 ? 'bg-navy text-white'
-                : 'bg-white dark:bg-surface text-mid-grey border border-border'
+                : 'bg-white text-mid-grey border border-border'
             }`}
           >
             Mis Tareas ({activeTasks.filter((t) => t.assigned_to === profile.id).length})
@@ -506,11 +605,12 @@ function TasksContent() {
             onClick={() => {
               setKpiPreset(null);
               setTab('unassigned');
+              resetPaginationAndSelection();
             }}
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
               tab === 'unassigned'
                 ? 'bg-navy text-white'
-                : 'bg-white dark:bg-surface text-mid-grey border border-border'
+                : 'bg-white text-mid-grey border border-border'
             }`}
           >
             Sin Asignar (
@@ -520,11 +620,12 @@ function TasksContent() {
             onClick={() => {
               setKpiPreset(null);
               setTab('overdue');
+              resetPaginationAndSelection();
             }}
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap inline-flex items-center gap-1 ${
               tab === 'overdue'
                 ? 'bg-danger text-white'
-                : 'bg-white dark:bg-surface text-mid-grey border border-border hover:text-danger'
+                : 'bg-white text-mid-grey border border-border hover:text-danger'
             }`}
           >
             <Clock size={13} /> Vencidos ({overdueTasks.length})
@@ -533,18 +634,19 @@ function TasksContent() {
             onClick={() => {
               setKpiPreset(null);
               setTab('trash');
+              resetPaginationAndSelection();
             }}
             className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap inline-flex items-center gap-1.5 ${
               tab === 'trash'
                 ? 'bg-danger text-white'
-                : 'bg-white dark:bg-surface text-mid-grey border border-border hover:text-danger'
+                : 'bg-white text-mid-grey border border-border hover:text-danger'
             }`}
           >
             <Trash2 size={13} /> Papelera ({trashedTasks.length})
           </button>
         </div>
 
-        <div className="hidden md:flex items-center gap-1 bg-white dark:bg-surface border border-border p-1">
+        <div className="hidden md:flex items-center gap-1 bg-white border border-border p-1">
           <button
             onClick={() => setViewMode('cards')}
             className={`p-1.5 ${viewMode === 'cards' ? 'bg-navy text-white' : 'text-mid-grey'}`}
@@ -563,14 +665,14 @@ function TasksContent() {
       </div>
 
       {kpiPreset && (
-        <div className="flex items-center justify-between gap-2 p-2.5 bg-navy/5 dark:bg-sky-500/15 border border-navy/25 dark:border-sky-400/30 rounded-sm text-xs">
-          <span className="font-bold text-navy dark:text-sky-300">
+        <div className="flex items-center justify-between gap-2 p-2.5 bg-navy/5 border border-navy/25 rounded-sm text-xs">
+          <span className="font-bold text-navy">
             Filtro rápido desde Panel General: {KPI_PRESET_LABELS[kpiPreset]}
           </span>
           <button
             type="button"
             onClick={() => setKpiPreset(null)}
-            className="inline-flex items-center gap-1 px-2 py-1 font-bold text-mid-grey hover:text-charcoal bg-white dark:bg-surface border border-border rounded-xs"
+            className="inline-flex items-center gap-1 px-2 py-1 font-bold text-mid-grey hover:text-charcoal bg-white border border-border rounded-xs"
           >
             <X size={13} /> Quitar filtro
           </button>
@@ -587,9 +689,12 @@ function TasksContent() {
           <input
             type="search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setVisibleCount(PAGE_SIZE);
+            }}
             placeholder="Buscar código, cliente, equipo..."
-            className="w-full pl-10 pr-3 py-2.5 bg-white dark:bg-surface border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
+            className="w-full pl-10 pr-3 py-2.5 bg-white border border-border text-charcoal focus:outline-none focus:ring-2 focus:ring-navy"
           />
         </div>
         <button
@@ -598,7 +703,7 @@ function TasksContent() {
           className={`px-4 py-2.5 border text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1.5 min-h-[44px] ${
             showFilters
               ? 'bg-navy text-white border-navy'
-              : 'bg-white dark:bg-surface text-charcoal border-border'
+              : 'bg-white text-charcoal border-border'
           }`}
         >
           <Filter size={15} /> Filtros
@@ -606,18 +711,107 @@ function TasksContent() {
         <button
           type="button"
           onClick={() => setSavingPreset(!savingPreset)}
-          className="px-3 py-2.5 border border-border bg-white dark:bg-surface text-xs font-bold text-navy dark:text-sky-300 inline-flex items-center gap-1.5 min-h-[44px] hover:bg-off-white"
+          className="px-3 py-2.5 border border-border bg-white text-xs font-bold text-navy inline-flex items-center gap-1.5 min-h-[44px] hover:bg-off-white"
           title="Guardar filtro actual como favorito"
         >
           <BookmarkPlus size={15} /> Guardar vista
         </button>
+        {canBulkAct && paginatedTasks.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleSelectVisible}
+            className="px-3 py-2.5 border border-border bg-white text-xs font-bold text-charcoal inline-flex items-center gap-1.5 min-h-[44px] hover:bg-off-white"
+          >
+            <CheckSquare size={15} className="text-magenta" />
+            {paginatedTasks.every((t) => selectedIds.has(t.id))
+              ? 'Deseleccionar'
+              : 'Seleccionar lote'}
+          </button>
+        )}
       </div>
 
-      {/* Formulario rápido guardar filtro favorito (M8) */}
+      {/* Barra de acciones en lote */}
+      {canBulkAct && selectedIds.size > 0 && (
+        <div className="bg-navy text-white rounded-md p-3.5 shadow-card flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <CheckSquare size={16} className="text-magenta" />
+            <span>
+              {selectedIds.size} parte{selectedIds.size === 1 ? '' : 's'} seleccionado
+              {selectedIds.size === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={bulkTech}
+              onChange={(e) => setBulkTech(e.target.value)}
+              className="px-2.5 py-1.5 bg-white text-charcoal text-xs font-semibold rounded-xs"
+              aria-label="Reasignar técnico en lote"
+            >
+              <option value="">Reasignar técnico...</option>
+              <option value="__unassigned__">Sin asignar</option>
+              {technicians.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.full_name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={bulkPriority}
+              onChange={(e) => setBulkPriority(e.target.value as TaskPriority | '')}
+              className="px-2.5 py-1.5 bg-white text-charcoal text-xs font-semibold rounded-xs"
+              aria-label="Cambiar prioridad en lote"
+            >
+              <option value="">Cambiar prioridad...</option>
+              {Object.entries(TASK_PRIORITY_META).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+
+            <Button
+              type="button"
+              size="sm"
+              variant="accent"
+              isLoading={applyingBulk}
+              disabled={bulkTech === '' && bulkPriority === ''}
+              onClick={handleApplyBulk}
+            >
+              Aplicar lote
+            </Button>
+
+            <button
+              type="button"
+              onClick={() =>
+                exportTasksCsv(
+                  filteredTasks.filter((t) => selectedIds.has(t.id)),
+                  '_seleccion'
+                )
+              }
+              className="px-2.5 py-1.5 bg-white/15 hover:bg-white/25 text-xs font-bold rounded-xs inline-flex items-center gap-1"
+            >
+              <Download size={13} /> CSV selección
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="p-1.5 text-white/80 hover:text-white"
+              aria-label="Limpiar selección"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Formulario rápido guardar filtro favorito */}
       {savingPreset && (
         <form
           onSubmit={handleSavePreset}
-          className="bg-white dark:bg-surface border border-border rounded-sm p-3 flex flex-wrap items-center gap-2"
+          className="bg-white border border-border rounded-sm p-3 flex flex-wrap items-center gap-2"
         >
           <input
             type="text"
@@ -642,7 +836,7 @@ function TasksContent() {
           {presets.map((p) => (
             <span
               key={p.id}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-surface border border-border rounded-full text-xs font-semibold text-charcoal"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-border rounded-full text-xs font-semibold text-charcoal"
             >
               <button
                 type="button"
@@ -675,14 +869,17 @@ function TasksContent() {
 
       {/* Panel de filtros */}
       {showFilters && (
-        <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 border border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="bg-white rounded-md shadow-card p-4 border border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           <div>
             <label className="block text-[11px] font-bold uppercase text-mid-grey mb-1">
               Tipo de tarea
             </label>
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as TaskType | 'all')}
+              onChange={(e) => {
+                setTypeFilter(e.target.value as TaskType | 'all');
+                setVisibleCount(PAGE_SIZE);
+              }}
               className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
             >
               <option value="all">Todos los tipos</option>
@@ -699,7 +896,10 @@ function TasksContent() {
             </label>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as TaskStatus | 'all')}
+              onChange={(e) => {
+                setStatusFilter(e.target.value as TaskStatus | 'all');
+                setVisibleCount(PAGE_SIZE);
+              }}
               className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
             >
               <option value="all">Todos los estados</option>
@@ -717,7 +917,10 @@ function TasksContent() {
             </label>
             <select
               value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | 'all')}
+              onChange={(e) => {
+                setPriorityFilter(e.target.value as TaskPriority | 'all');
+                setVisibleCount(PAGE_SIZE);
+              }}
               className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
             >
               <option value="all">Todas las prioridades</option>
@@ -736,7 +939,10 @@ function TasksContent() {
               </label>
               <select
                 value={techFilter}
-                onChange={(e) => setTechFilter(e.target.value)}
+                onChange={(e) => {
+                  setTechFilter(e.target.value);
+                  setVisibleCount(PAGE_SIZE);
+                }}
                 className="w-full px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
               >
                 <option value="all">Todos los técnicos</option>
@@ -758,7 +964,10 @@ function TasksContent() {
               <input
                 type="date"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  setVisibleCount(PAGE_SIZE);
+                }}
                 className="w-full px-2 py-2 bg-bg-input border border-border text-xs text-charcoal"
               />
             </div>
@@ -769,7 +978,10 @@ function TasksContent() {
               <input
                 type="date"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  setVisibleCount(PAGE_SIZE);
+                }}
                 className="w-full px-2 py-2 bg-bg-input border border-border text-xs text-charcoal"
               />
             </div>
@@ -792,11 +1004,11 @@ function TasksContent() {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-44 bg-white dark:bg-surface rounded-md animate-pulse shadow-card" />
+            <div key={i} className="h-44 bg-white rounded-md animate-pulse shadow-card" />
           ))}
         </div>
       ) : filteredTasks.length === 0 ? (
-        <div className="bg-white dark:bg-surface rounded-md p-8 text-center shadow-card">
+        <div className="bg-white rounded-md p-8 text-center shadow-card">
           <p className="font-bold text-charcoal">
             {tab === 'trash' ? 'La papelera está vacía' : 'No se encontraron partes'}
           </p>
@@ -807,10 +1019,24 @@ function TasksContent() {
           </p>
         </div>
       ) : viewMode === 'table' ? (
-        <div className="bg-white dark:bg-surface rounded-md shadow-card overflow-x-auto border border-border/60">
+        <div className="bg-white rounded-md shadow-card overflow-x-auto border border-border/60">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-navy text-white text-xs uppercase tracking-wider">
+                {canBulkAct && (
+                  <th className="p-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={
+                        paginatedTasks.length > 0 &&
+                        paginatedTasks.every((t) => selectedIds.has(t.id))
+                      }
+                      onChange={toggleSelectVisible}
+                      aria-label="Seleccionar todos los partes visibles"
+                      className="accent-magenta"
+                    />
+                  </th>
+                )}
                 <th className="p-3">Código / Tipo</th>
                 <th className="p-3">Cliente</th>
                 <th className="p-3">Equipo</th>
@@ -821,11 +1047,28 @@ function TasksContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-sm">
-              {filteredTasks.map((t) => {
+              {paginatedTasks.map((t) => {
                 const sla = getSlaStatus(t);
+                const isSelected = selectedIds.has(t.id);
                 return (
-                  <tr key={t.id} className="hover:bg-off-white transition-colors">
-                    <td className="p-3 font-bold text-navy dark:text-sky-300">
+                  <tr
+                    key={t.id}
+                    className={`hover:bg-off-white transition-colors ${
+                      isSelected ? 'bg-navy/5' : ''
+                    }`}
+                  >
+                    {canBulkAct && (
+                      <td className="p-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(t.id)}
+                          aria-label={`Seleccionar parte ${t.code}`}
+                          className="accent-magenta"
+                        />
+                      </td>
+                    )}
+                    <td className="p-3 font-bold text-navy">
                       <div className="flex flex-col gap-1 items-start">
                         <Link href={`/tasks/${t.id}`} className="hover:underline">
                           {t.code}
@@ -892,7 +1135,7 @@ function TasksContent() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredTasks.map((t) =>
+          {paginatedTasks.map((t) =>
             tab === 'trash' ? (
               <div key={t.id} className="space-y-0">
                 <TaskCard task={t} />
@@ -920,9 +1163,39 @@ function TasksContent() {
                 </div>
               </div>
             ) : (
-              <TaskCard key={t.id} task={t} />
+              <div key={t.id} className="relative">
+                {canBulkAct && (
+                  <label
+                    className="absolute top-3 right-3 z-10 inline-flex items-center justify-center w-6 h-6 bg-white/95 border border-border rounded-xs cursor-pointer shadow-xs"
+                    title={`Seleccionar ${t.code}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(t.id)}
+                      onChange={() => toggleSelect(t.id)}
+                      aria-label={`Seleccionar parte ${t.code}`}
+                      className="accent-magenta w-4 h-4 cursor-pointer"
+                    />
+                  </label>
+                )}
+                <TaskCard task={t} />
+              </div>
             )
           )}
+        </div>
+      )}
+
+      {/* Botón de paginación incremental */}
+      {remainingCount > 0 && (
+        <div className="pt-2 flex justify-center">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+          >
+            Cargar más partes ({remainingCount} restante{remainingCount === 1 ? '' : 's'})
+          </Button>
         </div>
       )}
     </div>

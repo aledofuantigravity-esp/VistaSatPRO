@@ -401,6 +401,7 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     });
     await expect(dialog.getByText('parte-fisico-firmado.png')).toBeVisible();
     await dialog.getByRole('button', { name: /Subir y Finalizar Instalación/i }).click();
+    await expect(dialog).toBeHidden();
 
     await expect(page.getByRole('heading', { name: /Parte de Trabajo Físico/i })).toBeVisible();
     await expect(page.getByText('parte-fisico-firmado.png', { exact: true })).toBeVisible();
@@ -631,5 +632,96 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
         await expect(restoreCard.getByRole('button', { name: /Desactivar/i })).toBeVisible();
       }
     }
+  });
+
+  test('12. Calendario visual de Instalaciones, exportación .ics y móvil sin scroll horizontal', async ({
+    page,
+  }) => {
+    await loginAsCoordinator(page);
+    await page.goto('/installations');
+    await expect(page.getByRole('heading', { name: 'Instalaciones' })).toBeVisible();
+
+    // Conmutar a vista Calendario
+    await page.getByRole('button', { name: /^Calendario$/i }).click();
+    await expect(page.getByRole('button', { name: /^Hoy$/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Mes$/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Semana$/i })).toBeVisible();
+
+    // Comprobar calendario en móvil 390x844 sin scroll horizontal
+    await page.setViewportSize({ width: 390, height: 844 });
+    const calNoOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
+    );
+    expect(calNoOverflow).toBe(true);
+
+    // Volver a escritorio y descargar archivo .ics desde la vista Lista en el bloque con fecha asignada
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.getByRole('button', { name: /^Lista$/i }).click();
+    const icsPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: /\.ics/i }).first().click();
+    const icsDownload = await icsPromise;
+    expect(icsDownload.suggestedFilename()).toContain('_instalacion.ics');
+    const icsPath = await icsDownload.path();
+    expect(icsPath).toBeTruthy();
+    const fs = await import('fs');
+    const icsText = fs.readFileSync(icsPath!, 'utf8');
+    expect(icsText).toContain('BEGIN:VCALENDAR');
+    expect(icsText).toContain('BEGIN:VEVENT');
+  });
+
+  test('13. Catálogo de repuestos + autocompletado, acciones en lote en Tareas e Informes mejorados', async ({
+    page,
+  }) => {
+    await loginAsCoordinator(page);
+
+    // A) Crear un repuesto en /parts
+    await page.goto('/parts');
+    await expect(page.getByRole('heading', { name: /Catálogo de Repuestos/i })).toBeVisible();
+    await page.getByRole('button', { name: /Nuevo Repuesto/i }).click();
+    await page.getByPlaceholder(/Fusor Ricoh IM C3500/i).fill('Kit Rodillo E2E');
+    await page.getByPlaceholder(/FUS-400/i).fill('REF-E2E-99');
+    await page.getByRole('button', { name: /^Guardar$/i }).click();
+    await expect(page.getByText('Kit Rodillo E2E')).toBeVisible();
+    await expect(page.getByText('Ref: REF-E2E-99')).toBeVisible();
+
+    // B) Usar autocompletado al añadir material en un parte RMA existente
+    await page.goto('/tasks/new');
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByPlaceholder(/Describe síntomas/i).fill('Prueba catálogo repuestos y lote E2E.');
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+
+    const matInput = page.getByPlaceholder(/Pieza o material/i);
+    await matInput.click();
+    await matInput.fill('Kit Rodillo');
+    await page.getByRole('button', { name: /Kit Rodillo E2E/i }).click();
+    await expect(page.getByPlaceholder('Ref. (opc.)')).toHaveValue('REF-E2E-99');
+    await page.getByRole('button', { name: 'Añadir material' }).click();
+    await expect(page.getByText('Kit Rodillo E2E')).toBeVisible();
+    await expect(page.getByText('Ref: REF-E2E-99')).toBeVisible();
+
+    // C) Acciones en lote en /tasks
+    await page.goto('/tasks');
+    await page.locator('input[type="checkbox"]').first().check();
+    await expect(page.getByText(/1 parte seleccionado/i)).toBeVisible();
+    await page.getByLabel('Cambiar prioridad en lote').selectOption('high');
+    await page.getByRole('button', { name: /Aplicar lote/i }).click();
+    await expect(page.getByText(/Actualización en lote aplicada/i)).toBeVisible();
+
+    // D) Informes: sin gráfica comparativa por técnico, con tiempos medios por tipo y repuestos consumidos
+    await page.goto('/reports');
+    await expect(page.getByText(/Comparativa Visual por Técnico/i)).toHaveCount(0);
+    await expect(
+      page.getByRole('heading', { name: /Tiempo Medio de Cierre por Tipo de Parte/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: /Repuestos Más Consumidos/i })
+    ).toBeVisible();
+    await expect(page.getByText('Kit Rodillo E2E')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: /CSV Completo \(Partes y Materiales\)/i })
+    ).toBeVisible();
   });
 });

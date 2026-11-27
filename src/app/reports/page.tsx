@@ -1,30 +1,26 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, Download, FileDown, RotateCcw, Shield } from 'lucide-react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { useCallback, useMemo, useState, useEffect } from 'react';
+import { BarChart3, Download, FileDown, Package, RotateCcw, Shield, Timer } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
-import { useTheme } from '@/hooks/useTheme';
 import { downloadCsv } from '@/lib/csv';
+import { computeResolutionStatsByType } from '@/lib/dashboard-helpers';
 import { listCustomers, listProfiles, listTasks } from '@/lib/data-service';
-import { downloadReportPDF } from '@/lib/pdf-generator';
+import { useAppCache } from '@/store/app-cache';
 import {
-  TASK_STATUS_META,
+  getTaskStatusLabel,
   normalizeTaskStatus,
+  resolveTaskType,
+  TASK_PRIORITY_META,
+  TASK_STATUS_META,
+  TASK_TYPE_META,
   type Customer,
   type Profile,
   type Task,
   type TaskStatus,
+  type TaskType,
 } from '@/types/database';
 
 export default function ReportsPage() {
@@ -37,56 +33,67 @@ export default function ReportsPage() {
 
 function ReportsContent() {
   const { profile } = useAuth();
-  const { resolvedTheme } = useTheme();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [mounted, setMounted] = useState(false);
+  const cachedTasks = useAppCache((s) => s.tasks);
+  const tasksLoadedAt = useAppCache((s) => s.tasksLoadedAt);
+  const cachedProfiles = useAppCache((s) => s.profiles);
+  const cachedCustomers = useAppCache((s) => s.customers);
 
-  // Filtros avanzados (M9)
+  const [tasks, setTasks] = useState<Task[]>(cachedTasks);
+  const [profiles, setProfiles] = useState<Profile[]>(cachedProfiles);
+  const [customers, setCustomers] = useState<Customer[]>(cachedCustomers);
+  const [loading, setLoading] = useState(!tasksLoadedAt);
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  // Filtros avanzados (incluye filtro por Tipo de parte)
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [typeFilter, setTypeFilter] = useState<TaskType | 'all'>('all');
   const [techFilter, setTechFilter] = useState('all');
   const [customerFilter, setCustomerFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
 
-  useEffect(() => {
-    const t = setTimeout(() => setMounted(true), 0);
-    return () => clearTimeout(t);
-  }, []);
-
   const profileId = profile?.id;
   const profileRole = profile?.role;
 
-  const load = useCallback(async () => {
-    if (!profileId || !profileRole) return;
-    await Promise.resolve();
-    setLoading(true);
-    try {
-      const viewer = { id: profileId, role: profileRole } as Profile;
-      const [t, p, c] = await Promise.all([
-        listTasks(viewer),
-        listProfiles(),
-        listCustomers(),
-      ]);
-      setTasks(t);
-      setProfiles(p);
-      setCustomers(c);
-    } finally {
-      setLoading(false);
-    }
-  }, [profileId, profileRole]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!profileId || !profileRole) return;
+      await Promise.resolve();
+      const hasCached = useAppCache.getState().tasksLoadedAt !== null;
+      if (!silent && !hasCached) setLoading(true);
+      try {
+        const viewer = { id: profileId, role: profileRole } as Profile;
+        const [t, p, c] = await Promise.all([
+          listTasks(viewer),
+          listProfiles(),
+          listCustomers(),
+        ]);
+        setTasks(t);
+        setProfiles(p);
+        setCustomers(c);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [profileId, profileRole]
+  );
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);
-    return () => clearTimeout(t);
+    const handler = () => void load(true);
+    window.addEventListener('vistasat:demo-updated', handler);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('vistasat:demo-updated', handler);
+    };
   }, [load]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
+      if (t.deleted_at) return false;
       if (dateFrom && t.created_at.slice(0, 10) < dateFrom) return false;
       if (dateTo && t.created_at.slice(0, 10) > dateTo) return false;
+      if (typeFilter !== 'all' && resolveTaskType(t) !== typeFilter) return false;
       if (techFilter !== 'all') {
         if (techFilter === 'unassigned' && t.assigned_to !== null) return false;
         if (techFilter !== 'unassigned' && t.assigned_to !== techFilter) return false;
@@ -95,7 +102,7 @@ function ReportsContent() {
       if (statusFilter !== 'all' && normalizeTaskStatus(t.status) !== statusFilter) return false;
       return true;
     });
-  }, [tasks, dateFrom, dateTo, techFilter, customerFilter, statusFilter]);
+  }, [tasks, dateFrom, dateTo, typeFilter, techFilter, customerFilter, statusFilter]);
 
   const kpis = useMemo(() => {
     const completed = filteredTasks.filter((t) => t.status === 'completed');
@@ -128,6 +135,43 @@ function ReportsContent() {
     };
   }, [filteredTasks]);
 
+  const resolutionByType = useMemo(
+    () => computeResolutionStatsByType(filteredTasks),
+    [filteredTasks]
+  );
+
+  const topConsumedParts = useMemo(() => {
+    const agg = new Map<
+      string,
+      { name: string; ref?: string; qty: number; taskIds: Set<string> }
+    >();
+    for (const t of filteredTasks) {
+      for (const m of t.materials_used || []) {
+        const cleanName = m.name.trim();
+        if (!cleanName) continue;
+        const key = `${cleanName.toLowerCase()}::${(m.ref || '').trim().toLowerCase()}`;
+        const existing = agg.get(key) || {
+          name: cleanName,
+          ref: m.ref?.trim() || undefined,
+          qty: 0,
+          taskIds: new Set<string>(),
+        };
+        existing.qty += Math.max(1, Number(m.qty) || 1);
+        existing.taskIds.add(t.id);
+        agg.set(key, existing);
+      }
+    }
+    return Array.from(agg.values())
+      .map((item) => ({
+        name: item.name,
+        ref: item.ref,
+        qty: item.qty,
+        taskCount: item.taskIds.size,
+      }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 12);
+  }, [filteredTasks]);
+
   const techStats = useMemo(() => {
     return profiles
       .filter((p) => p.role === 'technician')
@@ -150,7 +194,6 @@ function ReportsContent() {
           assigned.length > 0 ? Math.round((completed.length / assigned.length) * 100) : 0;
         return {
           tech,
-          shortName: tech.full_name.split(' ')[0],
           total: assigned.length,
           completed: completed.length,
           avgHours,
@@ -188,6 +231,7 @@ function ReportsContent() {
   const hasFilters =
     Boolean(dateFrom) ||
     Boolean(dateTo) ||
+    typeFilter !== 'all' ||
     techFilter !== 'all' ||
     customerFilter !== 'all' ||
     statusFilter !== 'all';
@@ -195,100 +239,148 @@ function ReportsContent() {
   const resetFilters = () => {
     setDateFrom('');
     setDateTo('');
+    setTypeFilter('all');
     setTechFilter('all');
     setCustomerFilter('all');
     setStatusFilter('all');
   };
 
-  const exportSummaryCSV = () => {
+  const exportFullPartsCsv = () => {
     const headers = [
+      'Código',
+      'Tipo',
+      'Cliente',
+      'Equipo',
+      'Nº Serie',
+      'Estado',
+      'Prioridad',
       'Técnico',
-      'Partes Totales',
-      'Completados',
-      'Tasa Cierre %',
-      'Tiempo Medio (h)',
+      'Apertura',
+      'Cierre',
+      'Tiempo Resol. (h)',
+      'Copias B/N',
+      'Copias Color',
+      'Materiales / Repuestos',
     ];
-    const rows = techStats.map((r) => [
-      r.tech.full_name,
-      String(r.total),
-      String(r.completed),
-      `${r.rate}%`,
-      String(r.avgHours),
-    ]);
+    const rows = filteredTasks.map((t) => {
+      const hours =
+        t.status === 'completed' && t.completed_at
+          ? Math.max(
+              0.1,
+              (new Date(t.completed_at).getTime() - new Date(t.created_at).getTime()) /
+                3_600_000
+            ).toFixed(1)
+          : '';
+      const materialsText = (t.materials_used || [])
+        .map((m) => `${m.name}${m.ref ? ` [${m.ref}]` : ''} x${m.qty}`)
+        .join(' | ');
+      return [
+        t.code,
+        TASK_TYPE_META[resolveTaskType(t)].label,
+        t.customer?.name || '',
+        t.equipment_ref || '',
+        t.equipment_sn || '',
+        getTaskStatusLabel(t.status),
+        TASK_PRIORITY_META[t.priority].label,
+        t.assignee?.full_name || 'Sin asignar',
+        new Date(t.created_at).toLocaleString('es-ES'),
+        t.completed_at ? new Date(t.completed_at).toLocaleString('es-ES') : '',
+        hours,
+        t.meter_bw ?? '',
+        t.meter_color ?? '',
+        materialsText,
+      ];
+    });
     downloadCsv(
-      `VistaSatPRO_informe_tecnicos_${new Date().toISOString().slice(0, 10)}.csv`,
+      `VistaSatPRO_partes_materiales_${new Date().toISOString().slice(0, 10)}.csv`,
       headers,
       rows
     );
   };
 
-  const handleExportPDF = () => {
-    const techLabel =
-      techFilter === 'all'
-        ? 'Todos'
-        : techFilter === 'unassigned'
-        ? 'Sin asignar'
-        : profiles.find((p) => p.id === techFilter)?.full_name || 'Todos';
-    const custLabel =
-      customerFilter === 'all'
-        ? 'Todos'
-        : customers.find((c) => c.id === customerFilter)?.name || 'Todos';
-    const statusLabel =
-      statusFilter === 'all' ? 'Todos' : TASK_STATUS_META[statusFilter].label;
+  const handleExportPDF = async () => {
+    setExportingPdf(true);
+    try {
+      const techLabel =
+        techFilter === 'all'
+          ? 'Todos'
+          : techFilter === 'unassigned'
+          ? 'Sin asignar'
+          : profiles.find((p) => p.id === techFilter)?.full_name || 'Todos';
+      const custLabel =
+        customerFilter === 'all'
+          ? 'Todos'
+          : customers.find((c) => c.id === customerFilter)?.name || 'Todos';
+      const statusLabel =
+        statusFilter === 'all' ? 'Todos' : TASK_STATUS_META[statusFilter].label;
+      const typeLabel =
+        typeFilter === 'all' ? 'Todos' : TASK_TYPE_META[typeFilter].label;
 
-    downloadReportPDF({
-      filters: {
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-        technicianName: techLabel,
-        customerName: custLabel,
-        statusLabel,
-      },
-      kpis,
-      techStats: techStats.map((r) => ({
-        name: r.tech.full_name,
-        total: r.total,
-        completed: r.completed,
-        rate: r.rate,
-        avgHours: r.avgHours,
-      })),
-      topCustomers: topCustomers.map((r) => ({
-        name: r.customer.name,
-        total: r.total,
-        open: r.open,
-      })),
-      tasks: filteredTasks,
-    });
+      const { downloadReportPDF } = await import('@/lib/pdf-generator');
+      downloadReportPDF({
+        filters: {
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+          typeLabel,
+          technicianName: techLabel,
+          customerName: custLabel,
+          statusLabel,
+        },
+        kpis,
+        resolutionByType: resolutionByType.byType.map((b) => ({
+          label: b.label,
+          count: b.count,
+          formatted: b.formatted,
+        })),
+        topParts: topConsumedParts,
+        techStats: techStats.map((r) => ({
+          name: r.tech.full_name,
+          total: r.total,
+          completed: r.completed,
+          rate: r.rate,
+          avgHours: r.avgHours,
+        })),
+        topCustomers: topCustomers.map((r) => ({
+          name: r.customer.name,
+          total: r.total,
+          open: r.open,
+        })),
+        tasks: filteredTasks,
+      });
+    } finally {
+      setExportingPdf(false);
+    }
   };
-
-  const isDark = resolvedTheme === 'dark';
-  const axisStroke = isDark ? '#94A3B8' : '#666666';
-  const gridStroke = isDark ? '#2A354D' : '#E5E7EB';
 
   return (
     <div className="p-4 sm:p-6 space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-charcoal flex items-center gap-2">
-            <BarChart3 size={22} className="text-navy dark:text-sky-300" /> Informes Operativos SAT
+            <BarChart3 size={22} className="text-navy" /> Informes Operativos SAT
           </h1>
           <p className="text-xs text-mid-grey mt-0.5">
             {filteredTasks.length} parte{filteredTasks.length === 1 ? '' : 's'} en el período seleccionado
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={exportSummaryCSV}>
-            <Download size={15} /> CSV Técnicos
+          <Button variant="secondary" size="sm" onClick={exportFullPartsCsv}>
+            <Download size={15} /> CSV Completo (Partes y Materiales)
           </Button>
-          <Button variant="accent" size="sm" onClick={handleExportPDF}>
+          <Button
+            variant="accent"
+            size="sm"
+            isLoading={exportingPdf}
+            onClick={handleExportPDF}
+          >
             <FileDown size={15} /> Exportar PDF
           </Button>
         </div>
       </div>
 
-      {/* Filtros avanzados (M9) */}
-      <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 border border-border/60 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      {/* Filtros avanzados */}
+      <div className="bg-white rounded-md shadow-card p-4 border border-border/60 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
           <div>
             <label className="block text-[11px] font-bold uppercase text-mid-grey mb-1">
               Desde
@@ -310,6 +402,23 @@ function ReportsContent() {
               onChange={(e) => setDateTo(e.target.value)}
               className="w-full px-2.5 py-2 bg-bg-input border border-border text-xs text-charcoal"
             />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase text-mid-grey mb-1">
+              Tipo de parte
+            </label>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as TaskType | 'all')}
+              className="w-full px-2.5 py-2 bg-bg-input border border-border text-xs text-charcoal"
+            >
+              <option value="all">Todos los tipos</option>
+              {Object.entries(TASK_TYPE_META).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-[11px] font-bold uppercase text-mid-grey mb-1">
@@ -379,100 +488,94 @@ function ReportsContent() {
 
       {/* KPIs del período */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 border-l-4 border-navy">
+        <div className="bg-white rounded-md shadow-card p-4 border-l-4 border-navy">
           <p className="text-xs font-bold text-mid-grey uppercase">Partes Filtrados</p>
           <p className="text-2xl font-bold text-charcoal mt-1">{kpis.total}</p>
         </div>
-        <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 border-l-4 border-success">
+        <div className="bg-white rounded-md shadow-card p-4 border-l-4 border-success">
           <p className="text-xs font-bold text-mid-grey uppercase">Completados</p>
           <p className="text-2xl font-bold text-success mt-1">{kpis.completed}</p>
         </div>
-        <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 border-l-4 border-magenta">
+        <div className="bg-white rounded-md shadow-card p-4 border-l-4 border-magenta">
           <p className="text-xs font-bold text-mid-grey uppercase">Tasa de Cierre</p>
           <p className="text-2xl font-bold text-charcoal mt-1">{kpis.closeRate}%</p>
         </div>
-        <div className="bg-white dark:bg-surface rounded-md shadow-card p-4 border-l-4 border-petrol">
+        <div className="bg-white rounded-md shadow-card p-4 border-l-4 border-petrol">
           <p className="text-xs font-bold text-mid-grey uppercase">Tiempo Medio Resol.</p>
-          <p className="text-2xl font-bold text-navy dark:text-sky-300 mt-1">
+          <p className="text-2xl font-bold text-navy mt-1">
             {kpis.avgHours === '—' ? '—' : `${kpis.avgHours}h`}
           </p>
         </div>
       </div>
 
       {loading ? (
-        <div className="h-48 bg-white dark:bg-surface rounded-md animate-pulse shadow-card" />
+        <div className="h-48 bg-white rounded-md animate-pulse shadow-card" />
       ) : (
         <>
-          {/* Gráfico comparativo rendimiento por técnico */}
-          {techStats.length > 0 && (
-            <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60">
-              <h2 className="text-base font-bold text-charcoal mb-3">
-                Comparativa Visual por Técnico
+          {/* Tiempo medio de cierre por tipo de parte */}
+          <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-bold text-charcoal flex items-center gap-2">
+                <Timer size={18} className="text-magenta" /> Tiempo Medio de Cierre por Tipo de Parte
               </h2>
-              <div className="h-56 w-full">
-                {mounted ? (
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <BarChart data={techStats} margin={{ top: 8, right: 12, left: -16, bottom: 4 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
-                      <XAxis dataKey="shortName" tick={{ fontSize: 12, fill: axisStroke }} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: axisStroke }} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: isDark ? '#182032' : '#FFFFFF',
-                          borderColor: isDark ? '#2A354D' : '#DDDDDD',
-                          color: isDark ? '#F1F5F9' : '#222222',
-                          fontSize: '12px',
-                        }}
-                      />
-                      <Bar dataKey="total" name="Asignados" fill="#002169" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="completed" name="Completados" fill="#1A7A4A" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full bg-off-white rounded-sm animate-pulse" />
-                )}
-              </div>
+              <span className="text-xs font-bold text-navy bg-off-white border border-border px-2.5 py-1 rounded-xs">
+                Media global: {resolutionByType.global.formatted} ({resolutionByType.global.count})
+              </span>
             </div>
-          )}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {resolutionByType.byType.map((item) => (
+                <div
+                  key={item.taskType}
+                  className="p-3 bg-off-white border border-border/80 rounded-sm space-y-1"
+                >
+                  <p className="text-xs font-bold text-dark-grey">{item.label}</p>
+                  <p className="text-lg font-extrabold text-charcoal">{item.formatted}</p>
+                  <p className="text-[11px] text-mid-grey">
+                    {item.count} cierre{item.count === 1 ? '' : 's'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {/* Rendimiento por técnico */}
-            <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 overflow-x-auto">
-              <h2 className="text-base font-bold text-charcoal mb-4">
-                Rendimiento por Técnico
+            {/* Repuestos más consumidos */}
+            <div className="bg-white rounded-md shadow-card p-5 border border-border/60 overflow-x-auto">
+              <h2 className="text-base font-bold text-charcoal mb-4 flex items-center gap-2">
+                <Package size={18} className="text-magenta" /> Repuestos Más Consumidos
               </h2>
-              <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-border text-xs uppercase text-mid-grey">
-                    <th className="py-2 pr-3">Técnico</th>
-                    <th className="py-2 px-2 text-center">Totales</th>
-                    <th className="py-2 px-2 text-center">Cerrados</th>
-                    <th className="py-2 px-2 text-center">Tasa</th>
-                    <th className="py-2 pl-2 text-right">Ø Resol.</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {techStats.map((row) => (
-                    <tr key={row.tech.id}>
-                      <td className="py-3 pr-3 font-semibold text-charcoal">
-                        {row.tech.full_name}
-                      </td>
-                      <td className="py-3 px-2 text-center">{row.total}</td>
-                      <td className="py-3 px-2 text-center font-bold text-success">
-                        {row.completed}
-                      </td>
-                      <td className="py-3 px-2 text-center">{row.rate}%</td>
-                      <td className="py-3 pl-2 text-right text-navy dark:text-sky-300 font-bold">
-                        {row.avgHours === '—' ? '—' : `${row.avgHours}h`}
-                      </td>
+              {topConsumedParts.length === 0 ? (
+                <p className="text-sm text-mid-grey">
+                  No se han registrado repuestos en los partes filtrados.
+                </p>
+              ) : (
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-xs uppercase text-mid-grey">
+                      <th className="py-2 pr-3">Repuesto</th>
+                      <th className="py-2 px-2">Ref.</th>
+                      <th className="py-2 px-2 text-center">Partes</th>
+                      <th className="py-2 pl-2 text-right">Unidades</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {topConsumedParts.map((row) => (
+                      <tr key={`${row.name}-${row.ref || ''}`}>
+                        <td className="py-2.5 pr-3 font-semibold text-charcoal">{row.name}</td>
+                        <td className="py-2.5 px-2 text-xs text-mid-grey">{row.ref || '—'}</td>
+                        <td className="py-2.5 px-2 text-center">{row.taskCount}</td>
+                        <td className="py-2.5 pl-2 text-right font-bold text-navy">
+                          {row.qty}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
 
             {/* Top Clientes */}
-            <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 overflow-x-auto">
+            <div className="bg-white rounded-md shadow-card p-5 border border-border/60 overflow-x-auto">
               <h2 className="text-base font-bold text-charcoal mb-4">
                 Partes por Cliente (Top 10)
               </h2>
@@ -505,6 +608,41 @@ function ReportsContent() {
                 </table>
               )}
             </div>
+          </div>
+
+          {/* Tabla resumen por técnico */}
+          <div className="bg-white rounded-md shadow-card p-5 border border-border/60 overflow-x-auto">
+            <h2 className="text-base font-bold text-charcoal mb-4">
+              Rendimiento por Técnico
+            </h2>
+            <table className="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs uppercase text-mid-grey">
+                  <th className="py-2 pr-3">Técnico</th>
+                  <th className="py-2 px-2 text-center">Totales</th>
+                  <th className="py-2 px-2 text-center">Cerrados</th>
+                  <th className="py-2 px-2 text-center">Tasa</th>
+                  <th className="py-2 pl-2 text-right">Ø Resol.</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {techStats.map((row) => (
+                  <tr key={row.tech.id}>
+                    <td className="py-3 pr-3 font-semibold text-charcoal">
+                      {row.tech.full_name}
+                    </td>
+                    <td className="py-3 px-2 text-center">{row.total}</td>
+                    <td className="py-3 px-2 text-center font-bold text-success">
+                      {row.completed}
+                    </td>
+                    <td className="py-3 px-2 text-center">{row.rate}%</td>
+                    <td className="py-3 pl-2 text-right text-navy font-bold">
+                      {row.avgHours === '—' ? '—' : `${row.avgHours}h`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </>
       )}

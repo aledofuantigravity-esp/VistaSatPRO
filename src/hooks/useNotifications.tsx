@@ -42,6 +42,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const seenIdsRef = useRef<Set<string>>(new Set());
   const hasInitializedRef = useRef(false);
   const revisionRef = useRef<number | null>(null);
+  const isRealtimeSubscribedRef = useRef(false);
 
   const load = useCallback(async (silent = false) => {
     await Promise.resolve();
@@ -146,6 +147,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       };
     }
 
+    isRealtimeSubscribedRef.current = false;
     const channelName = `notifications:${userId}:${instanceId}`;
     const channel = supabase
       .channel(channelName)
@@ -161,16 +163,24 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
           void load(true);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        isRealtimeSubscribedRef.current = status === 'SUBSCRIBED';
+      });
 
-    // Respaldo ligero cada 12s si la app está en primer plano (cubre desconexiones móviles de WebSocket)
+    // Respaldo adaptativo: 30s si Realtime está desconectado o 90s como red de seguridad silenciosa
+    let lastFallbackAt = Date.now();
     const fallbackInterval = setInterval(() => {
-      if (document.visibilityState === 'visible' && navigator.onLine) {
+      if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+      const elapsed = Date.now() - lastFallbackAt;
+      const minInterval = isRealtimeSubscribedRef.current ? 90_000 : 30_000;
+      if (elapsed >= minInterval) {
+        lastFallbackAt = Date.now();
         void load(true);
       }
-    }, 12_000);
+    }, 30_000);
 
     return () => {
+      isRealtimeSubscribedRef.current = false;
       clearInterval(fallbackInterval);
       void supabase.removeChannel(channel);
     };

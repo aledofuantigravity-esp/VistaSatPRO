@@ -107,8 +107,8 @@ export function NotificationPreferencesEditor({
   return (
     <div className="space-y-5">
       {readOnly && (
-        <div className="p-3 bg-navy/5 dark:bg-sky-500/10 border-l-4 border-navy dark:border-sky-400 text-xs text-charcoal flex items-start gap-2">
-          <Lock size={15} className="text-navy dark:text-sky-300 flex-shrink-0 mt-0.5" />
+        <div className="p-3 bg-navy/5 border-l-4 border-navy text-xs text-charcoal flex items-start gap-2">
+          <Lock size={15} className="text-navy flex-shrink-0 mt-0.5" />
           <span>
             Configuración asignada por el <strong>Administrador</strong>. Solo un Administrador
             puede modificar tus notificaciones y avisos Push desde la pestaña de Usuarios.
@@ -128,9 +128,9 @@ export function NotificationPreferencesEditor({
                 key={preset.id}
                 type="button"
                 onClick={() => applyPreset(preset.build)}
-                className="text-left p-2.5 border border-border bg-off-white hover:border-navy dark:hover:border-sky-400 hover:bg-navy/5 dark:hover:bg-sky-500/10 rounded-sm transition-colors"
+                className="text-left p-2.5 border border-border bg-off-white hover:border-navy hover:bg-navy/5 rounded-sm transition-colors"
               >
-                <p className="text-xs font-bold text-navy dark:text-sky-300">{preset.label}</p>
+                <p className="text-xs font-bold text-navy">{preset.label}</p>
                 <p className="text-[11px] text-mid-grey leading-snug mt-0.5">
                   {preset.description}
                 </p>
@@ -163,8 +163,8 @@ export function NotificationPreferencesEditor({
                 }
                 className={`text-left p-3 border rounded-sm transition-colors ${
                   active
-                    ? 'border-navy bg-navy/5 dark:bg-white/10'
-                    : 'border-border bg-white dark:bg-surface hover:bg-off-white'
+                    ? 'border-navy bg-navy/5'
+                    : 'border-border bg-white hover:bg-off-white'
                 } disabled:opacity-60`}
               >
                 <p className="text-xs font-bold text-charcoal">{opt.label}</p>
@@ -219,10 +219,10 @@ export function NotificationPreferencesEditor({
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3">
-          <label className="flex items-center justify-between p-3 border border-border bg-white dark:bg-surface rounded-sm cursor-pointer">
+          <label className="flex items-center justify-between p-3 border border-border bg-white rounded-sm cursor-pointer">
             <span className="flex items-center gap-2 text-xs font-bold text-charcoal">
               {value.in_app_enabled ? (
-                <Bell size={15} className="text-navy dark:text-sky-300" />
+                <Bell size={15} className="text-navy" />
               ) : (
                 <BellOff size={15} className="text-mid-grey" />
               )}
@@ -239,7 +239,7 @@ export function NotificationPreferencesEditor({
             />
           </label>
 
-          <label className="flex items-center justify-between p-3 border border-border bg-white dark:bg-surface rounded-sm cursor-pointer">
+          <label className="flex items-center justify-between p-3 border border-border bg-white rounded-sm cursor-pointer">
             <span className="flex items-center gap-2 text-xs font-bold text-charcoal">
               <Smartphone
                 size={15}
@@ -273,7 +273,7 @@ export function NotificationPreferencesEditor({
                     );
                     toggleAllEventsForChannel('in_app', !allOn);
                   }}
-                  className="block mx-auto text-[10px] text-navy dark:text-sky-300 hover:underline normal-case font-semibold"
+                  className="block mx-auto text-[10px] text-navy hover:underline normal-case font-semibold"
                 >
                   Alternar
                 </button>
@@ -298,7 +298,7 @@ export function NotificationPreferencesEditor({
             </div>
           </div>
 
-          <div className="divide-y divide-border bg-white dark:bg-surface">
+          <div className="divide-y divide-border bg-white">
             {NOTIFICATION_EVENT_META.map((ev) => {
               const toggle = value.events[ev.key];
               return (
@@ -353,8 +353,8 @@ export function NotificationPreferencesEditor({
                 key={typeKey}
                 className={`flex items-center gap-2 p-2.5 border rounded-sm text-xs font-bold cursor-pointer ${
                   active
-                    ? 'border-navy bg-navy/5 text-navy dark:text-slate-100'
-                    : 'border-border bg-white dark:bg-surface text-mid-grey'
+                    ? 'border-navy bg-navy/5 text-navy'
+                    : 'border-border bg-white text-mid-grey'
                 }`}
               >
                 <input
@@ -434,7 +434,7 @@ export function NotificationPreferencesEditor({
       >
         <label className="flex items-center justify-between cursor-pointer">
           <span className="flex items-center gap-2 text-xs font-bold text-charcoal">
-            <MoonStar size={15} className="text-navy dark:text-sky-300" />
+            <MoonStar size={15} className="text-navy" />
             Horario silencioso para Web Push (No molestar)
           </span>
           <input
@@ -471,7 +471,7 @@ export function NotificationPreferencesEditor({
                       },
                     })
                   }
-                  className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-surface border border-border"
+                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-border"
                 />
               </div>
               <div>
@@ -491,7 +491,7 @@ export function NotificationPreferencesEditor({
                       },
                     })
                   }
-                  className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-surface border border-border"
+                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-border"
                 />
               </div>
             </div>

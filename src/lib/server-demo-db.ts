@@ -57,6 +57,9 @@ export function getServerDemoDb(): DemoDatabaseState {
   if (!Array.isArray(state.comments)) {
     state.comments = [];
   }
+  if (!Array.isArray(state.partsCatalog)) {
+    state.partsCatalog = createInitialDemoState().partsCatalog;
+  }
   ensureVapidKeys(state);
   globalThis.__vistasatDemoDb = state;
   saveServerDemoDb(state);
