@@ -5,6 +5,7 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
+  ImagePlus,
   Trash2,
   X,
   ZoomIn,
@@ -15,6 +16,7 @@ import type { Attachment, Profile } from '@/types/database';
 
 interface TaskGallerySectionProps {
   taskId: string;
+  title?: string;
   attachments: Attachment[];
   currentUser: Profile;
   isDeleted: boolean;
@@ -24,6 +26,7 @@ interface TaskGallerySectionProps {
 
 export function TaskGallerySection({
   taskId,
+  title = 'Fotografías',
   attachments,
   currentUser,
   isDeleted,
@@ -87,13 +90,21 @@ export function TaskGallerySection({
   }, [lightboxIdx, attachments.length]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
     setUploading(true);
     try {
-      await uploadTaskAttachment(taskId, file, caption.trim() || undefined, currentUser);
+      let uploadedCount = 0;
+      for (const file of files) {
+        await uploadTaskAttachment(taskId, file, caption.trim() || undefined, currentUser);
+        uploadedCount++;
+      }
       setCaption('');
-      onFeedback('Fotografía adjuntada al parte.');
+      onFeedback(
+        uploadedCount === 1
+          ? 'Fotografía adjuntada al parte.'
+          : `${uploadedCount} fotografías adjuntadas al parte.`
+      );
       await onChanged();
     } catch (err) {
       onFeedback(err instanceof Error ? err.message : 'No se pudo subir la fotografía.');
@@ -132,21 +143,34 @@ export function TaskGallerySection({
     <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
-          <Camera size={16} className="text-magenta" /> Fotografías ({attachments.length})
+          <Camera size={16} className="text-magenta" /> {title} ({attachments.length})
         </h2>
 
         {!isDeleted && (
-          <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy-dark min-h-[40px]">
-            <Camera size={15} /> {uploading ? 'Subiendo...' : 'Añadir Foto'}
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handlePhotoUpload}
-              className="hidden"
-              disabled={uploading}
-            />
-          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy-dark min-h-[40px]">
+              <Camera size={15} /> {uploading ? 'Subiendo...' : 'Usar Cámara'}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/*"
+                capture="environment"
+                onChange={handlePhotoUpload}
+                className="hidden"
+                disabled={uploading}
+              />
+            </label>
+            <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-off-white dark:bg-bg-input border border-navy dark:border-slate-400 text-navy dark:text-slate-100 text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy/5 dark:hover:bg-white/10 min-h-[40px]">
+              <ImagePlus size={15} /> {uploading ? 'Subiendo...' : 'Subir de Galería'}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/*"
+                multiple
+                onChange={handlePhotoUpload}
+                className="hidden"
+                disabled={uploading}
+              />
+            </label>
+          </div>
         )}
       </div>
 

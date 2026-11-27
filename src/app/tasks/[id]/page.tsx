@@ -692,8 +692,8 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         )}
       </div>
 
-      {/* Materiales y Piezas (oculto en tipo Tarea simple; botón + en CXC y RMA/Instalación) */}
-      {taskType !== 'task' && (
+      {/* Materiales y Piezas (solo en Incidencia RMA e Incidencia CXC; oculto en Instalación y Tarea) */}
+      {taskType !== 'task' && taskType !== 'installation' && (
         <div className="bg-white dark:bg-surface rounded-md shadow-card p-5 border border-border/60 space-y-3">
           <h2 className="text-sm font-bold text-navy dark:text-sky-300 uppercase tracking-wider flex items-center gap-2">
             <PackagePlus size={16} className="text-magenta" />{' '}
@@ -771,6 +771,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
       {/* Galería de Fotografías Mejorada (M7) */}
       <TaskGallerySection
         taskId={task.id}
+        title={taskType === 'installation' ? 'Fotos de la Instalación' : 'Fotografías'}
         attachments={photoAttachments}
         currentUser={profile}
         isDeleted={isDeleted}

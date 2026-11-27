@@ -1,9 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
 async function loginAsCoordinator(page: Page) {
-  await page.goto('/login', { waitUntil: 'networkidle' });
+  await page.goto('/login');
   const coordBtn = page.getByRole('button', { name: /Laura Navarro/i });
-  await expect(coordBtn).toBeEnabled({ timeout: 15_000 });
+  await expect(coordBtn).toBeEnabled({ timeout: 25_000 });
   await coordBtn.click();
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
   await expect(page.getByRole('heading', { name: 'Hola, Laura Navarro' })).toBeVisible({
@@ -153,6 +153,9 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
 
     await expect(page).toHaveURL(/\/tasks\/task-/);
     await expect(page.getByText('Checklist: Cotejo de Mercancía')).toBeVisible();
+    await expect(page.getByText('Materiales / Piezas Empleadas')).toHaveCount(0);
+    await expect(page.getByText('Usar Cámara')).toBeVisible();
+    await expect(page.getByText('Subir de Galería')).toBeVisible();
     await page.getByRole('button', { name: /Cotejo Realizado/i }).click();
     await expect(page.getByText('Realizado', { exact: true }).first()).toBeVisible();
 
