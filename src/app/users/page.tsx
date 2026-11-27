@@ -559,6 +559,23 @@ function UsersContent() {
                 </div>
               </div>
 
+              {editingUser && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = editingUser;
+                      setShowCreate(false);
+                      setEditingUser(null);
+                      void openNotifModal(target);
+                    }}
+                    className="w-full px-3 py-2.5 text-xs font-bold border border-magenta/40 bg-magenta/5 text-magenta hover:bg-magenta/10 rounded-sm flex items-center justify-center gap-2"
+                  >
+                    <Bell size={14} /> Configurar notificaciones y Push de este usuario
+                  </button>
+                </div>
+              )}
+
               {!editingUser && (
                 <div>
                   <label className="block text-xs font-bold text-dark-grey uppercase mb-1">
