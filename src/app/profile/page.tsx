@@ -520,7 +520,7 @@ function ProfileContentInner({
             variant="accent"
             size="sm"
             isLoading={activatingPush}
-            onClick={() => handleActivatePushDevice(isCurrentDeviceLinked)}
+            onClick={() => handleActivatePushDevice(true)}
           >
             <BellRing size={15} />{' '}
             {isCurrentDeviceLinked
