@@ -590,6 +590,19 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Hola, Carlos Mendoza' })).toBeVisible();
 
+    // Cabecera superior Admin: sin Usuarios ni Instalaciones, con Notificaciones + Informes + Nueva Tarea
+    const adminHero = page.locator('main .bg-gradient-to-r').first();
+    await expect(adminHero.getByRole('link', { name: /Usuarios/i })).toHaveCount(0);
+    await expect(adminHero.getByRole('link', { name: /Instalaciones/i })).toHaveCount(0);
+    await expect(adminHero.getByRole('link', { name: /Notificaciones/i })).toBeVisible();
+    await expect(adminHero.getByRole('link', { name: /Informes/i })).toBeVisible();
+    await expect(adminHero.getByRole('link', { name: /Nueva Tarea/i })).toBeVisible();
+
+    // Bloque visible del Centro de Notificaciones en el Panel General
+    await expect(
+      page.getByRole('region', { name: 'Centro de Notificaciones' })
+    ).toBeVisible();
+
     // No debe mostrarse la comparativa de Top 5 técnicos
     await expect(page.getByText(/Top 5 Técnicos/i)).toHaveCount(0);
 
@@ -664,6 +677,14 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Hola, Javier Ruiz' })).toBeVisible();
 
+    // Cabecera superior Técnico con Notificaciones y bloque destacado en el Panel General
+    const techHero = page.locator('main .bg-gradient-to-r').first();
+    await expect(techHero.getByRole('link', { name: /Instalaciones/i })).toHaveCount(0);
+    await expect(techHero.getByRole('link', { name: /Notificaciones/i })).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: 'Centro de Notificaciones' })
+    ).toBeVisible();
+
     // El técnico no ve las gráficas ejecutivas, ve directamente sus bloques prioritarios
     await expect(page.getByText(/Tiempo Medio de Cierre por Tipo de Parte/i)).toHaveCount(0);
     await expect(
@@ -682,6 +703,16 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
       () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
     );
     expect(techNoOverflow).toBe(true);
+
+    // Abrir Centro de Notificaciones desde el botón superior y validar filtros locales
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await techHero.getByRole('link', { name: /Notificaciones/i }).click();
+    await expect(page).toHaveURL(/\/notifications/);
+    await expect(
+      page.getByRole('heading', { name: 'Centro de Notificaciones' })
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Todas \(/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Sin leer/i })).toBeVisible();
   });
 
   test('11. Autoasignación automática al crear parte cuando solo hay un técnico activo', async ({

@@ -7,20 +7,21 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
-  Calendar,
+  Bell,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   Clock,
   PlusCircle,
   ShieldAlert,
-  Users,
   Wrench,
 } from 'lucide-react';
+import { DashboardNotificationsWidget } from '@/components/dashboard/DashboardNotificationsWidget';
 import { DashboardOperationalLists } from '@/components/dashboard/DashboardOperationalLists';
 import { KpiDrilldownPanel } from '@/components/dashboard/KpiDrilldownPanel';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
+import { useNotifications } from '@/hooks/useNotifications';
 import { listTasks } from '@/lib/data-service';
 import {
   computeDashboardMetrics,
@@ -46,6 +47,7 @@ const DashboardCharts = dynamic(
 
 export default function DashboardPage() {
   const { profile } = useAuth();
+  const { unreadCount } = useNotifications();
   const cachedTasks = useAppCache((s) => s.tasks);
   const tasksLoadedAt = useAppCache((s) => s.tasksLoadedAt);
 
@@ -132,6 +134,34 @@ export default function DashboardPage() {
     month: 'long',
   });
 
+  const notificationsHeaderButton = (
+    <Link href="/notifications">
+      <Button
+        variant="secondary"
+        size="sm"
+        className={
+          unreadCount > 0
+            ? 'border-magenta bg-magenta/25 text-white hover:bg-magenta/35 shadow-[0_0_16px_rgba(207,9,94,0.35)]'
+            : 'border-white/50 text-white hover:bg-white/10'
+        }
+      >
+        <Bell size={15} className={unreadCount > 0 ? 'notif-bell-ring' : ''} />
+        <span>Notificaciones</span>
+        {unreadCount > 0 && (
+          <span className="relative inline-flex items-center justify-center ml-0.5">
+            <span
+              aria-hidden="true"
+              className="absolute inset-0 rounded-full bg-magenta opacity-75 animate-ping pointer-events-none"
+            />
+            <span className="relative bg-magenta text-white text-[11px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[20px] leading-none text-center notif-badge-glow">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          </span>
+        )}
+      </Button>
+    </Link>
+  );
+
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-7xl mx-auto overflow-x-hidden">
       {/* Cabecera Ejecutiva / Operativa */}
@@ -162,26 +192,7 @@ export default function DashboardPage() {
         <div className="flex flex-wrap items-center gap-2">
           {isCoord ? (
             <>
-              {profile.role === 'admin' && (
-                <Link href="/users">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="border-white/50 text-white hover:bg-white/10"
-                  >
-                    <Users size={15} /> Usuarios
-                  </Button>
-                </Link>
-              )}
-              <Link href="/installations">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="border-white/50 text-white hover:bg-white/10"
-                >
-                  <Calendar size={15} /> Instalaciones
-                </Button>
-              </Link>
+              {notificationsHeaderButton}
               <Link href="/reports">
                 <Button
                   variant="secondary"
@@ -199,6 +210,7 @@ export default function DashboardPage() {
             </>
           ) : (
             <>
+              {notificationsHeaderButton}
               <Link href="/tasks">
                 <Button
                   variant="secondary"
@@ -206,15 +218,6 @@ export default function DashboardPage() {
                   className="border-white/50 text-white hover:bg-white/10"
                 >
                   Mis tareas <ArrowRight size={14} />
-                </Button>
-              </Link>
-              <Link href="/installations">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="border-white/50 text-white hover:bg-white/10"
-                >
-                  <Calendar size={15} /> Instalaciones
                 </Button>
               </Link>
               <Link href="/tasks/new">
@@ -226,6 +229,9 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Bloque destacado de Notificaciones para todos los perfiles */}
+      <DashboardNotificationsWidget isCoord={isCoord} />
 
       {/* Tarjetas KPI interactivas */}
       <div

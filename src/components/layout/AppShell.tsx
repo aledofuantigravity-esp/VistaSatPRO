@@ -33,6 +33,37 @@ import { GlobalSearch } from '@/components/layout/GlobalSearch';
 import { NotificationToast } from '@/components/ui/NotificationToast';
 import { ROLE_LABELS } from '@/types/database';
 
+function UnreadPulseBadge({
+  count,
+  cap = 99,
+  className = '',
+  compact = false,
+}: {
+  count: number;
+  cap?: number;
+  className?: string;
+  compact?: boolean;
+}) {
+  const text = count > cap ? `${cap}+` : String(count);
+  return (
+    <span className={`relative inline-flex items-center justify-center ${className}`}>
+      <span
+        aria-hidden="true"
+        className="absolute inset-0 rounded-full bg-magenta opacity-75 animate-ping pointer-events-none"
+      />
+      <span
+        className={`relative bg-magenta text-white font-extrabold rounded-full text-center flex items-center justify-center notif-badge-glow ${
+          compact
+            ? 'text-[10px] px-1 min-w-[18px] h-[18px] leading-none'
+            : 'text-xs px-2 py-0.5 min-w-[22px]'
+        }`}
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { profile, isLoading, isDemoMode, signOut } = useAuth();
   const { unreadCount, latestToast, dismissToast } = useNotifications();
@@ -184,26 +215,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {desktopLinks.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
+            const isNotifLink = item.href === '/notifications';
+            const hasUnread = isNotifLink && Boolean(item.badge && item.badge > 0);
+
+            const linkClass = hasUnread
+              ? active
+                ? 'bg-magenta/30 text-white border-l-4 border-magenta ring-1 ring-inset ring-magenta/60 shadow-[0_0_16px_rgba(207,9,94,0.32)]'
+                : 'bg-magenta/20 text-white border-l-4 border-magenta ring-1 ring-inset ring-magenta/45 shadow-[0_0_16px_rgba(207,9,94,0.28)] hover:bg-magenta/30'
+              : active
+              ? 'bg-white/15 text-white border-l-4 border-magenta'
+              : 'text-white/75 hover:bg-white/10 hover:text-white';
+
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3 py-3 text-sm font-semibold transition-colors relative ${
-                  active
-                    ? 'bg-white/15 text-white border-l-4 border-magenta'
-                    : 'text-white/75 hover:bg-white/10 hover:text-white'
-                }`}
+                className={`flex items-center gap-3 px-3 py-3 text-sm font-semibold transition-all relative rounded-xs ${linkClass}`}
               >
-                <Icon size={20} className="flex-shrink-0" />
+                <Icon
+                  size={20}
+                  className={`flex-shrink-0 ${hasUnread ? 'notif-bell-ring text-white' : ''}`}
+                />
                 {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
                 {item.badge && item.badge > 0 ? (
-                  <span
-                    className={`${
-                      sidebarCollapsed ? 'absolute top-1.5 right-1.5' : 'ml-auto'
-                    } bg-magenta text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center`}
-                  >
-                    {item.badge > 99 ? '99+' : item.badge}
-                  </span>
+                  <UnreadPulseBadge
+                    count={item.badge}
+                    className={sidebarCollapsed ? 'absolute top-1.5 right-1.5' : 'ml-auto'}
+                    compact={sidebarCollapsed}
+                  />
                 ) : null}
               </Link>
             );
@@ -271,14 +310,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <Link
               href="/notifications"
-              className="relative p-2 text-white hover:bg-white/10 rounded-full"
+              className={`relative p-2 text-white rounded-full transition-colors ${
+                unreadCount > 0 ? 'bg-magenta/25 hover:bg-magenta/35' : 'hover:bg-white/10'
+              }`}
               aria-label="Notificaciones"
             >
-              <Bell size={20} />
+              <Bell size={20} className={unreadCount > 0 ? 'notif-bell-ring' : ''} />
               {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 bg-magenta text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
+                <UnreadPulseBadge
+                  count={unreadCount}
+                  cap={9}
+                  compact
+                  className="absolute top-0.5 right-0.5"
+                />
               )}
             </Link>
           </div>
@@ -335,9 +379,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="relative">
             {moreMenuOpen ? <X size={21} strokeWidth={2.4} /> : <Menu size={21} strokeWidth={1.9} />}
             {unreadCount > 0 && (
-              <span className="absolute -top-1.5 -right-2.5 bg-magenta text-white text-[10px] font-bold px-1 min-w-[16px] h-4 rounded-full flex items-center justify-center">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
+              <UnreadPulseBadge
+                count={unreadCount}
+                cap={9}
+                compact
+                className="absolute -top-1.5 -right-2.5"
+              />
             )}
           </div>
           <span className="text-[11px] mt-1 leading-none">Más</span>
@@ -376,26 +423,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {moreLinks.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.href);
+                const isNotifCard = item.href === '/notifications';
+                const hasUnread = isNotifCard && Boolean(item.badge && item.badge > 0);
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
                     onClick={() => setMoreMenuOpen(false)}
-                    className={`p-3.5 rounded-md border flex items-center gap-3 transition-colors relative ${
+                    className={`p-3.5 rounded-md border flex items-center gap-3 transition-all relative ${
                       active
                         ? 'bg-navy text-white border-navy'
+                        : hasUnread
+                        ? 'bg-magenta/10 text-charcoal border-magenta shadow-[0_0_12px_rgba(207,9,94,0.16)]'
                         : 'bg-off-white text-charcoal border-border hover:border-navy'
                     }`}
                   >
                     <Icon
                       size={19}
-                      className={active ? 'text-magenta' : 'text-navy'}
+                      className={`${
+                        hasUnread
+                          ? `notif-bell-ring ${active ? 'text-white' : 'text-magenta'}`
+                          : active
+                          ? 'text-magenta'
+                          : 'text-navy'
+                      }`}
                     />
                     <span className="text-xs font-bold truncate">{item.label}</span>
                     {item.badge && item.badge > 0 ? (
-                      <span className="ml-auto bg-magenta text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                        {item.badge > 99 ? '99+' : item.badge}
-                      </span>
+                      <UnreadPulseBadge count={item.badge} compact className="ml-auto" />
                     ) : null}
                   </Link>
                 );
