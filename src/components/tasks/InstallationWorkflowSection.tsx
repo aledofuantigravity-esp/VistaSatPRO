@@ -22,7 +22,7 @@ import {
 } from '@/lib/data-service';
 import { downloadInstallationIcs } from '@/lib/ics';
 import { isSafePreviewUrl } from '@/lib/security';
-import { toDatetimeLocalValue } from '@/lib/sla';
+import { dateInputToIso, formatDateOnlyEs, toDateInputValue } from '@/lib/task-dates';
 import type { Attachment, Profile, Task } from '@/types/database';
 
 interface InstallationWorkflowSectionProps {
@@ -50,7 +50,7 @@ export function InstallationWorkflowSection({
   onFeedback,
 }: InstallationWorkflowSectionProps) {
   const [scheduledInput, setScheduledInput] = useState(
-    toDatetimeLocalValue(task.scheduled_date)
+    toDateInputValue(task.scheduled_date)
   );
   const [savingSchedule, setSavingSchedule] = useState(false);
 
@@ -92,9 +92,7 @@ export function InstallationWorkflowSection({
     e.preventDefault();
     setSavingSchedule(true);
     try {
-      const nextIso = scheduledInput.trim()
-        ? new Date(scheduledInput).toISOString()
-        : null;
+      const nextIso = dateInputToIso(scheduledInput);
       await updateTaskFields(task.id, { scheduled_date: nextIso }, currentUser);
       onFeedback(
         nextIso
@@ -273,10 +271,7 @@ export function InstallationWorkflowSection({
             <>
               Programada para:{' '}
               <strong className="text-navy">
-                {new Date(task.scheduled_date).toLocaleString('es-ES', {
-                  dateStyle: 'full',
-                  timeStyle: 'short',
-                })}
+                {formatDateOnlyEs(task.scheduled_date, 'full')}
               </strong>
             </>
           ) : (
@@ -290,7 +285,8 @@ export function InstallationWorkflowSection({
             className="flex flex-wrap items-center gap-2"
           >
             <input
-              type="datetime-local"
+              type="date"
+              aria-label="Fecha acordada de instalación"
               value={scheduledInput}
               onChange={(e) => setScheduledInput(e.target.value)}
               className="flex-1 min-w-[220px] px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"

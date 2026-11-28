@@ -306,7 +306,9 @@ export function InstallationsCalendarView({
                           : 'bg-magenta/15 text-magenta'
                       }`}
                     >
-                      {ev.timeLabel} · {ev.task.code}
+                      {ev.kind === 'installation'
+                        ? `${ev.task.code} · ${ev.task.customer?.name || 'Instalación'}`
+                        : `${ev.timeLabel} · ${ev.task.code}`}
                     </div>
                   ))}
                   {items.length > 2 && (
@@ -382,7 +384,7 @@ export function InstallationsCalendarView({
                         }`}
                       >
                         {ev.kind === 'installation'
-                          ? `Cita ${ev.timeLabel}`
+                          ? 'Instalación programada'
                           : `Vence SLA ${ev.timeLabel}`}
                       </span>
                       <StatusBadge status={t.status} />

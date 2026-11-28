@@ -1029,9 +1029,8 @@ export async function POST(request: Request) {
             old_value: prev.scheduled_date ?? null,
             new_value: patch.scheduled_date ?? null,
             note: patch.scheduled_date
-              ? `Fecha acordada de instalación: ${new Date(patch.scheduled_date).toLocaleString('es-ES', {
+              ? `Fecha acordada de instalación: ${new Date(patch.scheduled_date).toLocaleDateString('es-ES', {
                   dateStyle: 'short',
-                  timeStyle: 'short',
                 })}`
               : 'Fecha acordada de instalación eliminada',
             metadata: {},

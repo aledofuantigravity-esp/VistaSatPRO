@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Calendar, Camera, Clock, MapPin, Phone, User, Wrench, ChevronRight } from 'lucide-react';
 import { PriorityBadge, StatusBadge, TaskTypeBadge } from './Badge';
 import { getSlaStatus } from '@/lib/sla';
+import { formatDateOnlyEs } from '@/lib/task-dates';
 import {
   normalizeTaskStatus,
   resolveTaskType,
@@ -100,11 +101,7 @@ export function TaskCard({
             <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol mb-1">
               <Calendar size={13} className="flex-shrink-0" />
               <span>
-                Acordada:{' '}
-                {new Date(task.scheduled_date).toLocaleString('es-ES', {
-                  dateStyle: 'short',
-                  timeStyle: 'short',
-                })}
+                Acordada: {formatDateOnlyEs(task.scheduled_date, 'short')}
               </span>
             </div>
           )}

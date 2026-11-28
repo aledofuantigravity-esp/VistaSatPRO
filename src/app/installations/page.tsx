@@ -23,7 +23,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { isOpenTask } from '@/lib/dashboard-helpers';
 import { listTasks, updateTaskFields } from '@/lib/data-service';
 import { detectInstallationConflicts, downloadInstallationIcs } from '@/lib/ics';
-import { toDatetimeLocalValue } from '@/lib/sla';
+import { dateInputToIso, formatDateOnlyEs, toDateInputValue } from '@/lib/task-dates';
 import { useAppCache } from '@/store/app-cache';
 import { resolveTaskType, type Profile, type Task } from '@/types/database';
 
@@ -130,7 +130,7 @@ function InstallationsContent() {
 
   const openScheduleModal = (task: Task) => {
     setSchedulingTask(task);
-    setScheduleInput(toDatetimeLocalValue(task.scheduled_date));
+    setScheduleInput(toDateInputValue(task.scheduled_date));
   };
 
   const handleSaveSchedule = async (e: React.FormEvent) => {
@@ -138,7 +138,7 @@ function InstallationsContent() {
     if (!schedulingTask) return;
     setSavingDate(true);
     try {
-      const nextIso = scheduleInput.trim() ? new Date(scheduleInput).toISOString() : null;
+      const nextIso = dateInputToIso(scheduleInput);
       await updateTaskFields(schedulingTask.id, { scheduled_date: nextIso }, profile);
       setSchedulingTask(null);
       setFeedback(
@@ -406,12 +406,7 @@ function InstallationsContent() {
                           >
                             {hasConflict && <AlertTriangle size={13} />}
                             Programada:{' '}
-                            {t.scheduled_date
-                              ? new Date(t.scheduled_date).toLocaleString('es-ES', {
-                                  dateStyle: 'medium',
-                                  timeStyle: 'short',
-                                })
-                              : ''}
+                            {t.scheduled_date ? formatDateOnlyEs(t.scheduled_date, 'medium') : ''}
                           </span>
                           <div className="flex items-center gap-3">
                             <button
@@ -492,10 +487,11 @@ function InstallationsContent() {
             <form onSubmit={handleSaveSchedule} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase text-mid-grey mb-1">
-                  Fecha y hora acordada
+                  Fecha acordada
                 </label>
                 <input
-                  type="datetime-local"
+                  type="date"
+                  aria-label="Fecha acordada"
                   value={scheduleInput}
                   onChange={(e) => setScheduleInput(e.target.value)}
                   className="w-full px-3 py-2.5 bg-bg-input border border-border text-sm text-charcoal"

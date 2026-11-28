@@ -10,6 +10,7 @@ import {
 import { getSlaStatus } from '@/lib/sla';
 import {
   calculateElapsedDaysAndHours,
+  formatDateOnlyEs,
   formatFullDayDateTime,
   getEffectiveClosedAt,
 } from '@/lib/task-dates';
@@ -350,7 +351,7 @@ export function generateTaskPDF(
               : 'FECHA APERTURA',
           value:
             taskType === 'installation' && task.scheduled_date
-              ? formatDateTimeEs(task.scheduled_date)
+              ? formatDateOnlyEs(task.scheduled_date, 'short')
               : task.completed_at
               ? formatDateTimeEs(task.completed_at)
               : formatDateTimeEs(task.created_at),
@@ -729,7 +730,7 @@ export function generateTaskPDF(
     doc.setFontSize(8.8);
     setColorText(task.scheduled_date ? COLOR.NAVY : COLOR.WARNING);
     doc.text(
-      task.scheduled_date ? formatDateTimeEs(task.scheduled_date) : 'Pendiente de acordar',
+      task.scheduled_date ? formatDateOnlyEs(task.scheduled_date, 'short') : 'Pendiente de acordar',
       M + 3,
       y + 11.2
     );

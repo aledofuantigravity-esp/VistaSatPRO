@@ -162,6 +162,10 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(
       page.getByRole('heading', { name: /Fecha Acordada para la Instalación/i })
     ).toBeVisible();
+    await expect(page.locator('input[type="datetime-local"]')).toHaveCount(0);
+    await page.getByLabel('Fecha acordada de instalación').fill('2027-02-20');
+    await page.getByRole('button', { name: /Guardar fecha acordada/i }).click();
+    await expect(page.getByText(/20 de febrero de 2027/i)).toBeVisible();
     await expect(page.getByText('Checklist: Cotejo de Mercancía')).toBeVisible();
     await expect(page.getByText('Materiales / Piezas Empleadas')).toHaveCount(0);
     await expect(page.getByText('Usar Cámara')).toBeVisible();
@@ -258,9 +262,10 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByText(/Instalaciones con fecha de instalación/i)).toBeVisible();
     await expect(page.getByText('Equipo Sin Fecha E2E')).toBeVisible();
 
-    // Asignar fecha desde /installations
+    // Asignar fecha desde /installations (solo fecha, sin hora)
     await page.getByRole('button', { name: /Asignar fecha/i }).first().click();
-    await page.locator('input[type="datetime-local"]').fill('2027-01-15T10:30');
+    await expect(page.locator('input[type="datetime-local"]')).toHaveCount(0);
+    await page.getByLabel('Fecha acordada').fill('2027-01-15');
     await page.getByRole('button', { name: /Guardar fecha/i }).click();
     await expect(page.getByText(/Fecha acordada asignada/i)).toBeVisible();
 

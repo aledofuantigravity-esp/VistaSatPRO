@@ -24,6 +24,44 @@ export function formatFullDayDateTime(iso: string | null | undefined): string {
 }
 
 /**
+ * Convierte un ISO string a formato `YYYY-MM-DD` en fecha local para `<input type="date">`.
+ */
+export function toDateInputValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Convierte un valor `YYYY-MM-DD` de `<input type="date">` a ISO UTC al mediodía
+ * para evitar desplazamientos de día por zona horaria.
+ */
+export function dateInputToIso(dateStr: string): string | null {
+  const clean = dateStr.trim();
+  if (!clean) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return null;
+  const iso = `${clean}T12:00:00.000Z`;
+  return Number.isNaN(Date.parse(iso)) ? null : iso;
+}
+
+/**
+ * Formatea únicamente la fecha en español (sin hora).
+ */
+export function formatDateOnlyEs(
+  iso: string | null | undefined,
+  style: 'full' | 'medium' | 'short' = 'medium'
+): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('es-ES', { dateStyle: style });
+}
+
+/**
  * Obtiene la fecha efectiva de cierre del parte si está completado.
  */
 export function getEffectiveClosedAt(

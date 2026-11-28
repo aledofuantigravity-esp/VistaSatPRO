@@ -455,12 +455,10 @@ function InstallationCard({
             <CalendarCheck2 size={14} className="flex-shrink-0" />
             <span>
               Cita:{' '}
-              {new Date(task.scheduled_date).toLocaleString('es-ES', {
+              {new Date(task.scheduled_date).toLocaleDateString('es-ES', {
                 weekday: 'short',
                 day: '2-digit',
                 month: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
               })}
             </span>
           </div>

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateElapsedDaysAndHours,
+  dateInputToIso,
+  formatDateOnlyEs,
   formatFullDayDateTime,
   getEffectiveClosedAt,
+  toDateInputValue,
 } from '@/lib/task-dates';
 
 describe('task-dates helpers', () => {
@@ -11,6 +14,21 @@ describe('task-dates helpers', () => {
     expect(out).toMatch(/^[A-ZÁÉÍÓÚÑ].*28\/11\/2026 · \d{2}:\d{2}$/);
     expect(formatFullDayDateTime(null)).toBe('—');
     expect(formatFullDayDateTime('invalid-date')).toBe('—');
+  });
+
+  it('convierte y formatea solo fecha sin hora para instalaciones', () => {
+    expect(dateInputToIso('')).toBeNull();
+    expect(dateInputToIso('invalida')).toBeNull();
+    expect(dateInputToIso('2027-02-20')).toBe('2027-02-20T12:00:00.000Z');
+
+    expect(toDateInputValue(null)).toBe('');
+    expect(toDateInputValue('fecha-mala')).toBe('');
+    expect(toDateInputValue('2027-02-20T12:00:00.000Z')).toBe('2027-02-20');
+
+    const onlyDate = formatDateOnlyEs('2027-02-20T12:00:00.000Z', 'full');
+    expect(onlyDate).toContain('2027');
+    expect(onlyDate).not.toMatch(/\d{1,2}:\d{2}/);
+    expect(formatDateOnlyEs(null)).toBe('—');
   });
 
   it('calcula días y horas exactos entre apertura y cierre', () => {
