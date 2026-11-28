@@ -677,10 +677,10 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Hola, Javier Ruiz' })).toBeVisible();
 
-    // Cabecera superior Técnico con Notificaciones y bloque destacado solo con sin leer + Ver más
+    // Cabecera superior Técnico sin Instalaciones ni Notificaciones duplicada; bloque destacado solo con sin leer + Ver más
     const techHero = page.locator('main .bg-gradient-to-r').first();
     await expect(techHero.getByRole('link', { name: /Instalaciones/i })).toHaveCount(0);
-    await expect(techHero.getByRole('link', { name: /Notificaciones/i })).toBeVisible();
+    await expect(techHero.getByRole('link', { name: /Notificaciones/i })).toHaveCount(0);
     const notifRegion = page.getByRole('region', { name: 'Centro de Notificaciones' });
     await expect(notifRegion).toBeVisible();
     await expect(notifRegion.getByRole('link', { name: /Ver más/i })).toBeVisible();

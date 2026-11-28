@@ -210,7 +210,6 @@ export default function DashboardPage() {
             </>
           ) : (
             <>
-              {notificationsHeaderButton}
               <Link href="/tasks">
                 <Button
                   variant="secondary"
