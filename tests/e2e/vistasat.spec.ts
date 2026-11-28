@@ -189,6 +189,8 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
 
     await expect(page).toHaveURL(/\/tasks\/task-/);
+    await expect(page.getByRole('heading', { name: /Fechas y Tiempo del Parte/i })).toBeVisible();
+    await expect(page.getByTestId('task-elapsed-duration')).toHaveText(/\d+\s+días?,\s+\d+\s+horas?/i);
     await expect(page.getByText('Tambor negro CXC')).toBeVisible();
     await expect(page.getByText('Tóner amarillo CXC')).toBeVisible();
 
@@ -223,6 +225,7 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Siguiente/i }).click();
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
     await expect(page).toHaveURL(/\/tasks\/task-/);
+    await expect(page.getByRole('heading', { name: /Fechas y Tiempo del Parte/i })).toBeVisible();
     await expect(page.getByText('Revisar stock almacén E2E.')).toBeVisible();
   });
 
@@ -756,6 +759,10 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
     await expect(page).toHaveURL(/\/tasks\/task-/);
 
+    await expect(page.getByRole('heading', { name: /Fechas y Tiempo del Parte/i })).toBeVisible();
+    await expect(page.getByText('Pendiente de cierre')).toBeVisible();
+    await expect(page.getByTestId('task-elapsed-duration')).toHaveText(/\d+\s+días?,\s+\d+\s+horas?/i);
+
     await expect(
       page.getByRole('heading', { name: /Notas Técnicas e Incidencias/i })
     ).toBeVisible();
@@ -799,6 +806,9 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Cerrar Parte/i }).click();
     await expect(page.getByText('Completada').first()).toBeVisible();
     await expect(page.getByText('Registrada', { exact: true })).toBeVisible();
+    await expect(page.getByText('Pendiente de cierre')).toHaveCount(0);
+    await expect(page.getByText('Duración (apertura → cierre)')).toBeVisible();
+    await expect(page.getByTestId('task-elapsed-duration')).toHaveText(/\d+\s+días?,\s+\d+\s+horas?/i);
 
     // Persistencia tras recargar
     await page.reload();
@@ -819,6 +829,10 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
     await expect(page).toHaveURL(/\/tasks\/task-/);
 
+    await expect(page.getByRole('heading', { name: /Fechas y Tiempo del Parte/i })).toBeVisible();
+    await expect(page.getByText('Pendiente de cierre')).toBeVisible();
+    await expect(page.getByTestId('task-elapsed-duration')).toHaveText(/\d+\s+días?,\s+\d+\s+horas?/i);
+
     await expect(
       page.getByRole('heading', { name: /Notas Técnicas e Incidencias/i })
     ).toBeVisible();
@@ -838,6 +852,8 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Finalizar Instalación/i }).click();
     await page.getByRole('button', { name: /No, cerrar sin foto/i }).click();
     await expect(page.getByText('Completada').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Fechas y Tiempo del Parte/i })).toBeVisible();
+    await expect(page.getByText('Duración (apertura → cierre)')).toBeVisible();
   });
 
   test('15. Selector PDF Cliente vs Interno y rejilla profesional con notas e historial', async ({

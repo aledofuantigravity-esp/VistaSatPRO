@@ -22,6 +22,7 @@ import {
 import { PdfExportModal } from '@/components/tasks/PdfExportModal';
 import { TaskClosureSection } from '@/components/tasks/TaskClosureSection';
 import { TaskCommentsSection } from '@/components/tasks/TaskCommentsSection';
+import { TaskDatesSummarySection } from '@/components/tasks/TaskDatesSummarySection';
 import { TaskDeleteModal } from '@/components/tasks/TaskDeleteModal';
 import { TaskEditModal } from '@/components/tasks/TaskEditModal';
 import { TaskGallerySection } from '@/components/tasks/TaskGallerySection';
@@ -614,6 +615,8 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         onChangeAssignee={(id) => void handleChangeAssignee(id)}
         onChangePriority={(prio) => void handleChangePriority(prio)}
       />
+
+      <TaskDatesSummarySection task={task} />
 
       {/* Equipo y Descripción */}
       <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">

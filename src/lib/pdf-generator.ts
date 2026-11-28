@@ -9,6 +9,11 @@ import {
 } from '@/lib/pdf-helpers';
 import { getSlaStatus } from '@/lib/sla';
 import {
+  calculateElapsedDaysAndHours,
+  formatFullDayDateTime,
+  getEffectiveClosedAt,
+} from '@/lib/task-dates';
+import {
   extractTechnicalNotes,
   getLastResolutionAudit,
   isResolutionRequiredForClosure,
@@ -516,7 +521,96 @@ export function generateTaskPDF(
   drawInfoCard(M, 'Datos del Cliente y Ubicación', leftCol.measured);
   drawInfoCard(M + twoColW + twoColGap, 'Datos del Servicio SAT', rightCol.measured);
 
-  y += infoBoxH + 7;
+  y += infoBoxH + 5;
+
+  // ─── 3b. FECHAS DE APERTURA, CIERRE Y TIEMPO TRANSCURRIDO (DÍAS Y HORAS) ──
+  const closedAtIso = getEffectiveClosedAt(task);
+  const elapsedDaysHours = calculateElapsedDaysAndHours(task.created_at, closedAtIso);
+  const datesGap = 3;
+  const datesCardW = (CW - datesGap * 2) / 3;
+  const datesCardH = 20.5;
+  ensureSpace(datesCardH + 6);
+
+  const dateCards: Array<{
+    bg: RgbTuple;
+    accent: RgbTuple;
+    title: string;
+    value: string;
+    sub: string;
+    valueColor: RgbTuple;
+  }> = [
+    {
+      bg: COLOR.OFF_WHITE,
+      accent: COLOR.NAVY,
+      title: 'DÍA Y FECHA DE APERTURA',
+      value: formatFullDayDateTime(task.created_at),
+      sub: 'Registro inicial del parte',
+      valueColor: COLOR.CHARCOAL,
+    },
+    {
+      bg: closedAtIso
+        ? COLOR.SUCCESS_BG
+        : task.status === 'cancelled'
+        ? COLOR.NEUTRAL_BG
+        : COLOR.WARNING_BG,
+      accent: closedAtIso
+        ? COLOR.SUCCESS
+        : task.status === 'cancelled'
+        ? COLOR.MID_GREY
+        : COLOR.WARNING,
+      title: 'FECHA Y HORA DE CIERRE',
+      value: closedAtIso
+        ? formatFullDayDateTime(closedAtIso)
+        : task.status === 'cancelled'
+        ? 'Parte cancelado'
+        : 'Pendiente de cierre',
+      sub: closedAtIso ? 'Cierre completado' : 'Sin cierre definitivo',
+      valueColor: closedAtIso
+        ? COLOR.SUCCESS
+        : task.status === 'cancelled'
+        ? COLOR.MID_GREY
+        : COLOR.WARNING,
+    },
+    {
+      bg: COLOR.SOFT_NAVY,
+      accent: COLOR.PETROL,
+      title: closedAtIso ? 'TIEMPO APERTURA -> CIERRE' : 'TIEMPO DESDE APERTURA',
+      value: elapsedDaysHours.formatted,
+      sub: closedAtIso ? 'Días y horas hasta el cierre' : 'Días y horas transcurridos',
+      valueColor: COLOR.NAVY,
+    },
+  ];
+
+  dateCards.forEach((dc, idx) => {
+    const dx = M + idx * (datesCardW + datesGap);
+    setColorFill(dc.bg);
+    setColorDraw(COLOR.BORDER);
+    doc.setLineWidth(0.28);
+    doc.roundedRect(dx, y, datesCardW, datesCardH, 1.2, 1.2, 'FD');
+
+    setColorFill(dc.accent);
+    doc.rect(dx, y, 1.4, datesCardH, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    setColorText(COLOR.MID_GREY);
+    doc.text(sanitizePdfText(dc.title), dx + 3.4, y + 4.8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.6);
+    setColorText(dc.valueColor);
+    const valLines = (
+      doc.splitTextToSize(sanitizePdfText(dc.value), datesCardW - 5.2) as string[]
+    ).slice(0, 2);
+    doc.text(valLines, dx + 3.4, y + 9.4);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.8);
+    setColorText(COLOR.MID_GREY);
+    doc.text(sanitizePdfText(dc.sub), dx + 3.4, y + 17.5);
+  });
+
+  y += datesCardH + 6;
 
   // ─── 4. DETALLE OPERATIVO SEGÚN TIPO DE PARTE ──────────────────────────────
   addSectionTitle(
