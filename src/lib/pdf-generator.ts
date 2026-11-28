@@ -119,6 +119,10 @@ export function generateTaskPDF(
   const MAX_Y = 276;
 
   const taskType = resolveTaskType(task);
+  const installationProducts =
+    taskType === 'installation'
+      ? (task.installation_products || []).filter((p) => p.name.trim().length > 0)
+      : [];
   const typeLabel = TASK_TYPE_META[taskType]?.label ?? taskType;
   const statusLabel = getTaskStatusLabel(task.status);
   const priorityLabel = TASK_PRIORITY_META[task.priority]?.label ?? task.priority;
@@ -362,9 +366,14 @@ export function generateTaskPDF(
     {
       accent: COLOR.MAGENTA,
       label: 'EVIDENCIAS Y CIERRE',
-      value: `${photos.length} foto${photos.length === 1 ? '' : 's'} · ${
-        task.materials_used?.length || 0
-      } pieza${(task.materials_used?.length || 0) === 1 ? '' : 's'}`,
+      value:
+        taskType === 'installation'
+          ? `${photos.length} foto${photos.length === 1 ? '' : 's'} · ${
+              installationProducts.length
+            } producto${installationProducts.length === 1 ? '' : 's'}`
+          : `${photos.length} foto${photos.length === 1 ? '' : 's'} · ${
+              task.materials_used?.length || 0
+            } pieza${(task.materials_used?.length || 0) === 1 ? '' : 's'}`,
       sub: task.client_signature_url ? 'Firmado por cliente' : 'Pendiente de firma',
       valueColor: task.client_signature_url ? COLOR.SUCCESS : COLOR.CHARCOAL,
     },
@@ -1007,6 +1016,72 @@ export function generateTaskPDF(
 
       y += 3;
     }
+  }
+
+  // ─── 5B. PRODUCTOS A INSTALAR (SOLO INSTALACIONES · CLIENTE E INTERNO) ───
+  if (taskType === 'installation' && installationProducts.length > 0) {
+    addSectionTitle('Productos a Instalar');
+
+    const colProdW = CW - 28;
+
+    const drawProductsHeader = () => {
+      setColorFill(COLOR.NAVY);
+      doc.rect(M, y, CW, 7.2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      setColorText(COLOR.WHITE);
+      doc.text('PRODUCTO A INSTALAR', M + 3, y + 4.8);
+      doc.text('CANT.', pageWidth - M - 3, y + 4.8, { align: 'right' });
+      y += 7.2;
+    };
+
+    drawProductsHeader();
+
+    let totalProductUnits = 0;
+    installationProducts.forEach((prod, idx) => {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.4);
+      const nameLines = doc.splitTextToSize(sanitizePdfText(prod.name), colProdW - 4) as string[];
+      const maxLines = Math.max(nameLines.length, 1);
+      const rowH = maxLines * 4.2 + 3.2;
+
+      if (y + rowH > MAX_Y) {
+        addContinuationPage();
+        drawProductsHeader();
+      }
+
+      setColorFill(idx % 2 === 0 ? COLOR.WHITE : COLOR.OFF_WHITE);
+      setColorDraw(COLOR.BORDER);
+      doc.setLineWidth(0.22);
+      doc.rect(M, y, CW, rowH, 'FD');
+
+      setColorText(COLOR.CHARCOAL);
+      doc.text(nameLines, M + 3, y + 4.6);
+
+      doc.setFont('helvetica', 'bold');
+      setColorText(COLOR.NAVY);
+      const qty = Math.max(1, Math.floor(Number(prod.qty) || 1));
+      totalProductUnits += qty;
+      doc.text(String(qty), pageWidth - M - 3, y + 4.6, { align: 'right' });
+
+      y += rowH;
+    });
+
+    ensureSpace(8);
+    setColorFill(COLOR.SOFT_NAVY);
+    setColorDraw(COLOR.BORDER);
+    doc.rect(M, y, CW, 7, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    setColorText(COLOR.NAVY);
+    doc.text(
+      `Total: ${installationProducts.length} producto(s)`,
+      M + 3,
+      y + 4.7
+    );
+    doc.text(`${totalProductUnits} ud.`, pageWidth - M - 3, y + 4.7, { align: 'right' });
+
+    y += 12;
   }
 
   // ─── 6. TABLA DE MATERIALES Y REPUESTOS UTILIZADOS ─────────────────────────

@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   FileUp,
   Layers,
+  Package,
   PackagePlus,
   Plus,
   Trash2,
@@ -30,6 +31,7 @@ import {
   TASK_PRIORITY_META,
   TASK_TYPE_META,
   type Customer,
+  type InstallationProductItem,
   type MaterialItem,
   type Profile,
   type TaskPriority,
@@ -40,6 +42,12 @@ interface DraftPieceRow {
   id: string;
   name: string;
   ref: string;
+  qty: string;
+}
+
+interface DraftInstallationProductRow {
+  id: string;
+  name: string;
   qty: string;
 }
 
@@ -85,6 +93,9 @@ function NewTaskContent() {
   const [priority, setPriority] = useState<TaskPriority>('medium');
 
   // Instalación
+  const [installationProducts, setInstallationProducts] = useState<
+    DraftInstallationProductRow[]
+  >([{ id: 'inst-prod-1', name: '', qty: '1' }]);
   const [orderFile, setOrderFile] = useState<File | null>(null);
   const [interestFiles, setInterestFiles] = useState<File[]>([]);
 
@@ -178,6 +189,32 @@ function NewTaskContent() {
     setCxcPieces((prev) => (prev.length <= 1 ? prev : prev.filter((r) => r.id !== id)));
   };
 
+  const addInstallationProductRow = () => {
+    setInstallationProducts((prev) => [
+      ...prev,
+      { id: `inst-prod-${Date.now()}-${prev.length + 1}`, name: '', qty: '1' },
+    ]);
+  };
+
+  const updateInstallationProductRow = (
+    id: string,
+    field: keyof Omit<DraftInstallationProductRow, 'id'>,
+    value: string
+  ) => {
+    setInstallationProducts((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const removeInstallationProductRow = (id: string) => {
+    setInstallationProducts((prev) => {
+      if (prev.length <= 1) {
+        return [{ id: prev[0]?.id || 'inst-prod-1', name: '', qty: '1' }];
+      }
+      return prev.filter((r) => r.id !== id);
+    });
+  };
+
   const isAllowedInstallationDoc = (file: File): boolean => {
     const allowedMime = [
       'application/pdf',
@@ -248,6 +285,14 @@ function NewTaskContent() {
       qty: Math.max(1, parseInt(r.qty, 10) || 1),
     }));
 
+  const normalizedInstallationProducts: InstallationProductItem[] = installationProducts
+    .filter((r) => r.name.trim().length > 0)
+    .map((r) => ({
+      id: r.id,
+      name: r.name.trim(),
+      qty: Math.max(1, parseInt(r.qty, 10) || 1),
+    }));
+
   const step2Valid = problemDesc.trim().length > 0;
 
   const handleSubmit = async () => {
@@ -311,6 +356,8 @@ function NewTaskContent() {
           meter_bw: parsedBw,
           meter_color: parsedColor,
           materials_used: taskType === 'cxc_incident' ? normalizedMaterials : undefined,
+          installation_products:
+            taskType === 'installation' ? normalizedInstallationProducts : undefined,
         },
         profile
       );
@@ -624,6 +671,74 @@ function NewTaskContent() {
                     placeholder="Indica detalles de la solicitud de instalación, ubicación, red, requisitos..."
                     className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
                   />
+                </div>
+
+                {/* Productos a instalar (opcional, exclusivo de Instalaciones) */}
+                <div className="space-y-2 pt-2 border-t border-border">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-xs font-bold uppercase text-navy flex items-center gap-1.5">
+                      <Package size={14} className="text-magenta" /> Productos a instalar (opcional)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={addInstallationProductRow}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-navy text-white text-xs font-bold hover:bg-navy-dark"
+                      aria-label="Añadir línea de producto"
+                    >
+                      <Plus size={14} /> Añadir producto
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {installationProducts.map((row, idx) => (
+                      <div key={row.id} className="grid grid-cols-12 gap-2 items-center">
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(e) =>
+                            updateInstallationProductRow(row.id, 'name', e.target.value)
+                          }
+                          placeholder={`Producto ${idx + 1} (ej. Impresora, Finisher, Bandeja)`}
+                          aria-label={`Nombre del producto ${idx + 1}`}
+                          className="col-span-7 sm:col-span-8 px-2.5 py-2 bg-bg-input border border-border text-xs text-charcoal"
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          value={row.qty}
+                          onChange={(e) =>
+                            updateInstallationProductRow(row.id, 'qty', e.target.value)
+                          }
+                          aria-label={`Cantidad del producto ${idx + 1}`}
+                          className="col-span-3 sm:col-span-2 px-2 py-2 bg-bg-input border border-border text-xs text-center text-charcoal"
+                        />
+                        <div className="col-span-2 flex items-center gap-1">
+                          {idx === installationProducts.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={addInstallationProductRow}
+                              className="flex-1 h-9 bg-navy text-white hover:bg-navy-dark flex items-center justify-center"
+                              aria-label="Añadir producto"
+                              title="Añadir otra línea de producto"
+                            >
+                              <Plus size={15} />
+                            </button>
+                          )}
+                          {(installationProducts.length > 1 || row.name.trim().length > 0) && (
+                            <button
+                              type="button"
+                              onClick={() => removeInstallationProductRow(row.id)}
+                              className="flex-1 h-9 border border-border text-mid-grey hover:text-danger flex items-center justify-center"
+                              aria-label={`Quitar producto ${idx + 1}`}
+                              title="Quitar línea"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1044,6 +1159,14 @@ function NewTaskContent() {
                   <p>
                     <strong>Fecha de instalación:</strong> Pendiente de fijar por el técnico
                     dentro del parte
+                  </p>
+                  <p>
+                    <strong>Productos a instalar:</strong>{' '}
+                    {normalizedInstallationProducts.length > 0
+                      ? normalizedInstallationProducts
+                          .map((p) => `${p.name} (x${p.qty})`)
+                          .join(', ')
+                      : 'Sin productos especificados'}
                   </p>
                   <p>
                     <strong>Pedido adjunto:</strong> {orderFile ? orderFile.name : 'Sin adjuntar'}

@@ -86,6 +86,12 @@ export interface MaterialItem {
   qty: number;
 }
 
+export interface InstallationProductItem {
+  id: string;
+  name: string;
+  qty: number;
+}
+
 export interface PartCatalogItem {
   id: string;
   name: string;
@@ -154,6 +160,7 @@ export interface Task {
   resolution_updated_at?: string | null;
   resolution_updated_by?: string | null;
   materials_used: MaterialItem[];
+  installation_products?: InstallationProductItem[];
   client_signature_url: string | null;
   signer_name: string | null;
   pdf_url: string | null;

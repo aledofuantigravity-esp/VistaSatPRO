@@ -10,6 +10,8 @@ import {
   FileText,
   FileUp,
   FolderOpen,
+  Package,
+  Plus,
   Square,
   Trash2,
   X,
@@ -24,7 +26,19 @@ import {
 import { downloadInstallationIcs } from '@/lib/ics';
 import { isSafePreviewUrl } from '@/lib/security';
 import { dateInputToIso, formatDateOnlyEs, toDateInputValue } from '@/lib/task-dates';
-import type { Attachment, AttachmentKind, Profile, Task } from '@/types/database';
+import type {
+  Attachment,
+  AttachmentKind,
+  InstallationProductItem,
+  Profile,
+  Task,
+} from '@/types/database';
+
+interface DraftProductRow {
+  id: string;
+  name: string;
+  qty: string;
+}
 
 interface InstallationWorkflowSectionProps {
   task: Task;
@@ -172,6 +186,223 @@ function InstallationDocumentsCard({
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function InstallationProductsCard({
+  taskId,
+  initialProducts,
+  currentUser,
+  isDeleted,
+  onChanged,
+  onFeedback,
+}: {
+  taskId: string;
+  initialProducts: InstallationProductItem[];
+  currentUser: Profile;
+  isDeleted: boolean;
+  onChanged: () => Promise<void>;
+  onFeedback: (msg: string) => void;
+}) {
+  const [rows, setRows] = useState<DraftProductRow[]>(() =>
+    initialProducts.map((p) => ({
+      id: p.id,
+      name: p.name,
+      qty: String(Math.max(1, Number(p.qty) || 1)),
+    }))
+  );
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const normalizedDraft: InstallationProductItem[] = rows
+    .filter((r) => r.name.trim().length > 0)
+    .map((r) => ({
+      id: r.id,
+      name: r.name.trim(),
+      qty: Math.max(1, parseInt(r.qty, 10) || 1),
+    }));
+
+  const normalizedInitial = initialProducts
+    .filter((p) => p.name.trim().length > 0)
+    .map((p) => ({
+      id: p.id,
+      name: p.name.trim(),
+      qty: Math.max(1, Math.floor(Number(p.qty) || 1)),
+    }));
+
+  const isDirty =
+    JSON.stringify(normalizedDraft.map((p) => ({ name: p.name, qty: p.qty }))) !==
+    JSON.stringify(normalizedInitial.map((p) => ({ name: p.name, qty: p.qty })));
+
+  const totalUnits = normalizedInitial.reduce((sum, p) => sum + p.qty, 0);
+
+  const handleAddRow = () => {
+    setErrorMsg(null);
+    setRows((prev) => [
+      ...prev,
+      { id: `inst-prod-${Date.now()}-${prev.length + 1}`, name: '', qty: '1' },
+    ]);
+  };
+
+  const handleUpdateRow = (id: string, field: 'name' | 'qty', value: string) => {
+    setErrorMsg(null);
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+  };
+
+  const handleRemoveRow = (id: string) => {
+    setErrorMsg(null);
+    setRows((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSaving(true);
+    try {
+      const res = await updateTaskFields(
+        taskId,
+        { installation_products: normalizedDraft },
+        currentUser
+      );
+      if (res.offlineQueued) {
+        onFeedback('Sin conexión: productos a instalar guardados en cola offline.');
+      } else {
+        onFeedback('Productos a instalar actualizados.');
+        await onChanged();
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : 'No se pudieron guardar los productos a instalar.';
+      setErrorMsg(msg);
+      onFeedback(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
+            <Package size={16} className="text-magenta" /> Productos a Instalar (
+            {normalizedInitial.length})
+          </h2>
+          {normalizedInitial.length > 0 && (
+            <span className="text-[11px] font-bold px-2 py-0.5 bg-off-white border border-border text-navy">
+              {totalUnits} ud.
+            </span>
+          )}
+        </div>
+
+        {!isDeleted && (
+          <button
+            type="button"
+            onClick={handleAddRow}
+            className="inline-flex items-center gap-1 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider hover:bg-navy-dark min-h-[38px]"
+            aria-label="Añadir producto a instalar"
+          >
+            <Plus size={14} /> Añadir producto
+          </button>
+        )}
+      </div>
+
+      {errorMsg && (
+        <p
+          role="alert"
+          className="text-xs font-semibold text-danger bg-danger/10 p-3 border-l-4 border-danger"
+        >
+          {errorMsg}
+        </p>
+      )}
+
+      {isDeleted ? (
+        normalizedInitial.length === 0 ? (
+          <p className="text-xs text-mid-grey">No se han añadido productos a instalar todavía.</p>
+        ) : (
+          <div className="divide-y divide-border border border-border rounded-sm">
+            {normalizedInitial.map((prod) => (
+              <div
+                key={prod.id}
+                className="flex items-center justify-between px-3 py-2.5 text-sm"
+              >
+                <span className="font-bold text-charcoal">{prod.name}</span>
+                <span className="text-xs font-bold bg-off-white px-2 py-1 border border-border text-navy">
+                  x{prod.qty}
+                </span>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        <form onSubmit={handleSave} className="space-y-3">
+          {rows.length === 0 ? (
+            <p className="text-xs text-mid-grey">
+              No se han añadido productos a instalar todavía.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {rows.map((row, idx) => (
+                <div key={row.id} className="grid grid-cols-12 gap-2 items-center">
+                  <input
+                    type="text"
+                    value={row.name}
+                    onChange={(e) => handleUpdateRow(row.id, 'name', e.target.value)}
+                    placeholder={`Producto ${idx + 1} (ej. Impresora, Finisher, Bandeja)`}
+                    aria-label={`Producto a instalar ${idx + 1}`}
+                    className="col-span-7 sm:col-span-8 px-3 py-2 bg-bg-input border border-border text-sm text-charcoal"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={row.qty}
+                    onChange={(e) => handleUpdateRow(row.id, 'qty', e.target.value)}
+                    aria-label={`Cantidad producto ${idx + 1}`}
+                    className="col-span-3 sm:col-span-2 px-2 py-2 bg-bg-input border border-border text-sm text-center text-charcoal"
+                  />
+                  <div className="col-span-2 flex items-center gap-1">
+                    {idx === rows.length - 1 && (
+                      <button
+                        type="button"
+                        onClick={handleAddRow}
+                        className="flex-1 h-9 bg-navy text-white hover:bg-navy-dark flex items-center justify-center"
+                        aria-label="Añadir otra línea de producto"
+                        title="Añadir otra línea"
+                      >
+                        <Plus size={15} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveRow(row.id)}
+                      className="flex-1 h-9 border border-border text-mid-grey hover:text-danger flex items-center justify-center"
+                      aria-label={`Eliminar producto ${idx + 1}`}
+                      title="Quitar producto"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(rows.length > 0 || isDirty) && (
+            <div className="flex justify-end">
+              <Button
+                type="submit"
+                size="sm"
+                variant="secondary"
+                disabled={!isDirty}
+                isLoading={saving}
+              >
+                Guardar productos
+              </Button>
+            </div>
+          )}
+        </form>
       )}
     </div>
   );
@@ -328,8 +559,24 @@ export function InstallationWorkflowSection({
     }
   };
 
+  const savedProducts = (task.installation_products || []).filter(
+    (p) => p.name.trim().length > 0
+  );
+  const productsKey = JSON.stringify(savedProducts);
+
   return (
     <div className="space-y-4">
+      {/* 0. Productos a Instalar (opcionales al crear, editables en el parte) */}
+      <InstallationProductsCard
+        key={productsKey}
+        taskId={task.id}
+        initialProducts={savedProducts}
+        currentUser={currentUser}
+        isDeleted={isDeleted}
+        onChanged={onChanged}
+        onFeedback={onFeedback}
+      />
+
       {/* 1. Pedido de Instalación adjunto */}
       <InstallationDocumentsCard
         title="Pedido de Instalación"

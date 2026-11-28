@@ -153,8 +153,16 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByText(/Fecha acordada de instalación/i)).toHaveCount(0);
     await expect(page.locator('input[type="datetime-local"]')).toHaveCount(0);
 
-    await page.getByPlaceholder(/Ricoh IM C3500/i).fill('Multifunción Instalación E2E');
+    await page.getByPlaceholder(/Ricoh IM C3500/i).first().fill('Multifunción Instalación E2E');
     await page.getByPlaceholder(/solicitud de instalación/i).fill('Instalación en planta 2 según pedido.');
+
+    // Productos a instalar (exclusivo de Instalaciones, con botón + para añadir filas)
+    await expect(page.getByText(/Productos a instalar \(opcional\)/i)).toBeVisible();
+    await page.getByLabel('Nombre del producto 1').fill('Multifunción Ricoh IM C3500');
+    await page.getByLabel('Cantidad del producto 1').fill('2');
+    await page.getByRole('button', { name: 'Añadir producto', exact: true }).click();
+    await page.getByLabel('Nombre del producto 2').fill('Finisher SR3260');
+    await page.getByLabel('Cantidad del producto 2').fill('1');
 
     const interestPng = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
@@ -168,15 +176,35 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByText('plano-instalacion.png')).toBeVisible();
 
     await page.getByRole('button', { name: /Siguiente/i }).click();
+    await expect(page.getByText(/Multifunción Ricoh IM C3500 \(x2\)/i)).toBeVisible();
+    await expect(page.getByText(/Finisher SR3260 \(x1\)/i)).toBeVisible();
     await expect(page.getByText(/plano-instalacion\.png/i)).toBeVisible();
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
 
     await expect(page).toHaveURL(/\/tasks\/task-/);
+    const productsHeading = page.getByRole('heading', { name: /Productos a Instalar \(2\)/i });
     const orderHeading = page.getByRole('heading', { name: /Pedido de Instalación \(0\)/i });
     const interestHeading = page.getByRole('heading', { name: /Documentos de Interés \(1\)/i });
     const dateHeading = page.getByRole('heading', {
       name: /Fecha Acordada para la Instalación/i,
     });
+    await expect(productsHeading).toBeVisible();
+    await expect(page.getByLabel('Producto a instalar 1')).toHaveValue('Multifunción Ricoh IM C3500');
+    await expect(page.getByLabel('Cantidad producto 1')).toHaveValue('2');
+    await expect(page.getByLabel('Producto a instalar 2')).toHaveValue('Finisher SR3260');
+
+    // Modificar cantidad, añadir un 3er producto con + y verificar persistencia tras recargar
+    await page.getByLabel('Cantidad producto 1').fill('3');
+    await page.getByRole('button', { name: 'Añadir otra línea de producto' }).click();
+    await page.getByLabel('Producto a instalar 3').fill('Bandeja papel PB3280');
+    await page.getByLabel('Cantidad producto 3').fill('1');
+    await page.getByRole('button', { name: /Guardar productos/i }).click();
+    await expect(page.getByRole('heading', { name: /Productos a Instalar \(3\)/i })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: /Productos a Instalar \(3\)/i })).toBeVisible();
+    await expect(page.getByLabel('Cantidad producto 1')).toHaveValue('3');
+    await expect(page.getByLabel('Producto a instalar 3')).toHaveValue('Bandeja papel PB3280');
+
     await expect(orderHeading).toBeVisible();
     await expect(interestHeading).toBeVisible();
     await expect(dateHeading).toBeVisible();
@@ -224,16 +252,23 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByText('Realizado', { exact: true }).first()).toBeVisible();
 
     await page.getByRole('button', { name: /Parte de Instalación \(PDF\)/i }).click();
-    const instPdfPromise = page.waitForEvent('download');
+    const instPdfClientPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: /PDF para Cliente/i }).click();
-    const instPdf = await instPdfPromise;
-    expect(instPdf.suggestedFilename()).toContain('_parte_instalacion_cliente.pdf');
+    const instPdfClient = await instPdfClientPromise;
+    expect(instPdfClient.suggestedFilename()).toContain('_parte_instalacion_cliente.pdf');
 
-    // B) Incidencia CXC (Nº de serie NO obligatorio al crear, SÍ obligatorio al cerrar; copias B/N y color; botón + piezas)
+    await page.getByRole('button', { name: /Parte de Instalación \(PDF\)/i }).click();
+    const instPdfInternalPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: /PDF Interno/i }).click();
+    const instPdfInternal = await instPdfInternalPromise;
+    expect(instPdfInternal.suggestedFilename()).toContain('_parte_instalacion_interno.pdf');
+
+    // B) Incidencia CXC (Nº de serie NO obligatorio al crear, SÍ obligatorio al cerrar; sin Productos a instalar)
     await page.goto('/tasks/new');
     await page.getByRole('button', { name: /Incidencia CXC/i }).click();
     await page.locator('select').first().selectOption({ index: 1 });
     await page.getByRole('button', { name: /Siguiente/i }).click();
+    await expect(page.getByText(/Productos a instalar/i)).toHaveCount(0);
 
     await page.getByPlaceholder(/Describe la incidencia CXC/i).fill('Fallo unidad imagen CXC.');
     // Debe permitir avanzar SIN nº de serie al crear
@@ -249,6 +284,7 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
 
     await expect(page).toHaveURL(/\/tasks\/task-/);
+    await expect(page.getByText(/Productos a Instalar/i)).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /Fechas y Tiempo del Parte/i })).toBeVisible();
     await expect(page.getByTestId('task-elapsed-duration')).toHaveText(/\d+\s+días?,\s+\d+\s+horas?/i);
     await expect(page.getByText('Tambor negro CXC')).toBeVisible();
@@ -276,15 +312,22 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Cerrar Incidencia/i }).click();
     await expect(page.getByText('Completada').first()).toBeVisible();
 
-    // C) Tarea general
+    // C) Tarea general y D) Incidencia RMA tampoco muestran Productos a instalar
     await page.goto('/tasks/new');
-    await page.getByRole('button', { name: /^Tarea\b/i }).click();
+    await page.getByRole('button', { name: /Incidencia RMA/i }).click();
     await page.locator('select').first().selectOption({ index: 1 });
     await page.getByRole('button', { name: /Siguiente/i }).click();
+    await expect(page.getByText(/Productos a instalar/i)).toHaveCount(0);
+    await page.getByRole('button', { name: /Atrás/i }).click();
+
+    await page.getByRole('button', { name: /^Tarea\b/i }).click();
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await expect(page.getByText(/Productos a instalar/i)).toHaveCount(0);
     await page.getByPlaceholder(/Describe la tarea a realizar/i).fill('Revisar stock almacén E2E.');
     await page.getByRole('button', { name: /Siguiente/i }).click();
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
     await expect(page).toHaveURL(/\/tasks\/task-/);
+    await expect(page.getByText(/Productos a Instalar/i)).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /Fechas y Tiempo del Parte/i })).toBeVisible();
     await expect(page.getByText('Revisar stock almacén E2E.')).toBeVisible();
   });

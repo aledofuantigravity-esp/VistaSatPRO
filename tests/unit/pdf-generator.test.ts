@@ -195,4 +195,47 @@ describe('pdf-helpers y generateTaskPDF', () => {
       expect(internalBlob.size).toBeGreaterThan(clientBlob.size);
     }
   });
+
+  it('incluye Productos a Instalar en PDF cliente e interno solo para partes de instalación', async () => {
+    const emptyInst = makeTask('installation');
+    emptyInst.installation_products = [];
+    const clientWithout = generateTaskPDF(emptyInst, sampleHistory, [], [], { variant: 'client' });
+    const internalWithout = generateTaskPDF(emptyInst, sampleHistory, [], [], {
+      variant: 'internal',
+    });
+
+    const withProducts = makeTask('installation');
+    withProducts.installation_products = [
+      { id: 'p1', name: 'Multifuncion Ricoh IM C3500', qty: 2 },
+      { id: 'p2', name: 'Finisher SR3260', qty: 1 },
+    ];
+    const clientWith = generateTaskPDF(withProducts, sampleHistory, [], [], { variant: 'client' });
+    const internalWith = generateTaskPDF(withProducts, sampleHistory, [], [], {
+      variant: 'internal',
+    });
+
+    const clientText = await clientWith.text();
+    const internalText = await internalWith.text();
+
+    expect(clientWith.size).toBeGreaterThan(clientWithout.size);
+    expect(internalWith.size).toBeGreaterThan(internalWithout.size);
+    expect(clientText).toContain('PRODUCTOS A INSTALAR');
+    expect(internalText).toContain('PRODUCTOS A INSTALAR');
+    expect(clientText).toContain('Multifuncion Ricoh IM C3500');
+    expect(internalText).toContain('Finisher SR3260');
+
+    // En otros tipos de parte nunca debe renderizarse Productos a Instalar aunque existiera dato
+    for (const nonInstType of ['rma_incident', 'cxc_incident', 'task'] as TaskType[]) {
+      const otherTask = makeTask(nonInstType);
+      otherTask.installation_products = [{ id: 'px', name: 'Producto Residual', qty: 3 }];
+      const otherClient = await generateTaskPDF(otherTask, sampleHistory, [], [], {
+        variant: 'client',
+      }).text();
+      const otherInternal = await generateTaskPDF(otherTask, sampleHistory, [], [], {
+        variant: 'internal',
+      }).text();
+      expect(otherClient).not.toContain('PRODUCTOS A INSTALAR');
+      expect(otherInternal).not.toContain('PRODUCTOS A INSTALAR');
+    }
+  });
 });

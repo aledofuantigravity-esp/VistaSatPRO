@@ -13,6 +13,7 @@ import {
   TASK_PRIORITY_META,
   type Attachment,
   type Customer,
+  type InstallationProductItem,
   type MaterialItem,
   type Profile,
   type Task,
@@ -23,6 +24,33 @@ import {
   type TaskType,
 } from '@/types/database';
 import { demoGet, demoPost, isOnline, triggerPushEndpoint } from './shared';
+
+function normalizeInstallationProducts(
+  items?: InstallationProductItem[]
+): InstallationProductItem[] {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item, idx) => ({
+      id: (item.id || `inst-prod-${Date.now()}-${idx}`).trim() || `inst-prod-${Date.now()}-${idx}`,
+      name: (item.name || '').trim(),
+      qty: Math.max(1, Math.floor(Number(item.qty) || 1)),
+    }))
+    .filter((item) => item.name.length > 0);
+}
+
+function isMissingInstallationProductsColumnError(
+  error: { code?: string; message?: string } | null
+): boolean {
+  if (!error) return false;
+  const msg = (error.message || '').toLowerCase();
+  return (
+    msg.includes('installation_products') &&
+    (error.code === '42703' ||
+      error.code === 'PGRST204' ||
+      msg.includes('column') ||
+      msg.includes('schema cache'))
+  );
+}
 
 export interface ListTasksResult {
   tasks: Task[];
@@ -293,6 +321,7 @@ export async function createTask(
     meter_bw?: number | null;
     meter_color?: number | null;
     materials_used?: MaterialItem[];
+    installation_products?: InstallationProductItem[];
   },
   actor: Profile
 ): Promise<Task> {
@@ -314,10 +343,21 @@ export async function createTask(
     }
   }
 
+  const normalizedProducts =
+    effectiveType === 'installation'
+      ? normalizeInstallationProducts(input.installation_products)
+      : [];
+
+  const { installation_products: _ignoredProducts, ...restInput } = input;
+  void _ignoredProducts;
+
   const normalizedInput = {
-    ...input,
+    ...restInput,
     task_type: effectiveType,
     assigned_to: effectiveAssignedTo,
+    ...(effectiveType === 'installation' && normalizedProducts.length > 0
+      ? { installation_products: normalizedProducts }
+      : {}),
   };
 
   if (!supabase) {
@@ -343,6 +383,11 @@ export async function createTask(
     .single();
 
   if (error) {
+    if (isMissingInstallationProductsColumnError(error)) {
+      throw new Error(
+        'Falta ejecutar la migración SQL 0016 (installation_products) en Supabase.'
+      );
+    }
     captureMonitoringError(error, { scope: 'createTask' });
     throw new Error(error.message);
   }
@@ -512,6 +557,7 @@ export async function updateTaskFields(
     meter_bw: number | null;
     meter_color: number | null;
     materials_used: MaterialItem[];
+    installation_products: InstallationProductItem[];
     client_signature_url: string | null;
     signer_name: string | null;
     resolution_notes: string | null;
@@ -519,16 +565,26 @@ export async function updateTaskFields(
   }>,
   actor: Profile
 ): Promise<{ offlineQueued?: boolean }> {
-  const normalizedPatch =
+  let normalizedPatch =
     patch.resolution !== undefined
       ? { ...patch, resolution: patch.resolution?.trim() || null }
       : patch;
+  if (normalizedPatch.installation_products !== undefined) {
+    normalizedPatch = {
+      ...normalizedPatch,
+      installation_products: normalizeInstallationProducts(
+        normalizedPatch.installation_products
+      ),
+    };
+  }
 
-  // Soporte offline para resolución, actualización de materiales o lecturas CXC
+  // Soporte offline para resolución, actualización de materiales, productos de instalación o lecturas CXC
   if (!isOnline()) {
     const keys = Object.keys(normalizedPatch);
     const onlyResolution = keys.length === 1 && keys[0] === 'resolution';
     const onlyMaterials = keys.length === 1 && keys[0] === 'materials_used';
+    const onlyInstallationProducts =
+      keys.length === 1 && keys[0] === 'installation_products';
     const isCxcUpdate = keys.every((k) =>
       ['equipment_sn', 'meter_bw', 'meter_color'].includes(k)
     );
@@ -557,6 +613,19 @@ export async function updateTaskFields(
       });
       useAppCache.getState().patchTaskOptimistic(taskId, {
         materials_used: normalizedPatch.materials_used,
+      });
+      return { offlineQueued: true };
+    }
+
+    if (onlyInstallationProducts && normalizedPatch.installation_products) {
+      await enqueueOfflineAction({
+        taskId,
+        actorId: actor.id,
+        actionType: 'update_installation_products',
+        payload: { installationProducts: normalizedPatch.installation_products },
+      });
+      useAppCache.getState().patchTaskOptimistic(taskId, {
+        installation_products: normalizedPatch.installation_products,
       });
       return { offlineQueued: true };
     }
@@ -603,6 +672,11 @@ export async function updateTaskFields(
     .single();
 
   if (error || !data) {
+    if (isMissingInstallationProductsColumnError(error)) {
+      throw new Error(
+        'Falta ejecutar la migración SQL 0016 (installation_products) en Supabase.'
+      );
+    }
     captureMonitoringError(error, { scope: 'updateTaskFields', taskId });
     throw new Error(error?.message || 'Error actualizando el parte');
   }
@@ -614,6 +688,16 @@ export async function updateTaskFields(
       event_type: 'field_updated',
       field_name: 'materials_used',
       note: `Materiales actualizados (${patch.materials_used.length} ítem/s)`,
+    });
+  }
+
+  if (normalizedPatch.installation_products !== undefined) {
+    await supabase.from('task_history').insert({
+      task_id: taskId,
+      actor_id: actor.id,
+      event_type: 'field_updated',
+      field_name: 'installation_products',
+      note: `Productos a instalar actualizados (${normalizedPatch.installation_products.length} producto/s)`,
     });
   }
 

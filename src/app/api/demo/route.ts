@@ -22,6 +22,7 @@ import {
   type Attachment,
   type AttachmentKind,
   type Customer,
+  type InstallationProductItem,
   type MaterialItem,
   type PartCatalogItem,
   type Profile,
@@ -524,6 +525,7 @@ export async function POST(request: Request) {
             meter_bw?: number | null;
             meter_color?: number | null;
             materials_used?: MaterialItem[];
+            installation_products?: InstallationProductItem[];
           };
           actorId: string;
         };
@@ -568,6 +570,10 @@ export async function POST(request: Request) {
           resolution_updated_at: null,
           resolution_updated_by: null,
           materials_used: Array.isArray(payload.materials_used) ? payload.materials_used : [],
+          installation_products:
+            effectiveType === 'installation' && Array.isArray(payload.installation_products)
+              ? payload.installation_products
+              : [],
           scheduled_date: payload.scheduled_date || null,
           merchandise_check_done:
             payload.merchandise_check_done !== undefined ? payload.merchandise_check_done : null,
@@ -756,7 +762,10 @@ export async function POST(request: Request) {
       case 'update_task_fields': {
         const { taskId, patch, actorId } = body as {
           taskId: string;
-          patch: Partial<Task> & { materials_used?: MaterialItem[] };
+          patch: Partial<Task> & {
+            materials_used?: MaterialItem[];
+            installation_products?: InstallationProductItem[];
+          };
           actorId: string;
         };
         const idx = state.tasks.findIndex((t) => t.id === taskId);
@@ -879,6 +888,21 @@ export async function POST(request: Request) {
             old_value: null,
             new_value: `${patch.materials_used.length} materiales`,
             note: `Lista de materiales actualizada (${patch.materials_used.length} ítem/s).`,
+            metadata: {},
+            created_at: nowIso,
+          });
+        }
+
+        if (patch.installation_products !== undefined) {
+          state.history.push({
+            id: `hist-${Date.now()}-ip`,
+            task_id: taskId,
+            actor_id: actorId,
+            event_type: 'field_updated',
+            field_name: 'installation_products',
+            old_value: null,
+            new_value: `${patch.installation_products.length} producto(s)`,
+            note: `Productos a instalar actualizados (${patch.installation_products.length} producto/s).`,
             metadata: {},
             created_at: nowIso,
           });

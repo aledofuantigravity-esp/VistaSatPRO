@@ -42,6 +42,15 @@ export async function syncOfflineActions(actor: Profile): Promise<number> {
             { materials_used: action.payload.materials },
             actor
           );
+        } else if (
+          action.actionType === 'update_installation_products' &&
+          action.payload.installationProducts
+        ) {
+          await updateTaskFields(
+            action.taskId,
+            { installation_products: action.payload.installationProducts },
+            actor
+          );
         } else if (action.actionType === 'update_cxc' && action.payload.cxc) {
           await updateTaskFields(action.taskId, action.payload.cxc, actor);
         } else if (action.actionType === 'add_comment' && action.payload.commentBody) {

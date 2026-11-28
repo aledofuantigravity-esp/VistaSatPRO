@@ -1,5 +1,10 @@
 import { openDB, type IDBPDatabase } from 'idb';
-import type { AttachmentKind, MaterialItem, TaskStatus } from '@/types/database';
+import type {
+  AttachmentKind,
+  InstallationProductItem,
+  MaterialItem,
+  TaskStatus,
+} from '@/types/database';
 
 export interface OfflineAction {
   id: string;
@@ -10,6 +15,7 @@ export interface OfflineAction {
     | 'add_note'
     | 'update_resolution'
     | 'update_materials'
+    | 'update_installation_products'
     | 'update_cxc'
     | 'add_comment'
     | 'save_signature'
@@ -19,6 +25,7 @@ export interface OfflineAction {
     note?: string;
     resolution?: string | null;
     materials?: MaterialItem[];
+    installationProducts?: InstallationProductItem[];
     cxc?: {
       equipment_sn?: string | null;
       meter_bw?: number | null;
