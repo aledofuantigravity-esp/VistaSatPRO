@@ -19,6 +19,7 @@ import {
   isPhysicalWorkOrderAttachment,
   PhysicalWorkOrderSection,
 } from '@/components/tasks/PhysicalWorkOrderSection';
+import { PdfExportModal } from '@/components/tasks/PdfExportModal';
 import { TaskClosureSection } from '@/components/tasks/TaskClosureSection';
 import { TaskCommentsSection } from '@/components/tasks/TaskCommentsSection';
 import { TaskDeleteModal } from '@/components/tasks/TaskDeleteModal';
@@ -46,6 +47,7 @@ import {
   uploadTaskAttachment,
 } from '@/lib/data-service';
 import { getSlaStatus } from '@/lib/sla';
+import type { PdfVariant } from '@/lib/pdf-helpers';
 import {
   isResolutionRequiredForClosure,
   validateTaskClosureRequirements,
@@ -109,7 +111,8 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const [showFinishInstallModal, setShowFinishInstallModal] = useState(false);
   const [finishingInstall, setFinishingInstall] = useState(false);
   const [finishInstallError, setFinishInstallError] = useState<string | null>(null);
-  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [generatingPdfVariant, setGeneratingPdfVariant] = useState<PdfVariant | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
@@ -485,21 +488,27 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     }
   };
 
-  const handleDownloadPdf = async () => {
-    setGeneratingPdf(true);
+  const handleDownloadPdf = async (variant: PdfVariant) => {
+    setGeneratingPdfVariant(variant);
     try {
       const [{ task: freshTask, attachments: freshAttachments }, { downloadTaskPDF }] =
         await Promise.all([
           refreshTaskMediaUrls(task, attachments),
           import('@/lib/pdf-generator'),
         ]);
-      await downloadTaskPDF(freshTask, history, freshAttachments);
+      await downloadTaskPDF(freshTask, history, freshAttachments, variant);
+      setShowPdfModal(false);
+      showTempMessage(
+        variant === 'client'
+          ? 'PDF para Cliente generado correctamente.'
+          : 'PDF Interno completo generado correctamente.'
+      );
     } catch (err) {
       showTempMessage(
         err instanceof Error ? err.message : 'No se pudo generar el documento PDF.'
       );
     } finally {
-      setGeneratingPdf(false);
+      setGeneratingPdfVariant(null);
     }
   };
 
@@ -742,9 +751,9 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         taskType={taskType}
         isDeleted={isDeleted}
         closeError={closeError}
-        generatingPdf={generatingPdf}
+        generatingPdf={Boolean(generatingPdfVariant)}
         onOpenSignature={() => setShowSignatureModal(true)}
-        onDownloadPdf={handleDownloadPdf}
+        onDownloadPdf={() => setShowPdfModal(true)}
         onCloseTask={handleCloseTask}
       />
 
@@ -800,6 +809,17 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           }}
           onFinishWithoutPhoto={handleFinishInstallationWithoutPhoto}
           onFinishWithPhoto={handleFinishInstallationWithPhoto}
+        />
+      )}
+
+      {showPdfModal && (
+        <PdfExportModal
+          taskCode={task.code}
+          generatingVariant={generatingPdfVariant}
+          onClose={() => {
+            if (!generatingPdfVariant) setShowPdfModal(false);
+          }}
+          onSelectVariant={handleDownloadPdf}
         />
       )}
     </div>

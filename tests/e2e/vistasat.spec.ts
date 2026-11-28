@@ -80,11 +80,13 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Guardar firma/i }).click();
     await expect(page.getByText(/Firmado por: Cliente E2E/i)).toBeVisible();
 
-    // Descargar PDF
-    const downloadPromise = page.waitForEvent('download');
+    // Descargar PDF (elegir PDF Interno en diálogo selector)
     await page.getByRole('button', { name: /Descargar PDF/i }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: /PDF Interno/i }).click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toContain('_parte_SAT.pdf');
+    expect(download.suggestedFilename()).toContain('_parte_SAT_interno.pdf');
 
     // Soft-delete con motivo -> Papelera -> Restaurar
     await page.getByRole('button', { name: /^Eliminar$/i }).click();
@@ -161,10 +163,11 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Cotejo Realizado/i }).click();
     await expect(page.getByText('Realizado', { exact: true }).first()).toBeVisible();
 
-    const instPdfPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: /Parte de Instalación \(PDF\)/i }).click();
+    const instPdfPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: /PDF para Cliente/i }).click();
     const instPdf = await instPdfPromise;
-    expect(instPdf.suggestedFilename()).toContain('_parte_instalacion.pdf');
+    expect(instPdf.suggestedFilename()).toContain('_parte_instalacion_cliente.pdf');
 
     // B) Incidencia CXC (Nº de serie NO obligatorio al crear, SÍ obligatorio al cerrar; copias B/N y color; botón + piezas)
     await page.goto('/tasks/new');
@@ -414,10 +417,11 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByRole('heading', { name: /Parte de Trabajo Físico/i })).toBeVisible();
     await expect(page.getByText('parte-fisico-firmado.png', { exact: true })).toBeVisible();
 
-    // Descargar PDF de instalación y comprobar que incrusta la imagen del parte físico
+    // Descargar PDF de instalación (copia Cliente) y comprobar que incrusta la imagen del parte físico
+    await page.getByRole('button', { name: /Parte de Instalación \(PDF\)/i }).click();
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.getByRole('button', { name: /Parte de Instalación \(PDF\)/i }).click(),
+      page.getByRole('button', { name: /PDF para Cliente/i }).click(),
     ]);
     const pdfPath = await download.path();
     expect(pdfPath).toBeTruthy();
@@ -455,9 +459,10 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     });
     await expect(page.getByText('Fusor dañado en rodillo', { exact: true })).toBeVisible();
 
+    await page.getByRole('button', { name: /Descargar PDF/i }).click();
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.getByRole('button', { name: /Descargar PDF/i }).click(),
+      page.getByRole('button', { name: /PDF para Cliente/i }).click(),
     ]);
     const pdfPath = await download.path();
     expect(pdfPath).toBeTruthy();
@@ -833,5 +838,74 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.getByRole('button', { name: /Finalizar Instalación/i }).click();
     await page.getByRole('button', { name: /No, cerrar sin foto/i }).click();
     await expect(page.getByText('Completada').first()).toBeVisible();
+  });
+
+  test('15. Selector PDF Cliente vs Interno y rejilla profesional con notas e historial', async ({
+    page,
+  }) => {
+    await loginAsCoordinator(page);
+
+    const samplePng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
+      'base64'
+    );
+
+    await page.goto('/tasks/new');
+    await page.locator('select').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByPlaceholder(/Impresora Ricoh/i).fill('Equipo Selector PDF Dual E2E');
+    await page.getByPlaceholder(/Describe síntomas/i).fill('Comprobación PDF Cliente e Interno.');
+    await page.getByRole('button', { name: /Siguiente/i }).click();
+    await page.getByRole('button', { name: /Crear Tarea/i }).click();
+    await expect(page).toHaveURL(/\/tasks\/task-/);
+
+    // Añadir nota técnica interna, resolución, material y 2 fotos
+    await page
+      .getByLabel('Nueva nota técnica o incidencia')
+      .fill('Nota interna confidencial SAT para validar tamaño diferencial del PDF.');
+    await page.getByRole('button', { name: /Guardar nota/i }).click();
+    await expect(page.getByTestId('technical-note-item')).toHaveCount(1);
+
+    await page
+      .getByLabel('Resolución del problema')
+      .fill('Sustituida fuente de alimentación y equipo operativo.');
+    await page.getByRole('button', { name: /Guardar resolución/i }).click();
+    await expect(page.getByText('Registrada', { exact: true })).toBeVisible();
+
+    await page.locator('input[type="file"][multiple]').setInputFiles([
+      { name: 'foto-1.png', mimeType: 'image/png', buffer: samplePng },
+      { name: 'foto-2.png', mimeType: 'image/png', buffer: samplePng },
+    ]);
+    await expect(page.getByText('Fotografías (2)')).toBeVisible();
+
+    // 1) Abrir diálogo y descargar PDF para Cliente
+    await page.getByRole('button', { name: /Descargar PDF/i }).click();
+    await expect(page.getByRole('heading', { name: /Descargar Parte en PDF/i })).toBeVisible();
+    const [clientDl] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /PDF para Cliente/i }).click(),
+    ]);
+    expect(clientDl.suggestedFilename()).toContain('_parte_SAT_cliente.pdf');
+    await expect(page.getByRole('heading', { name: /Descargar Parte en PDF/i })).toHaveCount(0);
+
+    // 2) Abrir diálogo y descargar PDF Interno (Completo)
+    await page.getByRole('button', { name: /Descargar PDF/i }).click();
+    const [internalDl] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /PDF Interno/i }).click(),
+    ]);
+    expect(internalDl.suggestedFilename()).toContain('_parte_SAT_interno.pdf');
+
+    const fs = await import('fs');
+    const clientPath = await clientDl.path();
+    const internalPath = await internalDl.path();
+    expect(clientPath).toBeTruthy();
+    expect(internalPath).toBeTruthy();
+    const clientBuf = fs.readFileSync(clientPath!);
+    const internalBuf = fs.readFileSync(internalPath!);
+    expect(clientBuf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    expect(internalBuf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    expect(clientBuf.toString('latin1')).toContain('/Subtype /Image');
+    expect(internalBuf.length).toBeGreaterThan(clientBuf.length);
   });
 });
