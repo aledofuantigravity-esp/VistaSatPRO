@@ -150,12 +150,18 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await page.locator('select').first().selectOption({ index: 1 });
     await page.getByRole('button', { name: /Siguiente/i }).click();
 
+    await expect(page.getByText(/Fecha acordada de instalación/i)).toHaveCount(0);
+    await expect(page.locator('input[type="datetime-local"]')).toHaveCount(0);
+
     await page.getByPlaceholder(/Ricoh IM C3500/i).fill('Multifunción Instalación E2E');
     await page.getByPlaceholder(/solicitud de instalación/i).fill('Instalación en planta 2 según pedido.');
     await page.getByRole('button', { name: /Siguiente/i }).click();
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
 
     await expect(page).toHaveURL(/\/tasks\/task-/);
+    await expect(
+      page.getByRole('heading', { name: /Fecha Acordada para la Instalación/i })
+    ).toBeVisible();
     await expect(page.getByText('Checklist: Cotejo de Mercancía')).toBeVisible();
     await expect(page.getByText('Materiales / Piezas Empleadas')).toHaveCount(0);
     await expect(page.getByText('Usar Cámara')).toBeVisible();

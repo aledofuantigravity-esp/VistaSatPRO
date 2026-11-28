@@ -6,7 +6,6 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   ArrowRight,
-  Calendar,
   Check,
   ClipboardCheck,
   FileUp,
@@ -86,7 +85,6 @@ function NewTaskContent() {
   const [priority, setPriority] = useState<TaskPriority>('medium');
 
   // Instalación
-  const [scheduledDate, setScheduledDate] = useState('');
   const [orderFile, setOrderFile] = useState<File | null>(null);
 
   // Incidencia CXC (copias y piezas con botón +)
@@ -264,10 +262,7 @@ function NewTaskContent() {
             ? technicians[0].id
             : assignedTo || null,
           due_date: !isTechnician && dueDate ? new Date(dueDate).toISOString() : null,
-          scheduled_date:
-            taskType === 'installation' && scheduledDate
-              ? new Date(scheduledDate).toISOString()
-              : null,
+          scheduled_date: null,
           merchandise_check_done: taskType === 'installation' ? null : undefined,
           meter_bw: parsedBw,
           meter_color: parsedColor,
@@ -530,7 +525,7 @@ function NewTaskContent() {
               <>
                 <div className="p-3 bg-petrol/10 border-l-4 border-petrol text-xs text-charcoal">
                   <strong>Solicitud de Instalación:</strong> Adjunta el pedido de instalación
-                  (PDF o imagen) y asigna la fecha futura acordada con el cliente.
+                  (PDF o imagen). La fecha acordada se fijará dentro del parte una vez creado.
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -574,45 +569,31 @@ function NewTaskContent() {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
-                      <Calendar size={13} className="text-magenta" /> Fecha acordada de instalación
-                    </label>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
+                    <FileUp size={13} className="text-magenta" /> Adjuntar Pedido de Instalación
+                  </label>
+                  <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy cursor-pointer hover:bg-navy/5 min-h-[46px]">
+                    <FileUp size={15} />
+                    <span className="truncate">
+                      {orderFile ? orderFile.name : 'Subir PDF o imagen (máx. 10 MB)'}
+                    </span>
                     <input
-                      type="datetime-local"
-                      value={scheduledDate}
-                      onChange={(e) => setScheduledDate(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-bg-input border border-border text-charcoal"
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
+                      onChange={handleOrderFileChange}
+                      className="hidden"
                     />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
-                      <FileUp size={13} className="text-magenta" /> Adjuntar Pedido de Instalación
-                    </label>
-                    <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy cursor-pointer hover:bg-navy/5 min-h-[46px]">
-                      <FileUp size={15} />
-                      <span className="truncate">
-                        {orderFile ? orderFile.name : 'Subir PDF o imagen (máx. 10 MB)'}
-                      </span>
-                      <input
-                        type="file"
-                        accept="application/pdf,image/jpeg,image/png,image/webp"
-                        onChange={handleOrderFileChange}
-                        className="hidden"
-                      />
-                    </label>
-                    {orderFile && (
-                      <button
-                        type="button"
-                        onClick={() => setOrderFile(null)}
-                        className="text-[11px] font-bold text-danger mt-1 hover:underline"
-                      >
-                        Quitar archivo adjunto
-                      </button>
-                    )}
-                  </div>
+                  </label>
+                  {orderFile && (
+                    <button
+                      type="button"
+                      onClick={() => setOrderFile(null)}
+                      className="text-[11px] font-bold text-danger mt-1 hover:underline"
+                    >
+                      Quitar archivo adjunto
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -965,13 +946,8 @@ function NewTaskContent() {
               {taskType === 'installation' && (
                 <>
                   <p>
-                    <strong>Fecha acordada:</strong>{' '}
-                    {scheduledDate
-                      ? new Date(scheduledDate).toLocaleString('es-ES', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })
-                      : 'Pendiente de acordar'}
+                    <strong>Fecha de instalación:</strong> Pendiente de fijar por el técnico
+                    dentro del parte
                   </p>
                   <p>
                     <strong>Pedido adjunto:</strong> {orderFile ? orderFile.name : 'Sin adjuntar'}
