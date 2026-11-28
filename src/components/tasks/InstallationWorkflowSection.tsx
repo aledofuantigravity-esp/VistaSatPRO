@@ -9,6 +9,7 @@ import {
   Eye,
   FileText,
   FileUp,
+  FolderOpen,
   Square,
   Trash2,
   X,
@@ -23,11 +24,12 @@ import {
 import { downloadInstallationIcs } from '@/lib/ics';
 import { isSafePreviewUrl } from '@/lib/security';
 import { dateInputToIso, formatDateOnlyEs, toDateInputValue } from '@/lib/task-dates';
-import type { Attachment, Profile, Task } from '@/types/database';
+import type { Attachment, AttachmentKind, Profile, Task } from '@/types/database';
 
 interface InstallationWorkflowSectionProps {
   task: Task;
   orderAttachments: Attachment[];
+  interestAttachments: Attachment[];
   currentUser: Profile;
   isDeleted: boolean;
   onChanged: () => Promise<void>;
@@ -41,9 +43,130 @@ export function isInstallationOrderAttachment(att: Attachment): boolean {
   );
 }
 
+export function isInterestDocumentAttachment(att: Attachment): boolean {
+  return (
+    att.attachment_kind === 'interest_document' ||
+    Boolean(att.caption?.startsWith('[DOC_INTERES]'))
+  );
+}
+
+function InstallationDocumentsCard({
+  title,
+  icon,
+  attachments,
+  emptyText,
+  uploadButtonLabel,
+  uploadingLabel,
+  uploading,
+  multiple = false,
+  isDeleted,
+  currentUser,
+  onUploadFiles,
+  onPreview,
+  onDelete,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  attachments: Attachment[];
+  emptyText: string;
+  uploadButtonLabel: string;
+  uploadingLabel: string;
+  uploading: boolean;
+  multiple?: boolean;
+  isDeleted: boolean;
+  currentUser: Profile;
+  onUploadFiles: (files: FileList) => void;
+  onPreview: (att: Attachment) => void;
+  onDelete: (att: Attachment) => void;
+}) {
+  return (
+    <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
+          {icon} {title} ({attachments.length})
+        </h2>
+
+        {!isDeleted && (
+          <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy-dark min-h-[38px]">
+            <FileUp size={14} /> {uploading ? uploadingLabel : uploadButtonLabel}
+            <input
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              multiple={multiple}
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  onUploadFiles(e.target.files);
+                }
+                e.target.value = '';
+              }}
+              className="hidden"
+              disabled={uploading}
+            />
+          </label>
+        )}
+      </div>
+
+      {attachments.length === 0 ? (
+        <p className="text-xs text-mid-grey">{emptyText}</p>
+      ) : (
+        <div className="space-y-2">
+          {attachments.map((att) => (
+            <div
+              key={att.id}
+              className="flex flex-wrap items-center justify-between gap-2 p-3 bg-off-white border border-border rounded-sm"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <FileText size={18} className="text-magenta flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-charcoal truncate">{att.file_name}</p>
+                  <p className="text-[11px] text-mid-grey">
+                    {new Date(att.created_at).toLocaleString('es-ES')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onPreview(att)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-navy text-white text-xs font-bold hover:bg-navy-dark"
+                >
+                  <Eye size={13} /> Visualizar
+                </button>
+                <a
+                  href={att.public_url}
+                  download={att.file_name}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-border text-xs font-bold text-charcoal hover:bg-white"
+                >
+                  <Download size={13} />
+                </a>
+                {!isDeleted &&
+                  (currentUser.role === 'admin' ||
+                    currentUser.role === 'coordinator' ||
+                    att.uploaded_by === currentUser.id) && (
+                    <button
+                      type="button"
+                      onClick={() => onDelete(att)}
+                      className="p-1.5 text-mid-grey hover:text-danger"
+                      aria-label={`Eliminar ${att.file_name}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function InstallationWorkflowSection({
   task,
   orderAttachments,
+  interestAttachments,
   currentUser,
   isDeleted,
   onChanged,
@@ -58,11 +181,15 @@ export function InstallationWorkflowSection({
   const [savingCheck, setSavingCheck] = useState(false);
 
   const [uploadingOrder, setUploadingOrder] = useState(false);
-  const [previewOrder, setPreviewOrder] = useState<Attachment | null>(null);
+  const [uploadingInterest, setUploadingInterest] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<{
+    attachment: Attachment;
+    sectionLabel: string;
+  } | null>(null);
   const [safePdfObjectUrl, setSafePdfObjectUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const rawUrl = previewOrder?.public_url;
+    const rawUrl = previewDoc?.attachment.public_url;
     let revoked = false;
     let objectUrl: string | null = null;
 
@@ -86,7 +213,7 @@ export function InstallationWorkflowSection({
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       setSafePdfObjectUrl(null);
     };
-  }, [previewOrder]);
+  }, [previewDoc]);
 
   const handleSaveScheduledDate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,123 +260,96 @@ export function InstallationWorkflowSection({
     }
   };
 
-  const handleUploadOrder = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingOrder(true);
+  const uploadDocuments = async (files: FileList, kind: AttachmentKind) => {
+    const isInterest = kind === 'interest_document';
+    if (isInterest) setUploadingInterest(true);
+    else setUploadingOrder(true);
+
     try {
-      await uploadTaskAttachment(
-        task.id,
-        file,
-        `Pedido de instalación: ${file.name}`,
-        currentUser,
-        { kind: 'installation_order' }
+      const list = Array.from(files);
+      for (const file of list) {
+        const caption = isInterest
+          ? `Documento de interés: ${file.name}`
+          : `Pedido de instalación: ${file.name}`;
+        await uploadTaskAttachment(task.id, file, caption, currentUser, { kind });
+      }
+      onFeedback(
+        isInterest
+          ? list.length > 1
+            ? `${list.length} documentos de interés adjuntados.`
+            : 'Documento de interés adjuntado.'
+          : 'Pedido de instalación adjuntado.'
       );
-      onFeedback('Pedido de instalación adjuntado.');
       await onChanged();
     } catch (err) {
       onFeedback(
-        err instanceof Error ? err.message : 'No se pudo subir el pedido de instalación.'
+        err instanceof Error
+          ? err.message
+          : isInterest
+          ? 'No se pudo subir el documento de interés.'
+          : 'No se pudo subir el pedido de instalación.'
       );
     } finally {
-      setUploadingOrder(false);
-      e.target.value = '';
+      if (isInterest) setUploadingInterest(false);
+      else setUploadingOrder(false);
     }
   };
 
-  const handleDeleteOrder = async (att: Attachment) => {
+  const handleDeleteDocument = async (att: Attachment, successMsg: string) => {
     try {
       await deleteTaskAttachment(task.id, att, currentUser);
-      if (previewOrder?.id === att.id) setPreviewOrder(null);
-      onFeedback('Pedido de instalación eliminado.');
+      if (previewDoc?.attachment.id === att.id) setPreviewDoc(null);
+      onFeedback(successMsg);
       await onChanged();
     } catch (err) {
-      onFeedback(err instanceof Error ? err.message : 'No se pudo eliminar el pedido.');
+      onFeedback(err instanceof Error ? err.message : 'No se pudo eliminar el documento.');
     }
   };
 
   return (
     <div className="space-y-4">
       {/* 1. Pedido de Instalación adjunto */}
-      <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
-            <FileText size={16} className="text-magenta" /> Pedido de Instalación (
-            {orderAttachments.length})
-          </h2>
+      <InstallationDocumentsCard
+        title="Pedido de Instalación"
+        icon={<FileText size={16} className="text-magenta" />}
+        attachments={orderAttachments}
+        emptyText="No se ha adjuntado ningún pedido de instalación todavía (admite PDF o imagen)."
+        uploadButtonLabel="Adjuntar Pedido"
+        uploadingLabel="Subiendo..."
+        uploading={uploadingOrder}
+        isDeleted={isDeleted}
+        currentUser={currentUser}
+        onUploadFiles={(files) => void uploadDocuments(files, 'installation_order')}
+        onPreview={(att) =>
+          setPreviewDoc({ attachment: att, sectionLabel: 'Pedido de Instalación' })
+        }
+        onDelete={(att) =>
+          void handleDeleteDocument(att, 'Pedido de instalación eliminado.')
+        }
+      />
 
-          {!isDeleted && (
-            <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy-dark min-h-[38px]">
-              <FileUp size={14} /> {uploadingOrder ? 'Subiendo...' : 'Adjuntar Pedido'}
-              <input
-                type="file"
-                accept="application/pdf,image/jpeg,image/png,image/webp"
-                onChange={handleUploadOrder}
-                className="hidden"
-                disabled={uploadingOrder}
-              />
-            </label>
-          )}
-        </div>
+      {/* 2. Documentos de Interés (debajo de Pedido y encima de Fecha Acordada) */}
+      <InstallationDocumentsCard
+        title="Documentos de Interés"
+        icon={<FolderOpen size={16} className="text-magenta" />}
+        attachments={interestAttachments}
+        emptyText="No se ha adjuntado ningún documento de interés todavía (admite PDF o imagen)."
+        uploadButtonLabel="Adjuntar Documento"
+        uploadingLabel="Subiendo..."
+        uploading={uploadingInterest}
+        multiple
+        isDeleted={isDeleted}
+        currentUser={currentUser}
+        onUploadFiles={(files) => void uploadDocuments(files, 'interest_document')}
+        onPreview={(att) =>
+          setPreviewDoc({ attachment: att, sectionLabel: 'Documento de Interés' })
+        }
+        onDelete={(att) =>
+          void handleDeleteDocument(att, 'Documento de interés eliminado.')
+        }
+      />
 
-        {orderAttachments.length === 0 ? (
-          <p className="text-xs text-mid-grey">
-            No se ha adjuntado ningún pedido de instalación todavía (admite PDF o imagen).
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {orderAttachments.map((att) => (
-              <div
-                key={att.id}
-                className="flex flex-wrap items-center justify-between gap-2 p-3 bg-off-white border border-border rounded-sm"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <FileText size={18} className="text-magenta flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-charcoal truncate">{att.file_name}</p>
-                    <p className="text-[11px] text-mid-grey">
-                      {new Date(att.created_at).toLocaleString('es-ES')}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewOrder(att)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-navy text-white text-xs font-bold hover:bg-navy-dark"
-                  >
-                    <Eye size={13} /> Visualizar
-                  </button>
-                  <a
-                    href={att.public_url}
-                    download={att.file_name}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-border text-xs font-bold text-charcoal hover:bg-white"
-                  >
-                    <Download size={13} />
-                  </a>
-                  {!isDeleted &&
-                    (currentUser.role === 'admin' ||
-                      currentUser.role === 'coordinator' ||
-                      att.uploaded_by === currentUser.id) && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteOrder(att)}
-                        className="p-1.5 text-mid-grey hover:text-danger"
-                        aria-label={`Eliminar ${att.file_name}`}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 2. Fecha futura acordada para la instalación */}
+      {/* 3. Fecha acordada para la instalación (solo fecha, sin hora) */}
       <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
@@ -298,7 +398,7 @@ export function InstallationWorkflowSection({
         )}
       </div>
 
-      {/* 3. Checklist: Cotejo de mercancía */}
+      {/* 4. Checklist: Cotejo de mercancía */}
       <div className="bg-white rounded-md shadow-card p-5 border border-border/60 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-bold text-navy uppercase tracking-wider flex items-center gap-2">
@@ -382,11 +482,11 @@ export function InstallationWorkflowSection({
         )}
       </div>
 
-      {/* Modal Visor de Pedido de Instalación */}
-      {previewOrder && (
+      {/* Modal Visor de Pedido / Documento de Interés */}
+      {previewDoc && (
         <div
           className="fixed inset-0 z-50 bg-charcoal/80 flex items-center justify-center p-3 sm:p-6"
-          onClick={() => setPreviewOrder(null)}
+          onClick={() => setPreviewDoc(null)}
         >
           <div
             className="bg-white w-full max-w-4xl h-[86dvh] rounded-lg shadow-elevated overflow-hidden flex flex-col"
@@ -395,13 +495,13 @@ export function InstallationWorkflowSection({
             <div className="bg-navy text-white px-4 py-3 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-sm font-bold truncate">
-                  Pedido de Instalación · {previewOrder.file_name}
+                  {previewDoc.sectionLabel} · {previewDoc.attachment.file_name}
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <a
-                  href={previewOrder.public_url}
-                  download={previewOrder.file_name}
+                  href={previewDoc.attachment.public_url}
+                  download={previewDoc.attachment.file_name}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-2.5 py-1 bg-white/15 hover:bg-white/25 text-xs font-bold rounded-xs"
@@ -410,9 +510,9 @@ export function InstallationWorkflowSection({
                 </a>
                 <button
                   type="button"
-                  onClick={() => setPreviewOrder(null)}
+                  onClick={() => setPreviewDoc(null)}
                   className="p-1 text-white/80 hover:text-white"
-                  aria-label="Cerrar visor de pedido"
+                  aria-label="Cerrar visor de documento"
                 >
                   <X size={20} />
                 </button>
@@ -420,30 +520,30 @@ export function InstallationWorkflowSection({
             </div>
 
             <div className="flex-1 bg-off-white overflow-auto flex items-center justify-center p-2">
-              {!isSafePreviewUrl(previewOrder.public_url) ? (
+              {!isSafePreviewUrl(previewDoc.attachment.public_url) ? (
                 <p className="text-sm text-danger font-semibold p-4">
                   URL de documento bloqueada por seguridad.
                 </p>
-              ) : previewOrder.mime_type === 'application/pdf' ||
-                previewOrder.file_name.toLowerCase().endsWith('.pdf') ? (
-                previewOrder.public_url.startsWith('data:') && !safePdfObjectUrl ? (
+              ) : previewDoc.attachment.mime_type === 'application/pdf' ||
+                previewDoc.attachment.file_name.toLowerCase().endsWith('.pdf') ? (
+                previewDoc.attachment.public_url.startsWith('data:') && !safePdfObjectUrl ? (
                   <p className="text-xs text-mid-grey p-4">Cargando documento PDF...</p>
                 ) : (
                   <iframe
                     src={
-                      previewOrder.public_url.startsWith('data:')
+                      previewDoc.attachment.public_url.startsWith('data:')
                         ? safePdfObjectUrl || undefined
-                        : previewOrder.public_url
+                        : previewDoc.attachment.public_url
                     }
-                    title={previewOrder.file_name}
+                    title={previewDoc.attachment.file_name}
                     className="w-full h-full border-0 bg-white"
                   />
                 )
               ) : (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={previewOrder.public_url}
-                  alt={previewOrder.file_name}
+                  src={previewDoc.attachment.public_url}
+                  alt={previewDoc.attachment.file_name}
                   className="max-w-full max-h-full object-contain"
                 />
               )}

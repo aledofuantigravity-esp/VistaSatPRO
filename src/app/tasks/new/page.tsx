@@ -86,6 +86,7 @@ function NewTaskContent() {
 
   // Instalación
   const [orderFile, setOrderFile] = useState<File | null>(null);
+  const [interestFiles, setInterestFiles] = useState<File[]>([]);
 
   // Incidencia CXC (copias y piezas con botón +)
   const [meterBw, setMeterBw] = useState('');
@@ -195,6 +196,37 @@ function NewTaskContent() {
     setOrderFile(file);
   };
 
+  const handleInterestFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (picked.length === 0) return;
+
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    const valid: File[] = [];
+    for (const file of picked) {
+      if (!allowed.includes(file.type)) {
+        setError('Los documentos de interés deben ser PDF o imagen (JPG, PNG, WEBP).');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setError(`El archivo "${file.name}" supera el máximo permitido de 10 MB.`);
+        return;
+      }
+      valid.push(file);
+    }
+
+    setError(null);
+    setInterestFiles((prev) => {
+      const next = [...prev];
+      for (const f of valid) {
+        if (!next.some((existing) => existing.name === f.name && existing.size === f.size)) {
+          next.push(f);
+        }
+      }
+      return next;
+    });
+  };
+
   const normalizedMaterials: MaterialItem[] = cxcPieces
     .filter((r) => r.name.trim().length > 0)
     .map((r) => ({
@@ -271,7 +303,7 @@ function NewTaskContent() {
         profile
       );
 
-      // Si es Instalación y adjuntó pedido, subirlo automáticamente
+      // Si es Instalación y adjuntó pedido o documentos de interés, subirlos automáticamente
       if (taskType === 'installation' && orderFile) {
         await uploadTaskAttachment(
           created.id,
@@ -280,6 +312,18 @@ function NewTaskContent() {
           profile,
           { kind: 'installation_order' }
         );
+      }
+
+      if (taskType === 'installation' && interestFiles.length > 0) {
+        for (const docFile of interestFiles) {
+          await uploadTaskAttachment(
+            created.id,
+            docFile,
+            `Documento de interés: ${docFile.name}`,
+            profile,
+            { kind: 'interest_document' }
+          );
+        }
       }
 
       router.push(`/tasks/${created.id}`);
@@ -524,8 +568,9 @@ function NewTaskContent() {
             {taskType === 'installation' && (
               <>
                 <div className="p-3 bg-petrol/10 border-l-4 border-petrol text-xs text-charcoal">
-                  <strong>Solicitud de Instalación:</strong> Adjunta el pedido de instalación
-                  (PDF o imagen). La fecha acordada se fijará dentro del parte una vez creado.
+                  <strong>Solicitud de Instalación:</strong> Adjunta el pedido de instalación y
+                  los documentos de interés (PDF o imágenes). La fecha acordada se fijará dentro
+                  del parte una vez creado.
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -569,31 +614,76 @@ function NewTaskContent() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
-                    <FileUp size={13} className="text-magenta" /> Adjuntar Pedido de Instalación
-                  </label>
-                  <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy cursor-pointer hover:bg-navy/5 min-h-[46px]">
-                    <FileUp size={15} />
-                    <span className="truncate">
-                      {orderFile ? orderFile.name : 'Subir PDF o imagen (máx. 10 MB)'}
-                    </span>
-                    <input
-                      type="file"
-                      accept="application/pdf,image/jpeg,image/png,image/webp"
-                      onChange={handleOrderFileChange}
-                      className="hidden"
-                    />
-                  </label>
-                  {orderFile && (
-                    <button
-                      type="button"
-                      onClick={() => setOrderFile(null)}
-                      className="text-[11px] font-bold text-danger mt-1 hover:underline"
-                    >
-                      Quitar archivo adjunto
-                    </button>
-                  )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
+                      <FileUp size={13} className="text-magenta" /> Adjuntar Pedido de Instalación
+                    </label>
+                    <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy cursor-pointer hover:bg-navy/5 min-h-[46px]">
+                      <FileUp size={15} />
+                      <span className="truncate">
+                        {orderFile ? orderFile.name : 'Subir PDF o imagen (máx. 10 MB)'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="application/pdf,image/jpeg,image/png,image/webp"
+                        onChange={handleOrderFileChange}
+                        className="hidden"
+                      />
+                    </label>
+                    {orderFile && (
+                      <button
+                        type="button"
+                        onClick={() => setOrderFile(null)}
+                        className="text-[11px] font-bold text-danger mt-1 hover:underline"
+                      >
+                        Quitar archivo adjunto
+                      </button>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
+                      <FileUp size={13} className="text-magenta" /> Documentos de Interés
+                    </label>
+                    <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy cursor-pointer hover:bg-navy/5 min-h-[46px]">
+                      <FileUp size={15} />
+                      <span className="truncate">
+                        {interestFiles.length > 0
+                          ? `${interestFiles.length} documento(s) · Añadir más`
+                          : 'Subir PDF o imágenes (máx. 10 MB)'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="application/pdf,image/jpeg,image/png,image/webp"
+                        multiple
+                        aria-label="Documentos de Interés"
+                        onChange={handleInterestFilesChange}
+                        className="hidden"
+                      />
+                    </label>
+                    {interestFiles.length > 0 && (
+                      <ul className="mt-1.5 space-y-1">
+                        {interestFiles.map((f, idx) => (
+                          <li
+                            key={`${f.name}-${f.size}`}
+                            className="flex items-center justify-between gap-2 text-[11px] text-charcoal bg-off-white px-2 py-1 border border-border rounded-xs"
+                          >
+                            <span className="truncate font-semibold">{f.name}</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setInterestFiles((prev) => prev.filter((_, i) => i !== idx))
+                              }
+                              className="text-danger font-bold hover:underline flex-shrink-0"
+                            >
+                              Quitar
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </div>
               </>
             )}
@@ -951,6 +1041,12 @@ function NewTaskContent() {
                   </p>
                   <p>
                     <strong>Pedido adjunto:</strong> {orderFile ? orderFile.name : 'Sin adjuntar'}
+                  </p>
+                  <p>
+                    <strong>Documentos de interés:</strong>{' '}
+                    {interestFiles.length > 0
+                      ? interestFiles.map((f) => f.name).join(', ')
+                      : 'Sin adjuntar'}
                   </p>
                 </>
               )}

@@ -14,6 +14,7 @@ import { FinishInstallationModal } from '@/components/tasks/FinishInstallationMo
 import {
   InstallationWorkflowSection,
   isInstallationOrderAttachment,
+  isInterestDocumentAttachment,
 } from '@/components/tasks/InstallationWorkflowSection';
 import {
   isPhysicalWorkOrderAttachment,
@@ -222,9 +223,13 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   const sla = getSlaStatus(task);
   const taskType = resolveTaskType(task);
   const orderAttachments = attachments.filter(isInstallationOrderAttachment);
+  const interestAttachments = attachments.filter(isInterestDocumentAttachment);
   const physicalWorkOrderAttachments = attachments.filter(isPhysicalWorkOrderAttachment);
   const photoAttachments = attachments.filter(
-    (a) => !isInstallationOrderAttachment(a) && !isPhysicalWorkOrderAttachment(a)
+    (a) =>
+      !isInstallationOrderAttachment(a) &&
+      !isInterestDocumentAttachment(a) &&
+      !isPhysicalWorkOrderAttachment(a)
   );
 
   const prepareTaskClosure = async (): Promise<boolean> => {
@@ -668,6 +673,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         <InstallationWorkflowSection
           task={task}
           orderAttachments={orderAttachments}
+          interestAttachments={interestAttachments}
           currentUser={profile}
           isDeleted={isDeleted}
           onChanged={() => load(true)}

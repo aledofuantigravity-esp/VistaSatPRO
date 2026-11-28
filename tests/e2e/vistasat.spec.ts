@@ -155,13 +155,63 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
 
     await page.getByPlaceholder(/Ricoh IM C3500/i).fill('Multifunción Instalación E2E');
     await page.getByPlaceholder(/solicitud de instalación/i).fill('Instalación en planta 2 según pedido.');
+
+    const interestPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
+      'base64'
+    );
+    await page.getByLabel('Documentos de Interés').setInputFiles({
+      name: 'plano-instalacion.png',
+      mimeType: 'image/png',
+      buffer: interestPng,
+    });
+    await expect(page.getByText('plano-instalacion.png')).toBeVisible();
+
     await page.getByRole('button', { name: /Siguiente/i }).click();
+    await expect(page.getByText(/plano-instalacion\.png/i)).toBeVisible();
     await page.getByRole('button', { name: /Crear Tarea/i }).click();
 
     await expect(page).toHaveURL(/\/tasks\/task-/);
+    const orderHeading = page.getByRole('heading', { name: /Pedido de Instalación \(0\)/i });
+    const interestHeading = page.getByRole('heading', { name: /Documentos de Interés \(1\)/i });
+    const dateHeading = page.getByRole('heading', {
+      name: /Fecha Acordada para la Instalación/i,
+    });
+    await expect(orderHeading).toBeVisible();
+    await expect(interestHeading).toBeVisible();
+    await expect(dateHeading).toBeVisible();
+    await expect(page.getByText('plano-instalacion.png', { exact: true })).toBeVisible();
     await expect(
-      page.getByRole('heading', { name: /Fecha Acordada para la Instalación/i })
+      page.getByRole('heading', { name: /Fotos de la Instalación \(0\)/i })
     ).toBeVisible();
+
+    // Comprobar orden visual: Pedido de Instalación -> Documentos de Interés -> Fecha Acordada
+    const orderBox = await orderHeading.boundingBox();
+    const interestBox = await interestHeading.boundingBox();
+    const dateBox = await dateHeading.boundingBox();
+    expect(orderBox && interestBox && dateBox).toBeTruthy();
+    expect(orderBox!.y).toBeLessThan(interestBox!.y);
+    expect(interestBox!.y).toBeLessThan(dateBox!.y);
+
+    // Añadir segundo documento PDF desde la ficha de la instalación
+    const samplePdf = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n');
+    await page
+      .locator('label')
+      .filter({ hasText: /Adjuntar Documento/i })
+      .locator('input[type="file"]')
+      .setInputFiles({
+        name: 'manual-tecnico.pdf',
+        mimeType: 'application/pdf',
+        buffer: samplePdf,
+      });
+    await expect(
+      page.getByRole('heading', { name: /Documentos de Interés \(2\)/i })
+    ).toBeVisible();
+    await expect(page.getByText('manual-tecnico.pdf', { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: /Fotos de la Instalación \(0\)/i })
+    ).toBeVisible();
+
     await expect(page.locator('input[type="datetime-local"]')).toHaveCount(0);
     await page.getByLabel('Fecha acordada de instalación').fill('2027-02-20');
     await page.getByRole('button', { name: /Guardar fecha acordada/i }).click();

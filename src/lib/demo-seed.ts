@@ -657,7 +657,10 @@ export function hydrateTasks(state: DemoDatabaseState, tasks: Task[]): Task[] {
       ? state.profiles.find((p) => p.id === t.resolution_updated_by) || null
       : null,
     attachment_count: state.attachments.filter(
-      (a) => a.task_id === t.id && a.attachment_kind !== 'installation_order'
+      (a) =>
+        a.task_id === t.id &&
+        a.attachment_kind !== 'installation_order' &&
+        a.attachment_kind !== 'interest_document'
     ).length,
   }));
 }

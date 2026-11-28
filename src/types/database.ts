@@ -43,7 +43,11 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export type TaskType = 'installation' | 'rma_incident' | 'cxc_incident' | 'task';
 
-export type AttachmentKind = 'photo' | 'installation_order' | 'physical_work_order';
+export type AttachmentKind =
+  | 'photo'
+  | 'installation_order'
+  | 'physical_work_order'
+  | 'interest_document';
 
 export type TaskStatus =
   | 'pending'

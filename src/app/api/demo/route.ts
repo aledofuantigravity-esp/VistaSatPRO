@@ -1248,8 +1248,9 @@ export async function POST(request: Request) {
           };
         const resolvedKind: AttachmentKind = kind || 'photo';
         const actor = state.profiles.find((p) => p.id === actorId);
+        const randSuffix = Math.random().toString(36).slice(2, 6);
         const att: Attachment = {
-          id: `att-${Date.now()}`,
+          id: `att-${Date.now()}-${randSuffix}`,
           task_id: taskId,
           uploaded_by: actorId,
           storage_path: `demo/${taskId}/${fileName}`,
@@ -1263,7 +1264,7 @@ export async function POST(request: Request) {
         };
         state.attachments.unshift(att);
         state.history.push({
-          id: `hist-${Date.now()}`,
+          id: `hist-${Date.now()}-${randSuffix}`,
           task_id: taskId,
           actor_id: actorId,
           event_type: 'attachment_added',
@@ -1273,6 +1274,8 @@ export async function POST(request: Request) {
           note:
             resolvedKind === 'installation_order'
               ? `Pedido de instalación adjunto (${fileName})`
+              : resolvedKind === 'interest_document'
+              ? `Documento de interés adjunto (${fileName})`
               : resolvedKind === 'physical_work_order'
               ? `Parte de trabajo físico adjunto (${fileName})`
               : caption

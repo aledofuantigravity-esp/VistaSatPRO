@@ -186,13 +186,15 @@ export async function uploadTaskAttachment(
   options?: { kind?: AttachmentKind; skipOfflineQueue?: boolean }
 ): Promise<Attachment & { offlineQueued?: boolean }> {
   const kind: AttachmentKind = options?.kind || 'photo';
-  const allowedBinaryKinds: AllowedBinaryKind[] =
-    kind === 'installation_order' ? ['jpeg', 'png', 'webp', 'pdf'] : ['jpeg', 'png', 'webp'];
-  const rawLimit = kind === 'installation_order' ? MAX_ORDER_BYTES : MAX_RAW_IMAGE_INPUT_BYTES;
+  const isDocKind = kind === 'installation_order' || kind === 'interest_document';
+  const allowedBinaryKinds: AllowedBinaryKind[] = isDocKind
+    ? ['jpeg', 'png', 'webp', 'pdf']
+    : ['jpeg', 'png', 'webp'];
+  const rawLimit = isDocKind ? MAX_ORDER_BYTES : MAX_RAW_IMAGE_INPUT_BYTES;
 
   if (file.size > rawLimit) {
     throw new Error(
-      `El archivo supera el tamaño máximo permitido (${kind === 'installation_order' ? '10 MB' : '25 MB antes de comprimir'}).`
+      `El archivo supera el tamaño máximo permitido (${isDocKind ? '10 MB' : '25 MB antes de comprimir'}).`
     );
   }
 
@@ -219,10 +221,10 @@ export async function uploadTaskAttachment(
     }
   }
 
-  const finalLimit = kind === 'installation_order' ? MAX_ORDER_BYTES : MAX_UPLOAD_BYTES;
+  const finalLimit = isDocKind ? MAX_ORDER_BYTES : MAX_UPLOAD_BYTES;
   if (processedFile.size > finalLimit) {
     throw new Error(
-      `El archivo sigue superando el límite (${kind === 'installation_order' ? '10 MB' : '5 MB'}) tras optimizarse.`
+      `El archivo sigue superando el límite (${isDocKind ? '10 MB' : '5 MB'}) tras optimizarse.`
     );
   }
 
@@ -293,6 +295,8 @@ export async function uploadTaskAttachment(
   const prefix =
     kind === 'installation_order'
       ? 'pedido'
+      : kind === 'interest_document'
+      ? 'doc-interes'
       : kind === 'physical_work_order'
       ? 'parte-fisico'
       : 'foto';
@@ -337,6 +341,8 @@ export async function uploadTaskAttachment(
     note:
       kind === 'installation_order'
         ? `Pedido de instalación adjunto: ${processedFile.name}`
+        : kind === 'interest_document'
+        ? `Documento de interés adjunto: ${processedFile.name}`
         : kind === 'physical_work_order'
         ? `Parte de trabajo físico adjunto: ${processedFile.name}`
         : caption || `Adjunto: ${processedFile.name}`,
@@ -352,6 +358,8 @@ export async function uploadTaskAttachment(
     title:
       kind === 'installation_order'
         ? 'Pedido de instalación adjunto'
+        : kind === 'interest_document'
+        ? 'Documento de interés adjunto'
         : 'Nueva fotografía adjunta',
     body: `${actor.full_name} adjuntó ${processedFile.name}.`,
   });
@@ -405,13 +413,22 @@ export async function deleteTaskAttachment(
     }
   }
 
+  const deleteLabel =
+    attachment.attachment_kind === 'installation_order'
+      ? `Pedido de instalación eliminado (${attachment.file_name})`
+      : attachment.attachment_kind === 'interest_document'
+      ? `Documento de interés eliminado (${attachment.file_name})`
+      : attachment.attachment_kind === 'physical_work_order'
+      ? `Parte de trabajo físico eliminado (${attachment.file_name})`
+      : `Fotografía eliminada (${attachment.file_name})`;
+
   await supabase.from('task_history').insert({
     task_id: taskId,
     actor_id: actor.id,
     event_type: 'field_updated',
     field_name: 'attachments',
     old_value: attachment.file_name,
-    note: `Fotografía eliminada (${attachment.file_name})`,
+    note: deleteLabel,
   });
 
   useAppCache.getState().invalidateTaskDetail(taskId);

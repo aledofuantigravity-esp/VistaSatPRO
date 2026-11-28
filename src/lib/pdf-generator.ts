@@ -44,6 +44,7 @@ export interface GenerateTaskPdfOptions {
   variant?: PdfVariant;
   logoDataUrl?: string | null;
   orderAttachments?: Attachment[];
+  interestAttachments?: Attachment[];
 }
 
 type RgbTuple = readonly [number, number, number];
@@ -109,6 +110,7 @@ export function generateTaskPDF(
   const variant: PdfVariant = options.variant || 'internal';
   const logoDataUrl = options.logoDataUrl || null;
   const orderAttachments = options.orderAttachments || [];
+  const interestAttachments = options.interestAttachments || [];
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -856,6 +858,29 @@ export function generateTaskPDF(
       });
       y += boxH + 3.5;
     }
+
+    if (interestAttachments.length > 0) {
+      const boxH = 8 + interestAttachments.length * 4.5;
+      ensureSpace(boxH + 3);
+      setColorFill(COLOR.SOFT_NAVY);
+      setColorDraw(COLOR.BORDER);
+      doc.roundedRect(M, y, CW, boxH, 1.2, 1.2, 'FD');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      setColorText(COLOR.NAVY);
+      doc.text(`DOCUMENTOS DE INTERÉS ADJUNTOS (${interestAttachments.length}):`, M + 3.5, y + 5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.8);
+      setColorText(COLOR.CHARCOAL);
+      interestAttachments.forEach((docAtt, idx) => {
+        doc.text(
+          sanitizePdfText(`- ${docAtt.file_name} (${formatDateTimeEs(docAtt.created_at)})`),
+          M + 5,
+          y + 9.8 + idx * 4.5
+        );
+      });
+      y += boxH + 3.5;
+    }
   }
 
   // Caja Descripción del Problema / Solicitud / Tarea
@@ -1553,6 +1578,13 @@ function isOrderAttachment(att: Attachment): boolean {
   );
 }
 
+function isInterestDocAttachment(att: Attachment): boolean {
+  return (
+    att.attachment_kind === 'interest_document' ||
+    Boolean(att.caption?.startsWith('[DOC_INTERES]'))
+  );
+}
+
 function isPhysicalOrderAttachment(att: Attachment): boolean {
   return (
     att.attachment_kind === 'physical_work_order' ||
@@ -1584,8 +1616,13 @@ export async function downloadTaskPDF(
   }
 
   const orderAttachments = attachments.filter(isOrderAttachment);
+  const interestAttachments = attachments.filter(isInterestDocAttachment);
   const generalImageAttachments = attachments.filter(
-    (a) => !isOrderAttachment(a) && !isPhysicalOrderAttachment(a) && isImageAttachment(a)
+    (a) =>
+      !isOrderAttachment(a) &&
+      !isInterestDocAttachment(a) &&
+      !isPhysicalOrderAttachment(a) &&
+      isImageAttachment(a)
   );
   const physicalImageAttachments = attachments.filter(
     (a) => isPhysicalOrderAttachment(a) && isImageAttachment(a)
@@ -1624,6 +1661,7 @@ export async function downloadTaskPDF(
     variant,
     logoDataUrl,
     orderAttachments,
+    interestAttachments,
   });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
