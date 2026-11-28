@@ -353,8 +353,13 @@ export function generateReportPDF(input: ReportPdfInput): Blob {
 
   const kpiGap = 3.5;
   const kpiW = (CW - kpiGap * 2) / 3;
-  const kpiH = 19;
+  const kpiH = 22;
   const { kpis } = analytics;
+
+  const avgByType = (typeKey: 'cxc_incident' | 'rma_incident' | 'installation' | 'task') => {
+    const entry = analytics.byType.find((item) => item.taskType === typeKey);
+    return entry && entry.avgHours !== null ? entry.avgFormatted : '—';
+  };
 
   const kpiCards: Array<{
     accent: RgbTuple;
@@ -363,6 +368,7 @@ export function generateReportPDF(input: ReportPdfInput): Blob {
     sub: string;
     valueColor?: RgbTuple;
     progressPct?: number;
+    segmentedRows?: Array<{ label: string; value: string; color: RgbTuple }>;
   }> = [
     {
       accent: COLOR.NAVY,
@@ -401,9 +407,15 @@ export function generateReportPDF(input: ReportPdfInput): Blob {
     },
     {
       accent: COLOR.INFO,
-      label: 'TIEMPO MEDIO RESOLUCIÓN',
-      value: kpis.avgHoursFormatted,
-      sub: `Sobre ${kpis.closedWithDurationCount} cierre(s) con fecha`,
+      label: 'TIEMPO MEDIO POR TIPO',
+      value: '',
+      sub: '',
+      segmentedRows: [
+        { label: 'CXC:', value: avgByType('cxc_incident'), color: COLOR.MAGENTA },
+        { label: 'RMA:', value: avgByType('rma_incident'), color: COLOR.NAVY },
+        { label: 'Inst.:', value: avgByType('installation'), color: COLOR.PETROL },
+        { label: 'Tarea:', value: avgByType('task'), color: COLOR.PLUM },
+      ],
     },
     {
       accent: kpis.urgentHighOpenCount > 0 ? COLOR.DANGER : COLOR.SUCCESS,
@@ -446,27 +458,55 @@ export function generateReportPDF(input: ReportPdfInput): Blob {
     setColorText(COLOR.MID_GREY);
     doc.text(sanitizePdfText(card.label), x + 3, cy + 5.6);
 
+    if (card.segmentedRows && card.segmentedRows.length > 0) {
+      const colOffsets = [x + 3, x + kpiW / 2 + 1];
+      const rowOffsets = [cy + 11.4, cy + 17.6];
+
+      card.segmentedRows.forEach((seg, segIdx) => {
+        const segCol = segIdx % 2;
+        const segRow = Math.floor(segIdx / 2);
+        const sx = colOffsets[segCol];
+        const sy = rowOffsets[segRow];
+
+        setColorFill(seg.color);
+        doc.circle(sx + 1, sy - 0.9, 0.9, 'F');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.1);
+        setColorText(COLOR.MID_GREY);
+        const safeLabel = sanitizePdfText(seg.label);
+        doc.text(safeLabel, sx + 2.8, sy);
+
+        const labelWidth = doc.getTextWidth(safeLabel);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        setColorText(COLOR.CHARCOAL);
+        doc.text(sanitizePdfText(seg.value), sx + 3.4 + labelWidth, sy);
+      });
+      return;
+    }
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     setColorText(card.valueColor || COLOR.CHARCOAL);
-    doc.text(sanitizePdfText(card.value), x + 3, cy + 12.2);
+    doc.text(sanitizePdfText(card.value), x + 3, cy + 12.6);
 
     if (typeof card.progressPct === 'number') {
       const barX = x + 32;
       const barW = kpiW - 35;
       if (barW > 8) {
         setColorFill(COLOR.OFF_WHITE);
-        doc.roundedRect(barX, cy + 9.2, barW, 2.4, 0.8, 0.8, 'F');
+        doc.roundedRect(barX, cy + 9.6, barW, 2.4, 0.8, 0.8, 'F');
         setColorFill(card.accent);
         const fillW = Math.max(1.2, (Math.min(100, Math.max(0, card.progressPct)) / 100) * barW);
-        doc.roundedRect(barX, cy + 9.2, fillW, 2.4, 0.8, 0.8, 'F');
+        doc.roundedRect(barX, cy + 9.6, fillW, 2.4, 0.8, 0.8, 'F');
       }
     }
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.8);
     setColorText(COLOR.MID_GREY);
-    doc.text(sanitizePdfText(card.sub).slice(0, 36), x + 3, cy + 16.6);
+    doc.text(sanitizePdfText(card.sub).slice(0, 36), x + 3, cy + 18.8);
   });
 
   y += kpiH * 2 + kpiGap + 6;

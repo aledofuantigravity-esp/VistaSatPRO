@@ -654,8 +654,18 @@ export function computeReportAnalytics(input: {
     insights.push('No se han registrado partes de trabajo en el alcance filtrado.');
   } else {
     insights.push(
-      `Se analizaron ${total} parte(s): ${completed} completado(s) (${closeRate}% de tasa de cierre) y ${openCount} activo(s) con un tiempo medio de resolución de ${avgHoursFormatted}.`
+      `Se analizaron ${total} parte(s): ${completed} completado(s) (${closeRate}% de tasa de cierre) y ${openCount} activo(s).`
     );
+
+    const typeSeg = (typeKey: TaskType, prefix: string) => {
+      const entry = byType.find((item) => item.taskType === typeKey);
+      return `${prefix} ${entry && entry.avgHours !== null ? entry.avgFormatted : '—'}`;
+    };
+    if (durationHoursList.length > 0) {
+      insights.push(
+        `Tiempos medios de cierre: ${typeSeg('cxc_incident', 'CXC')}, ${typeSeg('rma_incident', 'RMA')}, ${typeSeg('installation', 'Instalaciones')}, ${typeSeg('task', 'Tareas')}.`
+      );
+    }
 
     if (slaTrackedCount > 0 && slaCompliancePct !== null) {
       insights.push(

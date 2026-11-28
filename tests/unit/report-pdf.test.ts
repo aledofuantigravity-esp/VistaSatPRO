@@ -231,12 +231,24 @@ describe('report-analytics y report-pdf-generator', () => {
     const clientText = await clientBlob.text();
 
     expect(internalText).toContain('INFORME EJECUTIVO INTERNO');
+    expect(internalText).toContain('TIEMPO MEDIO POR TIPO');
+    expect(internalText).toContain('CXC:');
+    expect(internalText).toContain('RMA:');
+    expect(internalText).toContain('Inst.:');
+    expect(internalText).toContain('Tarea:');
+    expect(internalText).not.toContain('TIEMPO MEDIO RESOLUCI');
     expect(internalText).toContain('FOCOS');
     expect(internalText).toContain('COSTE EST.');
     expect(internalText).toContain('160,00 EUR');
     expect(internalText).toContain('Multifuncion Ricoh IM C3500');
 
     expect(clientText).toContain('INFORME PARA CLIENTE');
+    expect(clientText).toContain('TIEMPO MEDIO POR TIPO');
+    expect(clientText).toContain('CXC:');
+    expect(clientText).toContain('RMA:');
+    expect(clientText).toContain('Inst.:');
+    expect(clientText).toContain('Tarea:');
+    expect(clientText).not.toContain('TIEMPO MEDIO RESOLUCI');
     expect(clientText).not.toContain('COSTE EST.');
     expect(clientText).not.toContain('VOLUMEN POR CLIENTE');
     expect(clientText).not.toContain('RENDIMIENTO POR T');
