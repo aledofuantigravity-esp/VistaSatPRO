@@ -51,6 +51,15 @@ export async function proxy(request: NextRequest) {
     return res;
   };
 
+  // Las precargas del enrutador Next.js no necesitan golpear Supabase Auth/BD en cada hover
+  const isPrefetch =
+    request.headers.get('next-router-prefetch') === '1' ||
+    request.headers.get('x-middleware-prefetch') === '1' ||
+    request.headers.get('purpose') === 'prefetch';
+  if (isPrefetch) {
+    return withCsp(NextResponse.next({ request: { headers: requestHeaders } }));
+  }
+
   if (!isSupabaseConfigured()) {
     return withCsp(NextResponse.next({ request: { headers: requestHeaders } }));
   }

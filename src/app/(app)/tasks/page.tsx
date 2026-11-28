@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -17,7 +17,6 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { AppShell } from '@/components/layout/AppShell';
 import { PriorityBadge, StatusBadge, TaskTypeBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { TaskCard } from '@/components/ui/TaskCard';
@@ -68,11 +67,7 @@ const KPI_PRESET_LABELS: Record<DashboardKpiFilter, string> = {
 };
 
 export default function TasksPage() {
-  return (
-    <AppShell>
-      <TasksContent />
-    </AppShell>
-  );
+  return <TasksContent />;
 }
 
 function TasksContent() {
@@ -110,11 +105,13 @@ function TasksContent() {
   const [bulkPriority, setBulkPriority] = useState<TaskPriority | ''>('');
   const [applyingBulk, setApplyingBulk] = useState(false);
 
-  // Filtros favoritos
+  // Filtros favoritos y carga diferida de Papelera
   const [presets, setPresets] = useState<SavedFilterPreset[]>([]);
   const [savingPreset, setSavingPreset] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [filtersHydrated, setFiltersHydrated] = useState(false);
+  const [trashLoaded, setTrashLoaded] = useState(false);
+  const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
     const hydrate = () => {
@@ -187,23 +184,26 @@ function TasksContent() {
 
   useEffect(() => {
     if (!filtersHydrated) return;
-    try {
-      localStorage.setItem(
-        ACTIVE_FILTERS_KEY,
-        JSON.stringify({
-          tab,
-          typeFilter,
-          statusFilter,
-          priorityFilter,
-          techFilter,
-          dateFrom,
-          dateTo,
-          search,
-        })
-      );
-    } catch {
-      // Silencioso
-    }
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          ACTIVE_FILTERS_KEY,
+          JSON.stringify({
+            tab,
+            typeFilter,
+            statusFilter,
+            priorityFilter,
+            techFilter,
+            dateFrom,
+            dateTo,
+            search,
+          })
+        );
+      } catch {
+        // Silencioso
+      }
+    }, 250);
+    return () => clearTimeout(t);
   }, [
     filtersHydrated,
     tab,
@@ -218,6 +218,7 @@ function TasksContent() {
 
   const profileId = profile?.id;
   const profileRole = profile?.role;
+  const needDeleted = tab === 'trash' || trashLoaded;
 
   const load = useCallback(
     async (silent = false) => {
@@ -230,16 +231,19 @@ function TasksContent() {
         const shouldLoadProfs =
           isCoord && useAppCache.getState().profiles.length === 0;
         const [t, p] = await Promise.all([
-          listTasks(viewer, { includeDeleted: true }),
-          shouldLoadProfs ? listProfiles() : Promise.resolve(useAppCache.getState().profiles),
+          listTasks(viewer, { includeDeleted: needDeleted, force: silent }),
+          shouldLoadProfs
+            ? listProfiles({ force: silent })
+            : Promise.resolve(useAppCache.getState().profiles),
         ]);
         setTasks(t);
         setProfiles(p);
+        if (needDeleted) setTrashLoaded(true);
       } finally {
         setLoading(false);
       }
     },
-    [profileId, profileRole, isCoord]
+    [profileId, profileRole, isCoord, needDeleted]
   );
 
   useEffect(() => {
@@ -300,8 +304,8 @@ function TasksContent() {
       if (dateFrom && t.created_at.slice(0, 10) < dateFrom) return false;
       if (dateTo && t.created_at.slice(0, 10) > dateTo) return false;
 
-      if (search.trim()) {
-        const q = search.toLowerCase();
+      if (deferredSearch.trim()) {
+        const q = deferredSearch.toLowerCase();
         const haystack = [
           t.code,
           t.customer?.name,
@@ -333,7 +337,7 @@ function TasksContent() {
     techFilter,
     dateFrom,
     dateTo,
-    search,
+    deferredSearch,
   ]);
 
   const paginatedTasks = useMemo(
@@ -642,7 +646,7 @@ function TasksContent() {
                 : 'bg-white text-mid-grey border border-border hover:text-danger'
             }`}
           >
-            <Trash2 size={13} /> Papelera ({trashedTasks.length})
+            <Trash2 size={13} /> Papelera{trashLoaded ? ` (${trashedTasks.length})` : ''}
           </button>
         </div>
 

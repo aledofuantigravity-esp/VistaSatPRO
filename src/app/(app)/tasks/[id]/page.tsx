@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -8,9 +9,7 @@ import {
   RotateCcw,
   Wrench,
 } from 'lucide-react';
-import { AppShell } from '@/components/layout/AppShell';
 import { CxcMetersSection } from '@/components/tasks/CxcMetersSection';
-import { FinishInstallationModal } from '@/components/tasks/FinishInstallationModal';
 import {
   InstallationWorkflowSection,
   isInstallationOrderAttachment,
@@ -20,21 +19,44 @@ import {
   isPhysicalWorkOrderAttachment,
   PhysicalWorkOrderSection,
 } from '@/components/tasks/PhysicalWorkOrderSection';
-import { PdfExportModal } from '@/components/tasks/PdfExportModal';
 import { TaskClosureSection } from '@/components/tasks/TaskClosureSection';
 import { TaskCommentsSection } from '@/components/tasks/TaskCommentsSection';
 import { TaskDatesSummarySection } from '@/components/tasks/TaskDatesSummarySection';
-import { TaskDeleteModal } from '@/components/tasks/TaskDeleteModal';
-import { TaskEditModal } from '@/components/tasks/TaskEditModal';
 import { TaskGallerySection } from '@/components/tasks/TaskGallerySection';
 import { TaskHeaderSection } from '@/components/tasks/TaskHeaderSection';
 import { TaskHistorySection } from '@/components/tasks/TaskHistorySection';
 import { TaskMaterialsSection } from '@/components/tasks/TaskMaterialsSection';
 import { TaskResolutionSection } from '@/components/tasks/TaskResolutionSection';
-import { TaskStatusSheet } from '@/components/tasks/TaskStatusSheet';
 import { TaskTechnicalNotesSection } from '@/components/tasks/TaskTechnicalNotesSection';
 import { Button } from '@/components/ui/Button';
-import { SignaturePadModal } from '@/components/ui/SignaturePadModal';
+
+const FinishInstallationModal = dynamic(
+  () =>
+    import('@/components/tasks/FinishInstallationModal').then(
+      (m) => m.FinishInstallationModal
+    ),
+  { ssr: false }
+);
+const PdfExportModal = dynamic(
+  () => import('@/components/tasks/PdfExportModal').then((m) => m.PdfExportModal),
+  { ssr: false }
+);
+const TaskDeleteModal = dynamic(
+  () => import('@/components/tasks/TaskDeleteModal').then((m) => m.TaskDeleteModal),
+  { ssr: false }
+);
+const TaskEditModal = dynamic(
+  () => import('@/components/tasks/TaskEditModal').then((m) => m.TaskEditModal),
+  { ssr: false }
+);
+const TaskStatusSheet = dynamic(
+  () => import('@/components/tasks/TaskStatusSheet').then((m) => m.TaskStatusSheet),
+  { ssr: false }
+);
+const SignaturePadModal = dynamic(
+  () => import('@/components/ui/SignaturePadModal').then((m) => m.SignaturePadModal),
+  { ssr: false }
+);
 import { useAuth } from '@/hooks/useAuth';
 import {
   addTaskNote,
@@ -74,11 +96,7 @@ export default function TaskDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  return (
-    <AppShell>
-      <TaskDetailContent taskId={id} />
-    </AppShell>
-  );
+  return <TaskDetailContent taskId={id} />;
 }
 
 function TaskDetailContent({ taskId }: { taskId: string }) {
@@ -134,8 +152,10 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         const shouldLoadProfs =
           profileRole !== 'technician' && useAppCache.getState().profiles.length === 0;
         const [detail, profs] = await Promise.all([
-          getTaskDetail(taskId),
-          shouldLoadProfs ? listProfiles() : Promise.resolve(useAppCache.getState().profiles),
+          getTaskDetail(taskId, { force: silent }),
+          shouldLoadProfs
+            ? listProfiles({ force: silent })
+            : Promise.resolve(useAppCache.getState().profiles),
         ]);
         setTask(detail.task);
         if (!resolutionDirtyRef.current) {
@@ -804,12 +824,14 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
         />
       )}
 
-      <SignaturePadModal
-        isOpen={showSignatureModal}
-        initialSignerName={task.signer_name || task.site_contact_name || ''}
-        onClose={() => setShowSignatureModal(false)}
-        onSave={handleSaveSignature}
-      />
+      {showSignatureModal && (
+        <SignaturePadModal
+          isOpen={showSignatureModal}
+          initialSignerName={task.signer_name || task.site_contact_name || ''}
+          onClose={() => setShowSignatureModal(false)}
+          onSave={handleSaveSignature}
+        />
+      )}
 
       {showFinishInstallModal && (
         <FinishInstallationModal

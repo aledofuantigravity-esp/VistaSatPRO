@@ -17,7 +17,6 @@ import {
   UserCheck,
   Wrench,
 } from 'lucide-react';
-import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -52,11 +51,7 @@ interface DraftInstallationProductRow {
 }
 
 export default function NewTaskPage() {
-  return (
-    <AppShell>
-      <NewTaskContent />
-    </AppShell>
-  );
+  return <NewTaskContent />;
 }
 
 const TASK_TYPE_ORDER: TaskType[] = [

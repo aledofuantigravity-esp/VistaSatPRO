@@ -66,7 +66,7 @@ export default function DashboardPage() {
       if (!silent && !hasCached) setLoading(true);
       try {
         const viewer = { id: profileId, role: profileRole } as Profile;
-        const t = await listTasks(viewer);
+        const t = await listTasks(viewer, { force: silent });
         setTasks(t);
       } finally {
         setLoading(false);

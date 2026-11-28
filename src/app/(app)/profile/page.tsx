@@ -16,7 +16,6 @@ import {
   Trash2,
   User as UserIcon,
 } from 'lucide-react';
-import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { NotificationPreferencesEditor } from '@/components/users/NotificationPreferencesEditor';
 import { useAuth } from '@/hooks/useAuth';
@@ -46,11 +45,7 @@ import {
 } from '@/types/database';
 
 export default function ProfilePage() {
-  return (
-    <AppShell>
-      <ProfileContent />
-    </AppShell>
-  );
+  return <ProfileContent />;
 }
 
 function ProfileContent() {

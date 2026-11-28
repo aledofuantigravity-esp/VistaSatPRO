@@ -14,28 +14,50 @@ import type {
 } from '@/types/database';
 import { demoGet, demoPost } from './shared';
 
-export async function listProfiles(): Promise<Profile[]> {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    try {
-      const data = await demoGet<{ profiles: Profile[] }>('resource=profiles');
-      useAppCache.getState().setProfiles(data.profiles);
-      return data.profiles;
-    } catch {
-      const fallback = loadDemoState().profiles;
-      useAppCache.getState().setProfiles(fallback);
-      return fallback;
-    }
+const PROFILES_CACHE_TTL_MS = 45_000;
+let inFlightProfiles: Promise<Profile[]> | null = null;
+
+export async function listProfiles(options?: { force?: boolean }): Promise<Profile[]> {
+  const force = Boolean(options?.force);
+  const cache = useAppCache.getState();
+  if (
+    !force &&
+    cache.profilesLoadedAt !== null &&
+    Date.now() - cache.profilesLoadedAt < PROFILES_CACHE_TTL_MS
+  ) {
+    return cache.profiles;
   }
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .order('full_name', { ascending: true });
-  if (error) throw new Error(error.message);
-  const profiles = (data || []) as Profile[];
-  useAppCache.getState().setProfiles(profiles);
-  return profiles;
+  if (!force && inFlightProfiles) return inFlightProfiles;
+
+  const run = (async (): Promise<Profile[]> => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      try {
+        const data = await demoGet<{ profiles: Profile[] }>('resource=profiles');
+        useAppCache.getState().setProfiles(data.profiles);
+        return data.profiles;
+      } catch {
+        const fallback = loadDemoState().profiles;
+        useAppCache.getState().setProfiles(fallback);
+        return fallback;
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('full_name', { ascending: true });
+    if (error) throw new Error(error.message);
+    const profiles = (data || []) as Profile[];
+    useAppCache.getState().setProfiles(profiles);
+    return profiles;
+  })().finally(() => {
+    if (inFlightProfiles === run) inFlightProfiles = null;
+  });
+
+  if (!force) inFlightProfiles = run;
+  return run;
 }
 
 export async function updateProfile(

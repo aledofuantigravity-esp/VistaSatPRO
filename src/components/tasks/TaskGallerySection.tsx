@@ -267,6 +267,8 @@ export function TaskGallerySection({
                 <img
                   src={getDisplayUrl(att)}
                   alt={att.caption || att.file_name}
+                  loading="lazy"
+                  decoding="async"
                   onError={() => void handleImageError(att)}
                   className="w-full h-full object-cover transition-transform group-hover:scale-105"
                 />

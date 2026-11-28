@@ -1,8 +1,10 @@
 'use client';
 
+import { memo, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Calendar, Camera, Clock, MapPin, Phone, User, Wrench, ChevronRight } from 'lucide-react';
 import { PriorityBadge, StatusBadge, TaskTypeBadge } from './Badge';
+import { prefetchTaskDetail } from '@/lib/data-service';
 import { getSlaStatus } from '@/lib/sla';
 import { formatDateOnlyEs } from '@/lib/task-dates';
 import {
@@ -19,12 +21,36 @@ interface TaskCardProps {
   onToggleSelect?: () => void;
 }
 
-export function TaskCard({
+export const TaskCard = memo(function TaskCard({
   task,
   selectable = false,
   selected = false,
   onToggleSelect,
 }: TaskCardProps) {
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (prefetchTimerRef.current) {
+        clearTimeout(prefetchTimerRef.current);
+      }
+    };
+  }, []);
+
+  const schedulePrefetch = () => {
+    if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+    prefetchTimerRef.current = setTimeout(() => {
+      prefetchTaskDetail(task.id);
+    }, 120);
+  };
+
+  const cancelPrefetch = () => {
+    if (prefetchTimerRef.current) {
+      clearTimeout(prefetchTimerRef.current);
+      prefetchTimerRef.current = null;
+    }
+  };
+
   const statusColor = TASK_STATUS_META[normalizeTaskStatus(task.status)]?.borderHex || '#002169';
   const address = [task.site_address || task.customer?.address, task.site_city || task.customer?.city]
     .filter(Boolean)
@@ -39,6 +65,9 @@ export function TaskCard({
   return (
     <div
       data-testid="task-card"
+      onMouseEnter={schedulePrefetch}
+      onMouseLeave={cancelPrefetch}
+      onFocus={schedulePrefetch}
       className={`bg-white rounded-md shadow-card border overflow-hidden transition-transform active:scale-[0.99] ${
         selected ? 'border-magenta ring-2 ring-magenta/40' : 'border-border/60'
       }`}
@@ -165,4 +194,4 @@ export function TaskCard({
       )}
     </div>
   );
-}
+});

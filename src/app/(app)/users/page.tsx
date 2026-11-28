@@ -16,7 +16,6 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { NotificationPreferencesEditor } from '@/components/users/NotificationPreferencesEditor';
 import { useAuth } from '@/hooks/useAuth';
@@ -47,11 +46,7 @@ import {
 } from '@/types/database';
 
 export default function UsersPage() {
-  return (
-    <AppShell>
-      <UsersContent />
-    </AppShell>
-  );
+  return <UsersContent />;
 }
 
 function isUserRecentlyActive(u: Profile, liveIds: Set<string>, currentId: string): boolean {
@@ -97,12 +92,15 @@ function UsersContent() {
   const profileId = profile?.id;
   const profileRole = profile?.role;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!profileId || !profileRole) return;
     await Promise.resolve();
     try {
       const viewer = { id: profileId, role: profileRole } as Profile;
-      const [u, t] = await Promise.all([listProfiles(), listTasks(viewer)]);
+      const [u, t] = await Promise.all([
+        listProfiles({ force: silent }),
+        listTasks(viewer, { force: silent }),
+      ]);
       setUsers(u);
       setTasks(t);
     } finally {
@@ -117,7 +115,7 @@ function UsersContent() {
 
   const loadProfilesOnly = useCallback(async () => {
     if (!profileId || !profileRole) return;
-    const u = await listProfiles();
+    const u = await listProfiles({ force: true });
     setUsers(u);
   }, [profileId, profileRole]);
 
@@ -133,7 +131,7 @@ function UsersContent() {
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
-      const handleDemo = () => void load();
+      const handleDemo = () => void load(true);
       window.addEventListener('vistasat:demo-updated', handleDemo);
       return () => {
         clearInterval(interval);

@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import { isDemoModeAllowed } from '@/lib/supabase/config';
+import { isDemoModeAllowed, isSupabaseConfigured } from '@/lib/supabase/config';
 import {
   getDemoSessionUserId,
   setDemoSessionUserId,
@@ -21,6 +21,34 @@ import {
 import { clearOfflineQueue } from '@/lib/offline-queue';
 import { useAppCache } from '@/store/app-cache';
 import type { Profile } from '@/types/database';
+
+const PROFILE_HINT_KEY = 'vistasat_profile_hint_v1';
+
+function readProfileHint(): Profile | null {
+  if (typeof window === 'undefined' || !isSupabaseConfigured()) return null;
+  try {
+    const raw = sessionStorage.getItem(PROFILE_HINT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Profile | null;
+    if (parsed && parsed.id && parsed.is_active) return parsed;
+  } catch {
+    // Silencioso
+  }
+  return null;
+}
+
+function writeProfileHint(prof: Profile | null) {
+  if (typeof window === 'undefined' || !isSupabaseConfigured()) return;
+  try {
+    if (prof && prof.is_active) {
+      sessionStorage.setItem(PROFILE_HINT_KEY, JSON.stringify(prof));
+    } else {
+      sessionStorage.removeItem(PROFILE_HINT_KEY);
+    }
+  } catch {
+    // Silencioso
+  }
+}
 
 interface AuthContextValue {
   profile: Profile | null;
@@ -49,6 +77,11 @@ async function purgeClientSessionData() {
         localStorage.removeItem(k);
       }
     });
+    try {
+      sessionStorage.removeItem(PROFILE_HINT_KEY);
+    } catch {
+      // Silencioso
+    }
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_USER_CACHES' });
     }
@@ -115,6 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) {
+        writeProfileHint(null);
         setProfile(null);
         setIsLoading(false);
         return;
@@ -135,8 +169,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      setProfile(typedProf);
+      writeProfileHint(typedProf);
+      setProfile((prev) => {
+        if (
+          prev &&
+          typedProf &&
+          prev.id === typedProf.id &&
+          prev.updated_at === typedProf.updated_at &&
+          prev.role === typedProf.role &&
+          prev.notification_level === typedProf.notification_level &&
+          prev.full_name === typedProf.full_name
+        ) {
+          return prev;
+        }
+        return typedProf;
+      });
     } catch {
+      writeProfileHint(null);
       setProfile(null);
     } finally {
       setIsLoading(false);
@@ -144,14 +193,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => void loadCurrentUser(), 0);
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      const hint = readProfileHint();
+      if (hint) {
+        setProfile((prev) => prev || hint);
+        setIsLoading(false);
+      }
+      void loadCurrentUser();
+    });
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
       const handleUpdate = () => void loadCurrentUser();
       window.addEventListener('vistasat:demo-updated', handleUpdate);
       return () => {
-        clearTimeout(t);
+        active = false;
         window.removeEventListener('vistasat:demo-updated', handleUpdate);
       };
     }
@@ -163,7 +221,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => {
-      clearTimeout(t);
+      active = false;
       subscription.unsubscribe();
     };
   }, [loadCurrentUser]);

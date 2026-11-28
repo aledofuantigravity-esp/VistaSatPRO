@@ -2,7 +2,6 @@
 
 import { useCallback, useMemo, useState, useEffect } from 'react';
 import { BarChart3, Download, FileDown, Package, RotateCcw, Shield, Timer } from 'lucide-react';
-import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { downloadCsv } from '@/lib/csv';
@@ -24,11 +23,7 @@ import {
 } from '@/types/database';
 
 export default function ReportsPage() {
-  return (
-    <AppShell>
-      <ReportsContent />
-    </AppShell>
-  );
+  return <ReportsContent />;
 }
 
 function ReportsContent() {
@@ -64,9 +59,9 @@ function ReportsContent() {
       try {
         const viewer = { id: profileId, role: profileRole } as Profile;
         const [t, p, c] = await Promise.all([
-          listTasks(viewer),
-          listProfiles(),
-          listCustomers(),
+          listTasks(viewer, { force: silent }),
+          listProfiles({ force: silent }),
+          listCustomers({ force: silent }),
         ]);
         setTasks(t);
         setProfiles(p);

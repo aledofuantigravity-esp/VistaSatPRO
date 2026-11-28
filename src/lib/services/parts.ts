@@ -3,32 +3,56 @@ import { useAppCache } from '@/store/app-cache';
 import type { PartCatalogItem } from '@/types/database';
 import { demoGet, demoPost } from './shared';
 
-export async function listPartsCatalog(): Promise<{
+const PARTS_CACHE_TTL_MS = 60_000;
+let inFlightParts: Promise<{ parts: PartCatalogItem[]; migrationPending?: boolean }> | null = null;
+
+export async function listPartsCatalog(options?: {
+  force?: boolean;
+}): Promise<{
   parts: PartCatalogItem[];
   migrationPending?: boolean;
 }> {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    const res = await demoGet<{ parts: PartCatalogItem[] }>('resource=parts_catalog');
-    useAppCache.getState().setPartsCatalog(res.parts);
-    return { parts: res.parts };
+  const force = Boolean(options?.force);
+  const cache = useAppCache.getState();
+  if (
+    !force &&
+    cache.partsLoadedAt !== null &&
+    Date.now() - cache.partsLoadedAt < PARTS_CACHE_TTL_MS
+  ) {
+    return { parts: cache.partsCatalog };
   }
 
-  const { data, error } = await supabase
-    .from('parts_catalog')
-    .select('*')
-    .order('name', { ascending: true });
+  if (!force && inFlightParts) return inFlightParts;
 
-  if (error) {
-    if (error.code === '42P01' || error.code === 'PGRST205') {
-      return { parts: [], migrationPending: true };
+  const run = (async (): Promise<{ parts: PartCatalogItem[]; migrationPending?: boolean }> => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      const res = await demoGet<{ parts: PartCatalogItem[] }>('resource=parts_catalog');
+      useAppCache.getState().setPartsCatalog(res.parts);
+      return { parts: res.parts };
     }
-    throw new Error(error.message);
-  }
 
-  const parts = (data || []) as PartCatalogItem[];
-  useAppCache.getState().setPartsCatalog(parts);
-  return { parts };
+    const { data, error } = await supabase
+      .from('parts_catalog')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (error) {
+      if (error.code === '42P01' || error.code === 'PGRST205') {
+        return { parts: [], migrationPending: true };
+      }
+      throw new Error(error.message);
+    }
+
+    const parts = (data || []) as PartCatalogItem[];
+    useAppCache.getState().setPartsCatalog(parts);
+    return { parts };
+  })().finally(() => {
+    if (inFlightParts === run) inFlightParts = null;
+  });
+
+  if (!force) inFlightParts = run;
+  return run;
 }
 
 export async function createPartCatalogItem(input: {

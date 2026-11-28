@@ -18,7 +18,6 @@ import {
   Trash2,
   UserCheck,
 } from 'lucide-react';
-import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -51,11 +50,7 @@ function renderTypeIcon(type: NotificationType) {
 }
 
 export default function NotificationsPage() {
-  return (
-    <AppShell>
-      <NotificationsContent />
-    </AppShell>
-  );
+  return <NotificationsContent />;
 }
 
 function NotificationsContent() {

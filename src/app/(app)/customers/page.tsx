@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Building2,
@@ -16,7 +16,6 @@ import {
   StickyNote,
   X,
 } from 'lucide-react';
-import { AppShell } from '@/components/layout/AppShell';
 import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
@@ -31,11 +30,7 @@ import { useAppCache } from '@/store/app-cache';
 import type { Customer, Profile, Task } from '@/types/database';
 
 export default function CustomersPage() {
-  return (
-    <AppShell>
-      <CustomersContent />
-    </AppShell>
-  );
+  return <CustomersContent />;
 }
 
 function CustomersContent() {
@@ -49,6 +44,7 @@ function CustomersContent() {
     cachedCounts
   );
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [cityFilter, setCityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const [loading, setLoading] = useState(!customersLoadedAt);
@@ -84,8 +80,8 @@ function CustomersContent() {
       if (!silent && !hasCached) setLoading(true);
       try {
         const [c, taskCounts] = await Promise.all([
-          listCustomers(),
-          listCustomerTaskCounts(),
+          listCustomers({ force: silent }),
+          listCustomerTaskCounts({ force: silent }),
         ]);
         setCustomers(c);
         setCounts(taskCounts);
@@ -159,8 +155,8 @@ function CustomersContent() {
       if (statusFilter === 'active' && !c.is_active) return false;
       if (statusFilter === 'inactive' && c.is_active) return false;
       if (cityFilter !== 'all' && (c.city?.trim() || '') !== cityFilter) return false;
-      if (search.trim()) {
-        const q = search.toLowerCase();
+      if (deferredSearch.trim()) {
+        const q = deferredSearch.toLowerCase();
         const text = [c.name, c.tax_id, c.city, c.contact_name, c.contact_email, c.address]
           .filter(Boolean)
           .join(' ')
@@ -169,7 +165,7 @@ function CustomersContent() {
       }
       return true;
     });
-  }, [customers, search, cityFilter, statusFilter]);
+  }, [customers, deferredSearch, cityFilter, statusFilter]);
 
   if (!profile) return null;
   const isCoord = profile.role === 'admin' || profile.role === 'coordinator';

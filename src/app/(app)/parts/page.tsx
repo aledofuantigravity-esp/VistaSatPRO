@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Package,
@@ -11,7 +11,6 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -24,11 +23,7 @@ import { useAppCache } from '@/store/app-cache';
 import type { PartCatalogItem } from '@/types/database';
 
 export default function PartsCatalogPage() {
-  return (
-    <AppShell>
-      <PartsCatalogContent />
-    </AppShell>
-  );
+  return <PartsCatalogContent />;
 }
 
 function PartsCatalogContent() {
@@ -40,6 +35,7 @@ function PartsCatalogContent() {
   const [loading, setLoading] = useState(!partsLoadedAt);
   const [migrationPending, setMigrationPending] = useState(false);
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -60,7 +56,7 @@ function PartsCatalogContent() {
     const hasCached = useAppCache.getState().partsLoadedAt !== null;
     if (!silent && !hasCached) setLoading(true);
     try {
-      const res = await listPartsCatalog();
+      const res = await listPartsCatalog({ force: silent });
       setParts(res.parts);
       setMigrationPending(Boolean(res.migrationPending));
     } finally {
@@ -93,8 +89,8 @@ function PartsCatalogContent() {
       if (categoryFilter !== 'all' && (p.category?.trim() || '') !== categoryFilter) {
         return false;
       }
-      if (search.trim()) {
-        const q = search.toLowerCase();
+      if (deferredSearch.trim()) {
+        const q = deferredSearch.toLowerCase();
         const hay = [p.name, p.ref, p.category, p.notes]
           .filter(Boolean)
           .join(' ')
@@ -103,7 +99,7 @@ function PartsCatalogContent() {
       }
       return true;
     });
-  }, [parts, statusFilter, categoryFilter, search]);
+  }, [parts, statusFilter, categoryFilter, deferredSearch]);
 
   if (!profile) return null;
   const isCoord = profile.role === 'admin' || profile.role === 'coordinator';

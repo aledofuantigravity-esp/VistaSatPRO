@@ -4,80 +4,122 @@ import { useAppCache } from '@/store/app-cache';
 import { normalizeTaskStatus, type Customer, type Profile, type Task } from '@/types/database';
 import { demoGet, demoPost } from './shared';
 
-export async function listCustomers(): Promise<Customer[]> {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    try {
-      const data = await demoGet<{ customers: Customer[] }>('resource=customers');
-      useAppCache.getState().setCustomers(data.customers);
-      return data.customers;
-    } catch {
-      const fallback = loadDemoState().customers.sort((a, b) => a.name.localeCompare(b.name));
-      useAppCache.getState().setCustomers(fallback);
-      return fallback;
-    }
+const CUSTOMERS_CACHE_TTL_MS = 45_000;
+let inFlightCustomers: Promise<Customer[]> | null = null;
+let inFlightCounts: Promise<Record<string, { total: number; active: number }>> | null = null;
+
+export async function listCustomers(options?: { force?: boolean }): Promise<Customer[]> {
+  const force = Boolean(options?.force);
+  const cache = useAppCache.getState();
+  if (
+    !force &&
+    cache.customersLoadedAt !== null &&
+    Date.now() - cache.customersLoadedAt < CUSTOMERS_CACHE_TTL_MS
+  ) {
+    return cache.customers;
   }
 
-  const { data, error } = await supabase
-    .from('customers')
-    .select('*')
-    .order('name', { ascending: true });
-  if (error) throw new Error(error.message);
-  const customers = (data || []) as Customer[];
-  useAppCache.getState().setCustomers(customers);
-  return customers;
+  if (!force && inFlightCustomers) return inFlightCustomers;
+
+  const run = (async (): Promise<Customer[]> => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      try {
+        const data = await demoGet<{ customers: Customer[] }>('resource=customers');
+        useAppCache.getState().setCustomers(data.customers);
+        return data.customers;
+      } catch {
+        const fallback = loadDemoState().customers.sort((a, b) => a.name.localeCompare(b.name));
+        useAppCache.getState().setCustomers(fallback);
+        return fallback;
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .order('name', { ascending: true });
+    if (error) throw new Error(error.message);
+    const customers = (data || []) as Customer[];
+    useAppCache.getState().setCustomers(customers);
+    return customers;
+  })().finally(() => {
+    if (inFlightCustomers === run) inFlightCustomers = null;
+  });
+
+  if (!force) inFlightCustomers = run;
+  return run;
 }
 
 /**
  * Obtiene el número de partes totales y activos por cliente mediante una consulta ligera
  * sin descargar descripciones, adjuntos ni joins.
  */
-export async function listCustomerTaskCounts(): Promise<
-  Record<string, { total: number; active: number }>
-> {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    try {
-      const data = await demoGet<{
-        counts: Record<string, { total: number; active: number }>;
-      }>('resource=customer_task_counts');
-      useAppCache.getState().setCustomerCounts(data.counts);
-      return data.counts;
-    } catch {
-      const fallback: Record<string, { total: number; active: number }> = {};
-      for (const t of loadDemoState().tasks) {
-        if (t.deleted_at) continue;
-        const entry = fallback[t.customer_id] || { total: 0, active: 0 };
-        entry.total += 1;
-        const st = normalizeTaskStatus(t.status);
-        if (st !== 'completed' && st !== 'cancelled') entry.active += 1;
-        fallback[t.customer_id] = entry;
+export async function listCustomerTaskCounts(options?: {
+  force?: boolean;
+}): Promise<Record<string, { total: number; active: number }>> {
+  const force = Boolean(options?.force);
+  const cache = useAppCache.getState();
+  if (
+    !force &&
+    cache.customerCountsLoadedAt !== null &&
+    Date.now() - cache.customerCountsLoadedAt < CUSTOMERS_CACHE_TTL_MS
+  ) {
+    return cache.customerCounts;
+  }
+
+  if (!force && inFlightCounts) return inFlightCounts;
+
+  const run = (async (): Promise<Record<string, { total: number; active: number }>> => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      try {
+        const data = await demoGet<{
+          counts: Record<string, { total: number; active: number }>;
+        }>('resource=customer_task_counts');
+        useAppCache.getState().setCustomerCounts(data.counts);
+        return data.counts;
+      } catch {
+        const fallback: Record<string, { total: number; active: number }> = {};
+        for (const t of loadDemoState().tasks) {
+          if (t.deleted_at) continue;
+          const entry = fallback[t.customer_id] || { total: 0, active: 0 };
+          entry.total += 1;
+          const st = normalizeTaskStatus(t.status);
+          if (st !== 'completed' && st !== 'cancelled') entry.active += 1;
+          fallback[t.customer_id] = entry;
+        }
+        useAppCache.getState().setCustomerCounts(fallback);
+        return fallback;
       }
-      useAppCache.getState().setCustomerCounts(fallback);
-      return fallback;
     }
-  }
 
-  const { data, error } = await supabase
-    .from('tasks')
-    .select('customer_id, status')
-    .is('deleted_at', null);
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('customer_id, status')
+      .is('deleted_at', null);
 
-  if (error) throw new Error(error.message);
+    if (error) throw new Error(error.message);
 
-  const counts: Record<string, { total: number; active: number }> = {};
-  for (const row of (data || []) as Array<{ customer_id: string; status: string }>) {
-    const entry = counts[row.customer_id] || { total: 0, active: 0 };
-    entry.total += 1;
-    const st = normalizeTaskStatus(row.status);
-    if (st !== 'completed' && st !== 'cancelled') {
-      entry.active += 1;
+    const counts: Record<string, { total: number; active: number }> = {};
+    for (const row of (data || []) as Array<{ customer_id: string; status: string }>) {
+      const entry = counts[row.customer_id] || { total: 0, active: 0 };
+      entry.total += 1;
+      const st = normalizeTaskStatus(row.status);
+      if (st !== 'completed' && st !== 'cancelled') {
+        entry.active += 1;
+      }
+      counts[row.customer_id] = entry;
     }
-    counts[row.customer_id] = entry;
-  }
 
-  useAppCache.getState().setCustomerCounts(counts);
-  return counts;
+    useAppCache.getState().setCustomerCounts(counts);
+    return counts;
+  })().finally(() => {
+    if (inFlightCounts === run) inFlightCounts = null;
+  });
+
+  if (!force) inFlightCounts = run;
+  return run;
 }
 
 /**

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -29,9 +30,13 @@ import { OfflineBanner } from '@/components/pwa/OfflineBanner';
 import { SWUpdateBanner } from '@/components/pwa/SWUpdateBanner';
 import { InstallBanner } from '@/components/pwa/InstallBanner';
 import { InstallGuideSheet } from '@/components/pwa/InstallGuideSheet';
-import { GlobalSearch } from '@/components/layout/GlobalSearch';
 import { NotificationToast } from '@/components/ui/NotificationToast';
 import { ROLE_LABELS } from '@/types/database';
+
+const GlobalSearch = dynamic(
+  () => import('@/components/layout/GlobalSearch').then((m) => m.GlobalSearch),
+  { ssr: false }
+);
 
 function UnreadPulseBadge({
   count,
@@ -471,7 +476,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+      {searchOpen && (
+        <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+      )}
       <NotificationToast notification={latestToast} onDismiss={dismissToast} />
       <InstallBanner />
       <InstallGuideSheet />

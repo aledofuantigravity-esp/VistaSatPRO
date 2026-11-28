@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -15,9 +16,20 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { InstallationsCalendarView } from '@/components/installations/InstallationsCalendarView';
-import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
+
+const InstallationsCalendarView = dynamic(
+  () =>
+    import('@/components/installations/InstallationsCalendarView').then(
+      (m) => m.InstallationsCalendarView
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-96 bg-white rounded-md animate-pulse shadow-card" />
+    ),
+  }
+);
 import { TaskCard } from '@/components/ui/TaskCard';
 import { useAuth } from '@/hooks/useAuth';
 import { isOpenTask } from '@/lib/dashboard-helpers';
@@ -28,11 +40,7 @@ import { useAppCache } from '@/store/app-cache';
 import { resolveTaskType, type Profile, type Task } from '@/types/database';
 
 export default function InstallationsPage() {
-  return (
-    <AppShell>
-      <InstallationsContent />
-    </AppShell>
-  );
+  return <InstallationsContent />;
 }
 
 function InstallationsContent() {
@@ -43,6 +51,7 @@ function InstallationsContent() {
   const [allTasks, setAllTasks] = useState<Task[]>(cachedTasks);
   const [loading, setLoading] = useState(!tasksLoadedAt);
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [filterMode, setFilterMode] = useState<'all' | 'pending_date' | 'scheduled' | 'completed'>(
     'all'
@@ -65,7 +74,7 @@ function InstallationsContent() {
       if (!silent && !hasCached) setLoading(true);
       try {
         const viewer = { id: profileId, role: profileRole } as Profile;
-        const all = await listTasks(viewer);
+        const all = await listTasks(viewer, { force: silent });
         setAllTasks(all);
       } finally {
         setLoading(false);
@@ -90,8 +99,8 @@ function InstallationsContent() {
   );
 
   const searched = useMemo(() => {
-    if (!search.trim()) return tasks;
-    const q = search.toLowerCase();
+    if (!deferredSearch.trim()) return tasks;
+    const q = deferredSearch.toLowerCase();
     return tasks.filter((t) =>
       [t.code, t.customer?.name, t.equipment_ref, t.site_city, t.problem_desc, t.assignee?.full_name]
         .filter(Boolean)
@@ -99,7 +108,7 @@ function InstallationsContent() {
         .toLowerCase()
         .includes(q)
     );
-  }, [tasks, search]);
+  }, [tasks, deferredSearch]);
 
   const pendingDateList = useMemo(
     () =>

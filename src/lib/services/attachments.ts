@@ -86,23 +86,42 @@ export async function refreshTaskMediaUrls(
     return { task, attachments };
   }
 
-  let nextTask = task;
   const sigPath = extractTaskAttachmentPath(task.client_signature_url);
-  if (sigPath) {
-    const freshSig = await refreshSignedUrl(sigPath);
-    if (freshSig) {
-      nextTask = { ...task, client_signature_url: freshSig };
-    }
+  const attPaths = attachments.map((att) =>
+    extractTaskAttachmentPath(att.storage_path || att.public_url)
+  );
+  const uniquePaths = Array.from(
+    new Set([sigPath, ...attPaths].filter((p): p is string => Boolean(p)))
+  );
+  if (uniquePaths.length === 0) {
+    return { task, attachments };
   }
 
-  const nextAttachments = await Promise.all(
-    attachments.map(async (att) => {
-      const attPath = extractTaskAttachmentPath(att.storage_path || att.public_url);
-      if (!attPath) return att;
-      const freshUrl = await refreshSignedUrl(attPath);
-      return freshUrl ? { ...att, public_url: freshUrl } : att;
-    })
-  );
+  const { data: signedList, error } = await supabase.storage
+    .from('task-attachments')
+    .createSignedUrls(uniquePaths, 3600);
+
+  if (error || !signedList) {
+    return { task, attachments };
+  }
+
+  const signedMap = new Map<string, string>();
+  signedList.forEach((item) => {
+    if (item.path && item.signedUrl) {
+      signedMap.set(item.path, item.signedUrl);
+    }
+  });
+
+  const nextTask =
+    sigPath && signedMap.has(sigPath)
+      ? { ...task, client_signature_url: signedMap.get(sigPath)! }
+      : task;
+
+  const nextAttachments = attachments.map((att, idx) => {
+    const p = attPaths[idx];
+    const freshUrl = p ? signedMap.get(p) : undefined;
+    return freshUrl ? { ...att, public_url: freshUrl } : att;
+  });
 
   return { task: nextTask, attachments: nextAttachments };
 }

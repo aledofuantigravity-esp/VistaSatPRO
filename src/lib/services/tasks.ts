@@ -25,6 +25,22 @@ import {
 } from '@/types/database';
 import { demoGet, demoPost, isOnline, triggerPushEndpoint } from './shared';
 
+const TASKS_CACHE_TTL_MS = 30_000;
+const TASK_DETAIL_TTL_MS = 20_000;
+
+export interface TaskDetailResult {
+  task: Task | null;
+  history: TaskHistoryItem[];
+  attachments: Attachment[];
+  comments: TaskComment[];
+}
+
+const inFlightTasks = new Map<string, Promise<Task[]>>();
+const inFlightTaskDetails = new Map<string, Promise<TaskDetailResult>>();
+
+const LIST_TASKS_SELECT =
+  '*, customer:customers(id, name, tax_id, address, city, contact_name, contact_phone, contact_email), assignee:profiles!tasks_assigned_to_fkey(id, full_name, phone, role, avatar_url), creator:profiles!tasks_created_by_fkey(id, full_name, role), deleter:profiles!tasks_deleted_by_fkey(id, full_name, role), attachments(id)';
+
 function normalizeInstallationProducts(
   items?: InstallationProductItem[]
 ): InstallationProductItem[] {
@@ -64,10 +80,11 @@ export interface ListTasksResult {
  */
 export async function listTasks(
   viewer: Profile,
-  options?: { includeDeleted?: boolean; limitClosed?: number }
+  options?: { includeDeleted?: boolean; limitClosed?: number; force?: boolean }
 ): Promise<Task[]> {
   const includeDeleted = Boolean(options?.includeDeleted);
   const limitClosed = options?.limitClosed;
+  const force = Boolean(options?.force);
   const snapshotKey = `tasks:${viewer.id}:${includeDeleted ? 'all' : 'active'}`;
   const viewerKey = `${viewer.id}:${viewer.role}`;
 
@@ -81,124 +98,145 @@ export async function listTasks(
     if (cached.length > 0) return cached;
   }
 
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    try {
-      const data = await demoGet<{ tasks: Task[] }>(
-        `resource=tasks&userId=${encodeURIComponent(viewer.id)}${
-          includeDeleted ? '&includeDeleted=1' : ''
-        }`
-      );
-      if (includeDeleted) {
-        const local = loadDemoState();
-        local.tasks = data.tasks;
-        saveDemoState(local, false);
-      }
-      useAppCache.getState().setTasks(data.tasks, viewerKey, includeDeleted);
-      void saveOfflineSnapshot(snapshotKey, data.tasks);
-      return data.tasks;
-    } catch {
-      const local = loadDemoState();
-      const isCoord = viewer.role === 'admin' || viewer.role === 'coordinator';
-      const fallback = local.tasks.filter((t) => {
-        if (!includeDeleted && t.deleted_at) return false;
-        if (isCoord) return true;
-        return (
-          t.assigned_to === viewer.id ||
-          t.created_by === viewer.id ||
-          t.deleted_by === viewer.id ||
-          (!t.assigned_to && t.status === 'pending')
+  // Caché fresca en memoria con TTL para evitar descargas repetidas al cambiar de pestaña
+  const cache = useAppCache.getState();
+  if (
+    !force &&
+    !limitClosed &&
+    cache.tasksLoadedAt !== null &&
+    Date.now() - cache.tasksLoadedAt < TASKS_CACHE_TTL_MS &&
+    cache.tasksViewerKey === viewerKey &&
+    (!includeDeleted || cache.tasksIncludeDeleted)
+  ) {
+    return includeDeleted ? cache.tasks : cache.tasks.filter((t) => !t.deleted_at);
+  }
+
+  const flightKey = `${viewerKey}:${includeDeleted ? 'all' : 'active'}:${limitClosed || 0}`;
+  if (!force) {
+    const pendingFlight = inFlightTasks.get(flightKey);
+    if (pendingFlight) return pendingFlight;
+  }
+
+  const run = (async (): Promise<Task[]> => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      try {
+        const data = await demoGet<{ tasks: Task[] }>(
+          `resource=tasks&userId=${encodeURIComponent(viewer.id)}${
+            includeDeleted ? '&includeDeleted=1' : ''
+          }`
         );
+        if (includeDeleted) {
+          const local = loadDemoState();
+          local.tasks = data.tasks;
+          saveDemoState(local, false);
+        }
+        useAppCache.getState().setTasks(data.tasks, viewerKey, includeDeleted);
+        void saveOfflineSnapshot(snapshotKey, data.tasks);
+        return data.tasks;
+      } catch {
+        const local = loadDemoState();
+        const isCoord = viewer.role === 'admin' || viewer.role === 'coordinator';
+        const fallback = local.tasks.filter((t) => {
+          if (!includeDeleted && t.deleted_at) return false;
+          if (isCoord) return true;
+          return (
+            t.assigned_to === viewer.id ||
+            t.created_by === viewer.id ||
+            t.deleted_by === viewer.id ||
+            (!t.assigned_to && t.status === 'pending')
+          );
+        });
+        useAppCache.getState().setTasks(fallback, viewerKey, includeDeleted);
+        return fallback;
+      }
+    }
+
+    const mapRows = (
+      rows: Array<Task & { attachments?: Array<{ id: string }> }> | null
+    ): Task[] =>
+      (rows || []).map((row) => {
+        const { attachments: rawAtts, ...rest } = row;
+        return {
+          ...rest,
+          status: normalizeTaskStatus(rest.status),
+          attachment_count: Array.isArray(rawAtts) ? rawAtts.length : 0,
+        };
       });
-      useAppCache.getState().setTasks(fallback, viewerKey, includeDeleted);
-      return fallback;
-    }
-  }
 
-  const selectClause =
-    '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*), deleter:profiles!tasks_deleted_by_fkey(*), attachments(id)';
+    let tasks: Task[];
 
-  const mapRows = (
-    rows: Array<Task & { attachments?: Array<{ id: string }> }> | null
-  ): Task[] =>
-    (rows || []).map((row) => {
-      const { attachments: rawAtts, ...rest } = row;
-      return {
-        ...rest,
-        status: normalizeTaskStatus(rest.status),
-        attachment_count: Array.isArray(rawAtts) ? rawAtts.length : 0,
-      };
-    });
+    if (limitClosed && limitClosed > 0 && !includeDeleted) {
+      const [openRes, closedRes] = await Promise.all([
+        supabase
+          .from('tasks')
+          .select(LIST_TASKS_SELECT)
+          .is('deleted_at', null)
+          .not('status', 'in', '("completed","cancelled")')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('tasks')
+          .select(LIST_TASKS_SELECT)
+          .is('deleted_at', null)
+          .in('status', ['completed', 'cancelled'])
+          .order('created_at', { ascending: false })
+          .limit(limitClosed),
+      ]);
 
-  let tasks: Task[];
+      if (openRes.error || closedRes.error) {
+        const err = openRes.error || closedRes.error!;
+        captureMonitoringError(err, { scope: 'listTasks.paginated' });
+        throw new Error(err.message);
+      }
 
-  if (limitClosed && limitClosed > 0 && !includeDeleted) {
-    const [openRes, closedRes] = await Promise.all([
-      supabase
+      const combined = [
+        ...mapRows(openRes.data as Array<Task & { attachments?: Array<{ id: string }> }>),
+        ...mapRows(closedRes.data as Array<Task & { attachments?: Array<{ id: string }> }>),
+      ];
+      tasks = combined.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    } else {
+      let query = supabase
         .from('tasks')
-        .select(selectClause)
-        .is('deleted_at', null)
-        .not('status', 'in', '("completed","cancelled")')
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('tasks')
-        .select(selectClause)
-        .is('deleted_at', null)
-        .in('status', ['completed', 'cancelled'])
-        .order('created_at', { ascending: false })
-        .limit(limitClosed),
-    ]);
+        .select(LIST_TASKS_SELECT)
+        .order('created_at', { ascending: false });
 
-    if (openRes.error || closedRes.error) {
-      const err = openRes.error || closedRes.error!;
-      captureMonitoringError(err, { scope: 'listTasks.paginated' });
-      throw new Error(err.message);
+      if (!includeDeleted) {
+        query = query.is('deleted_at', null);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        captureMonitoringError(error, { scope: 'listTasks' });
+        throw new Error(error.message);
+      }
+
+      tasks = mapRows(data as Array<Task & { attachments?: Array<{ id: string }> }>);
     }
 
-    const combined = [
-      ...mapRows(openRes.data as Array<Task & { attachments?: Array<{ id: string }> }>),
-      ...mapRows(closedRes.data as Array<Task & { attachments?: Array<{ id: string }> }>),
-    ];
-    tasks = combined.sort((a, b) => b.created_at.localeCompare(a.created_at));
-  } else {
-    let query = supabase
-      .from('tasks')
-      .select(selectClause)
-      .order('created_at', { ascending: false });
-
-    if (!includeDeleted) {
-      query = query.is('deleted_at', null);
+    useAppCache.getState().setTasks(tasks, viewerKey, includeDeleted);
+    void saveOfflineSnapshot(snapshotKey, tasks);
+    return tasks;
+  })().finally(() => {
+    if (inFlightTasks.get(flightKey) === run) {
+      inFlightTasks.delete(flightKey);
     }
+  });
 
-    const { data, error } = await query;
-    if (error) {
-      captureMonitoringError(error, { scope: 'listTasks' });
-      throw new Error(error.message);
-    }
-
-    tasks = mapRows(data as Array<Task & { attachments?: Array<{ id: string }> }>);
+  if (!force) {
+    inFlightTasks.set(flightKey, run);
   }
-
-  useAppCache.getState().setTasks(tasks, viewerKey, includeDeleted);
-  void saveOfflineSnapshot(snapshotKey, tasks);
-  return tasks;
+  return run;
 }
 
-export async function getTaskDetail(taskId: string): Promise<{
-  task: Task | null;
-  history: TaskHistoryItem[];
-  attachments: Attachment[];
-  comments: TaskComment[];
-}> {
+export async function getTaskDetail(
+  taskId: string,
+  options?: { force?: boolean }
+): Promise<TaskDetailResult> {
+  const force = Boolean(options?.force);
   const detailSnapshotKey = `detail:${taskId}`;
 
   if (!isOnline()) {
-    const snap = await loadOfflineSnapshot<{
-      task: Task | null;
-      history: TaskHistoryItem[];
-      attachments: Attachment[];
-      comments: TaskComment[];
-    }>(detailSnapshotKey);
+    const snap = await loadOfflineSnapshot<TaskDetailResult>(detailSnapshotKey);
     if (snap?.data) {
       return snap.data;
     }
@@ -213,91 +251,150 @@ export async function getTaskDetail(taskId: string): Promise<{
     }
   }
 
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    const res = await demoGet<{
-      task: Task | null;
-      history: TaskHistoryItem[];
-      attachments: Attachment[];
-      comments?: TaskComment[];
-    }>(`resource=task_detail&taskId=${encodeURIComponent(taskId)}`);
-    const result = {
-      task: res.task ? { ...res.task, status: normalizeTaskStatus(res.task.status) } : null,
-      history: res.history,
-      attachments: res.attachments,
-      comments: res.comments || [],
-    };
-    if (result.task) {
-      useAppCache.getState().setTaskDetail(taskId, result as Omit<CachedTaskDetail, 'loadedAt'>);
-      void saveOfflineSnapshot(detailSnapshotKey, result);
-    }
-    return result;
-  }
-
-  const [taskRes, histRes, attRes, commentsRes] = await Promise.all([
-    supabase
-      .from('tasks')
-      .select(
-        '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(*), creator:profiles!tasks_created_by_fkey(*), deleter:profiles!tasks_deleted_by_fkey(*)'
-      )
-      .eq('id', taskId)
-      .single(),
-    supabase
-      .from('task_history')
-      .select('*, actor:profiles(*)')
-      .eq('task_id', taskId)
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('attachments')
-      .select('*')
-      .eq('task_id', taskId)
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('task_comments')
-      .select('*, author:profiles(*)')
-      .eq('task_id', taskId)
-      .order('created_at', { ascending: true }),
-  ]);
-
-  if (taskRes.error) return { task: null, history: [], attachments: [], comments: [] };
-
-  const taskData = taskRes.data as Task;
-  taskData.status = normalizeTaskStatus(taskData.status);
-  const rawAttachments = (attRes.data || []) as Attachment[];
-
-  const signedAttachments = await Promise.all(
-    rawAttachments.map(async (att) => {
-      if (!att.storage_path || att.storage_path.startsWith('demo/')) return att;
-      const { data: signed } = await supabase.storage
-        .from('task-attachments')
-        .createSignedUrl(att.storage_path, 3600);
-      return signed?.signedUrl ? { ...att, public_url: signed.signedUrl } : att;
-    })
-  );
-
+  const cachedDetail = useAppCache.getState().taskDetails[taskId];
   if (
-    taskData.client_signature_url &&
-    !taskData.client_signature_url.startsWith('data:') &&
-    !taskData.client_signature_url.startsWith('http')
+    !force &&
+    cachedDetail &&
+    Date.now() - cachedDetail.loadedAt < TASK_DETAIL_TTL_MS
   ) {
-    const { data: signedSig } = await supabase.storage
-      .from('task-attachments')
-      .createSignedUrl(taskData.client_signature_url, 3600);
-    if (signedSig?.signedUrl) {
-      taskData.client_signature_url = signedSig.signedUrl;
-    }
+    return {
+      task: cachedDetail.task,
+      history: cachedDetail.history,
+      attachments: cachedDetail.attachments,
+      comments: cachedDetail.comments,
+    };
   }
 
-  const result = {
-    task: taskData,
-    history: (histRes.data || []) as TaskHistoryItem[],
-    attachments: signedAttachments,
-    comments: commentsRes.error ? [] : ((commentsRes.data || []) as TaskComment[]),
-  };
+  if (!force) {
+    const pendingFlight = inFlightTaskDetails.get(taskId);
+    if (pendingFlight) return pendingFlight;
+  }
 
-  useAppCache.getState().setTaskDetail(taskId, result);
-  void saveOfflineSnapshot(detailSnapshotKey, result);
-  return result;
+  const run = (async (): Promise<TaskDetailResult> => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      const res = await demoGet<{
+        task: Task | null;
+        history: TaskHistoryItem[];
+        attachments: Attachment[];
+        comments?: TaskComment[];
+      }>(`resource=task_detail&taskId=${encodeURIComponent(taskId)}`);
+      const result: TaskDetailResult = {
+        task: res.task ? { ...res.task, status: normalizeTaskStatus(res.task.status) } : null,
+        history: res.history,
+        attachments: res.attachments,
+        comments: res.comments || [],
+      };
+      if (result.task) {
+        useAppCache.getState().setTaskDetail(taskId, result as Omit<CachedTaskDetail, 'loadedAt'>);
+        void saveOfflineSnapshot(detailSnapshotKey, result);
+      }
+      return result;
+    }
+
+    const [taskRes, histRes, attRes, commentsRes] = await Promise.all([
+      supabase
+        .from('tasks')
+        .select(
+          '*, customer:customers(*), assignee:profiles!tasks_assigned_to_fkey(id, full_name, phone, role, avatar_url), creator:profiles!tasks_created_by_fkey(id, full_name, role), deleter:profiles!tasks_deleted_by_fkey(id, full_name, role)'
+        )
+        .eq('id', taskId)
+        .single(),
+      supabase
+        .from('task_history')
+        .select('*, actor:profiles(id, full_name, role, avatar_url)')
+        .eq('task_id', taskId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('attachments')
+        .select('*')
+        .eq('task_id', taskId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('task_comments')
+        .select('*, author:profiles(id, full_name, role, avatar_url)')
+        .eq('task_id', taskId)
+        .order('created_at', { ascending: true }),
+    ]);
+
+    if (taskRes.error) return { task: null, history: [], attachments: [], comments: [] };
+
+    const taskData = taskRes.data as Task;
+    taskData.status = normalizeTaskStatus(taskData.status);
+    const rawAttachments = (attRes.data || []) as Attachment[];
+
+    // Firmar todos los adjuntos y la firma digital en UNA única llamada batch createSignedUrls
+    const signaturePath =
+      taskData.client_signature_url &&
+      !taskData.client_signature_url.startsWith('data:') &&
+      !taskData.client_signature_url.startsWith('http') &&
+      !taskData.client_signature_url.startsWith('demo/')
+        ? taskData.client_signature_url
+        : null;
+
+    const rawPaths = [
+      ...rawAttachments
+        .map((att) => att.storage_path)
+        .filter((p): p is string => Boolean(p && !p.startsWith('demo/'))),
+      ...(signaturePath ? [signaturePath] : []),
+    ];
+    const uniquePaths = Array.from(new Set(rawPaths));
+    const signedMap = new Map<string, string>();
+
+    if (uniquePaths.length > 0) {
+      const { data: signedList } = await supabase.storage
+        .from('task-attachments')
+        .createSignedUrls(uniquePaths, 3600);
+      (signedList || []).forEach((item) => {
+        if (item.path && item.signedUrl) {
+          signedMap.set(item.path, item.signedUrl);
+        }
+      });
+    }
+
+    const signedAttachments = rawAttachments.map((att) => {
+      const url = att.storage_path ? signedMap.get(att.storage_path) : undefined;
+      return url ? { ...att, public_url: url } : att;
+    });
+
+    if (signaturePath) {
+      const sigUrl = signedMap.get(signaturePath);
+      if (sigUrl) {
+        taskData.client_signature_url = sigUrl;
+      }
+    }
+
+    const result = {
+      task: taskData,
+      history: (histRes.data || []) as TaskHistoryItem[],
+      attachments: signedAttachments,
+      comments: commentsRes.error ? [] : ((commentsRes.data || []) as TaskComment[]),
+    };
+
+    useAppCache.getState().setTaskDetail(taskId, result);
+    void saveOfflineSnapshot(detailSnapshotKey, result);
+    return result;
+  })().finally(() => {
+    if (inFlightTaskDetails.get(taskId) === run) {
+      inFlightTaskDetails.delete(taskId);
+    }
+  });
+
+  if (!force) {
+    inFlightTaskDetails.set(taskId, run);
+  }
+  return run;
+}
+
+/**
+ * Precarga silenciosa del detalle de un parte (ej. al pasar el ratón por la tarjeta).
+ */
+export function prefetchTaskDetail(taskId: string): void {
+  if (!taskId || !isOnline()) return;
+  const cached = useAppCache.getState().taskDetails[taskId];
+  if (cached && Date.now() - cached.loadedAt < TASK_DETAIL_TTL_MS) return;
+  if (inFlightTaskDetails.has(taskId)) return;
+  void getTaskDetail(taskId).catch(() => undefined);
 }
 
 export async function createTask(
