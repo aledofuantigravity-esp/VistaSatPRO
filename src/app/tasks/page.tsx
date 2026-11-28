@@ -1163,23 +1163,13 @@ function TasksContent() {
                 </div>
               </div>
             ) : (
-              <div key={t.id} className="relative">
-                {canBulkAct && (
-                  <label
-                    className="absolute top-3 right-3 z-10 inline-flex items-center justify-center w-6 h-6 bg-white/95 border border-border rounded-xs cursor-pointer shadow-xs"
-                    title={`Seleccionar ${t.code}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(t.id)}
-                      onChange={() => toggleSelect(t.id)}
-                      aria-label={`Seleccionar parte ${t.code}`}
-                      className="accent-magenta w-4 h-4 cursor-pointer"
-                    />
-                  </label>
-                )}
-                <TaskCard task={t} />
-              </div>
+              <TaskCard
+                key={t.id}
+                task={t}
+                selectable={canBulkAct}
+                selected={selectedIds.has(t.id)}
+                onToggleSelect={() => toggleSelect(t.id)}
+              />
             )
           )}
         </div>

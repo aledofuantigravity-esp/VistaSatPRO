@@ -721,9 +721,42 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByText('Kit Rodillo E2E')).toBeVisible();
     await expect(page.getByText('Ref: REF-E2E-99')).toBeVisible();
 
-    // C) Acciones en lote en /tasks
+    // C) Acciones en lote en /tasks y comprobación sin solapamiento checkbox vs prioridad (escritorio y móvil)
     await page.goto('/tasks');
-    await page.locator('input[type="checkbox"]').first().check();
+    const firstCard = page.getByTestId('task-card').first();
+    const firstCheckbox = firstCard.locator('input[type="checkbox"]');
+    const firstPriority = firstCard.getByTestId('task-card-priority');
+    await expect(firstCheckbox).toBeVisible();
+    await expect(firstPriority).toBeVisible();
+
+    const boxesOverlap = (
+      a: { x: number; y: number; width: number; height: number },
+      b: { x: number; y: number; width: number; height: number }
+    ) =>
+      a.x < b.x + b.width &&
+      a.x + a.width > b.x &&
+      a.y < b.y + b.height &&
+      a.y + a.height > b.y;
+
+    const cbDesk = await firstCheckbox.boundingBox();
+    const prDesk = await firstPriority.boundingBox();
+    expect(cbDesk).not.toBeNull();
+    expect(prDesk).not.toBeNull();
+    expect(boxesOverlap(cbDesk!, prDesk!)).toBe(false);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const cbMob = await firstCheckbox.boundingBox();
+    const prMob = await firstPriority.boundingBox();
+    expect(cbMob).not.toBeNull();
+    expect(prMob).not.toBeNull();
+    expect(boxesOverlap(cbMob!, prMob!)).toBe(false);
+    const hasHorizOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth
+    );
+    expect(hasHorizOverflow).toBe(false);
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    await firstCheckbox.check();
     await expect(page.getByText(/1 parte seleccionado/i)).toBeVisible();
     await page.getByLabel('Cambiar prioridad en lote').selectOption('high');
     await page.getByRole('button', { name: /Aplicar lote/i }).click();

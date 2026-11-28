@@ -11,7 +11,19 @@ import {
   type Task,
 } from '@/types/database';
 
-export function TaskCard({ task }: { task: Task }) {
+interface TaskCardProps {
+  task: Task;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+}
+
+export function TaskCard({
+  task,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+}: TaskCardProps) {
   const statusColor = TASK_STATUS_META[normalizeTaskStatus(task.status)]?.borderHex || '#002169';
   const address = [task.site_address || task.customer?.address, task.site_city || task.customer?.city]
     .filter(Boolean)
@@ -25,76 +37,105 @@ export function TaskCard({ task }: { task: Task }) {
 
   return (
     <div
-      className="bg-white rounded-md shadow-card border border-border/60 overflow-hidden transition-transform active:scale-[0.99]"
+      data-testid="task-card"
+      className={`bg-white rounded-md shadow-card border overflow-hidden transition-transform active:scale-[0.99] ${
+        selected ? 'border-magenta ring-2 ring-magenta/40' : 'border-border/60'
+      }`}
       style={{ borderLeftWidth: '5px', borderLeftColor: statusColor }}
     >
-      <Link href={`/tasks/${task.id}`} className="block p-4">
+      <div className="p-4">
         <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs font-extrabold tracking-wider text-navy uppercase">
-                {task.code}
+          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+            {selectable && (
+              <label
+                className="inline-flex items-center justify-center w-6 h-6 mt-0.5 flex-shrink-0 bg-off-white border border-border rounded-xs cursor-pointer hover:border-navy"
+                title={`Seleccionar ${task.code}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={() => onToggleSelect?.()}
+                  aria-label={`Seleccionar parte ${task.code}`}
+                  className="accent-magenta w-4 h-4 cursor-pointer"
+                />
+              </label>
+            )}
+
+            <Link href={`/tasks/${task.id}`} className="min-w-0 flex-1 block">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-extrabold tracking-wider text-navy uppercase">
+                  {task.code}
+                </span>
+                <TaskTypeBadge taskType={taskType} />
+                {sla && (
+                  <span
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-extrabold uppercase rounded-xs ${sla.badgeClass}`}
+                  >
+                    <Clock size={10} /> {sla.shortLabel}
+                  </span>
+                )}
+                {(task.attachment_count ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-off-white text-mid-grey border border-border rounded-xs">
+                    <Camera size={10} /> {task.attachment_count}
+                  </span>
+                )}
+              </div>
+              <h3 className="text-base font-bold text-charcoal leading-snug mt-0.5 break-words">
+                {task.customer?.name || 'Cliente'}
+              </h3>
+            </Link>
+          </div>
+
+          <Link
+            href={`/tasks/${task.id}`}
+            className="flex-shrink-0"
+            data-testid="task-card-priority"
+          >
+            <PriorityBadge priority={task.priority} />
+          </Link>
+        </div>
+
+        <Link href={`/tasks/${task.id}`} className="block">
+          {taskType === 'installation' && task.scheduled_date && (
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol mb-1">
+              <Calendar size={13} className="flex-shrink-0" />
+              <span>
+                Acordada:{' '}
+                {new Date(task.scheduled_date).toLocaleString('es-ES', {
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                })}
               </span>
-              <TaskTypeBadge taskType={taskType} />
-              {sla && (
-                <span
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-extrabold uppercase rounded-xs ${sla.badgeClass}`}
-                >
-                  <Clock size={10} /> {sla.shortLabel}
-                </span>
-              )}
-              {(task.attachment_count ?? 0) > 0 && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-off-white text-mid-grey border border-border rounded-xs">
-                  <Camera size={10} /> {task.attachment_count}
-                </span>
-              )}
             </div>
-            <h3 className="text-base font-bold text-charcoal leading-snug mt-0.5">
-              {task.customer?.name || 'Cliente'}
-            </h3>
+          )}
+
+          {task.equipment_ref && (
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol mb-1.5">
+              <Wrench size={13} className="flex-shrink-0" />
+              <span className="truncate">
+                {task.equipment_ref}
+                {taskType === 'cxc_incident' && task.equipment_sn ? ` · S/N ${task.equipment_sn}` : ''}
+              </span>
+            </div>
+          )}
+
+          <p className="text-sm text-dark-grey line-clamp-2 mb-3 leading-snug">
+            {task.problem_desc}
+          </p>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/70">
+            <StatusBadge status={task.status} />
+
+            <div className="flex items-center gap-3 text-xs text-mid-grey">
+              <span className="inline-flex items-center gap-1">
+                <User size={13} />
+                {task.assignee ? task.assignee.full_name : 'Sin asignar'}
+              </span>
+              <ChevronRight size={16} className="text-navy" />
+            </div>
           </div>
-          <PriorityBadge priority={task.priority} />
-        </div>
-
-        {taskType === 'installation' && task.scheduled_date && (
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol mb-1">
-            <Calendar size={13} className="flex-shrink-0" />
-            <span>
-              Acordada:{' '}
-              {new Date(task.scheduled_date).toLocaleString('es-ES', {
-                dateStyle: 'short',
-                timeStyle: 'short',
-              })}
-            </span>
-          </div>
-        )}
-
-        {task.equipment_ref && (
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-petrol mb-1.5">
-            <Wrench size={13} className="flex-shrink-0" />
-            <span className="truncate">
-              {task.equipment_ref}
-              {taskType === 'cxc_incident' && task.equipment_sn ? ` · S/N ${task.equipment_sn}` : ''}
-            </span>
-          </div>
-        )}
-
-        <p className="text-sm text-dark-grey line-clamp-2 mb-3 leading-snug">
-          {task.problem_desc}
-        </p>
-
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/70">
-          <StatusBadge status={task.status} />
-
-          <div className="flex items-center gap-3 text-xs text-mid-grey">
-            <span className="inline-flex items-center gap-1">
-              <User size={13} />
-              {task.assignee ? task.assignee.full_name : 'Sin asignar'}
-            </span>
-            <ChevronRight size={16} className="text-navy" />
-          </div>
-        </div>
-      </Link>
+        </Link>
+      </div>
 
       {/* Acciones rápidas en campo (1 toque) */}
       {(mapsUrl || phone) && (
