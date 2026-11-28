@@ -36,17 +36,18 @@ interface InstallationWorkflowSectionProps {
   onFeedback: (msg: string) => void;
 }
 
-export function isInstallationOrderAttachment(att: Attachment): boolean {
-  return (
-    att.attachment_kind === 'installation_order' ||
-    Boolean(att.caption?.startsWith('[PEDIDO_INSTALACION]'))
-  );
-}
-
 export function isInterestDocumentAttachment(att: Attachment): boolean {
   return (
     att.attachment_kind === 'interest_document' ||
     Boolean(att.caption?.startsWith('[DOC_INTERES]'))
+  );
+}
+
+export function isInstallationOrderAttachment(att: Attachment): boolean {
+  if (isInterestDocumentAttachment(att)) return false;
+  return (
+    att.attachment_kind === 'installation_order' ||
+    Boolean(att.caption?.startsWith('[PEDIDO_INSTALACION]'))
   );
 }
 
@@ -58,6 +59,7 @@ function InstallationDocumentsCard({
   uploadButtonLabel,
   uploadingLabel,
   uploading,
+  errorMessage,
   multiple = false,
   isDeleted,
   currentUser,
@@ -72,10 +74,11 @@ function InstallationDocumentsCard({
   uploadButtonLabel: string;
   uploadingLabel: string;
   uploading: boolean;
+  errorMessage?: string | null;
   multiple?: boolean;
   isDeleted: boolean;
   currentUser: Profile;
-  onUploadFiles: (files: FileList) => void;
+  onUploadFiles: (files: File[]) => void;
   onPreview: (att: Attachment) => void;
   onDelete: (att: Attachment) => void;
 }) {
@@ -87,24 +90,35 @@ function InstallationDocumentsCard({
         </h2>
 
         {!isDeleted && (
-          <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy-dark min-h-[38px]">
+          <label className="relative inline-flex items-center gap-1.5 px-3 py-2 bg-navy text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-navy-dark min-h-[38px]">
             <FileUp size={14} /> {uploading ? uploadingLabel : uploadButtonLabel}
             <input
               type="file"
-              accept="application/pdf,image/jpeg,image/png,image/webp"
+              accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
               multiple={multiple}
               onChange={(e) => {
-                if (e.target.files && e.target.files.length > 0) {
-                  onUploadFiles(e.target.files);
-                }
+                // Clonar antes de limpiar value porque FileList es una colección viva en algunos navegadores
+                const picked = Array.from(e.target.files || []);
                 e.target.value = '';
+                if (picked.length > 0) {
+                  onUploadFiles(picked);
+                }
               }}
-              className="hidden"
+              className="sr-only"
               disabled={uploading}
             />
           </label>
         )}
       </div>
+
+      {errorMessage && (
+        <p
+          role="alert"
+          className="text-xs font-semibold text-danger bg-danger/10 p-3 border-l-4 border-danger"
+        >
+          {errorMessage}
+        </p>
+      )}
 
       {attachments.length === 0 ? (
         <p className="text-xs text-mid-grey">{emptyText}</p>
@@ -182,6 +196,8 @@ export function InstallationWorkflowSection({
 
   const [uploadingOrder, setUploadingOrder] = useState(false);
   const [uploadingInterest, setUploadingInterest] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [interestError, setInterestError] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{
     attachment: Attachment;
     sectionLabel: string;
@@ -260,14 +276,18 @@ export function InstallationWorkflowSection({
     }
   };
 
-  const uploadDocuments = async (files: FileList, kind: AttachmentKind) => {
+  const uploadDocuments = async (files: File[], kind: AttachmentKind) => {
     const isInterest = kind === 'interest_document';
-    if (isInterest) setUploadingInterest(true);
-    else setUploadingOrder(true);
+    if (isInterest) {
+      setInterestError(null);
+      setUploadingInterest(true);
+    } else {
+      setOrderError(null);
+      setUploadingOrder(true);
+    }
 
     try {
-      const list = Array.from(files);
-      for (const file of list) {
+      for (const file of files) {
         const caption = isInterest
           ? `Documento de interés: ${file.name}`
           : `Pedido de instalación: ${file.name}`;
@@ -275,20 +295,22 @@ export function InstallationWorkflowSection({
       }
       onFeedback(
         isInterest
-          ? list.length > 1
-            ? `${list.length} documentos de interés adjuntados.`
+          ? files.length > 1
+            ? `${files.length} documentos de interés adjuntados.`
             : 'Documento de interés adjuntado.'
           : 'Pedido de instalación adjuntado.'
       );
       await onChanged();
     } catch (err) {
-      onFeedback(
+      const msg =
         err instanceof Error
           ? err.message
           : isInterest
           ? 'No se pudo subir el documento de interés.'
-          : 'No se pudo subir el pedido de instalación.'
-      );
+          : 'No se pudo subir el pedido de instalación.';
+      if (isInterest) setInterestError(msg);
+      else setOrderError(msg);
+      onFeedback(msg);
     } finally {
       if (isInterest) setUploadingInterest(false);
       else setUploadingOrder(false);
@@ -317,6 +339,7 @@ export function InstallationWorkflowSection({
         uploadButtonLabel="Adjuntar Pedido"
         uploadingLabel="Subiendo..."
         uploading={uploadingOrder}
+        errorMessage={orderError}
         isDeleted={isDeleted}
         currentUser={currentUser}
         onUploadFiles={(files) => void uploadDocuments(files, 'installation_order')}
@@ -337,6 +360,7 @@ export function InstallationWorkflowSection({
         uploadButtonLabel="Adjuntar Documento"
         uploadingLabel="Subiendo..."
         uploading={uploadingInterest}
+        errorMessage={interestError}
         multiple
         isDeleted={isDeleted}
         currentUser={currentUser}

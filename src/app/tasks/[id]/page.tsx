@@ -561,7 +561,10 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
       {feedbackBanner && (
-        <div className="p-3 bg-navy text-white text-xs font-bold border-l-4 border-magenta shadow-card">
+        <div
+          role="status"
+          className="sticky top-16 z-30 p-3 bg-navy text-white text-xs font-bold border-l-4 border-magenta shadow-card"
+        >
           {feedbackBanner}
         </div>
       )}

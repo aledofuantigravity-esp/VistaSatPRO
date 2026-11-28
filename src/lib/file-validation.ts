@@ -60,15 +60,20 @@ export function detectBinaryKindFromBytes(bytes: Uint8Array): AllowedBinaryKind 
     return 'webp';
   }
 
-  // PDF: "%PDF-"
-  if (
-    bytes[0] === 0x25 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x44 &&
-    bytes[3] === 0x46 &&
-    bytes[4] === 0x2d
-  ) {
-    return 'pdf';
+  // PDF: "%PDF-" (admite BOM UTF-8 o espacios iniciales dentro de los primeros 64 bytes)
+  if (bytes.length >= 5) {
+    const maxOffset = Math.min(bytes.length - 5, 59);
+    for (let offset = 0; offset <= maxOffset; offset++) {
+      if (
+        bytes[offset] === 0x25 &&
+        bytes[offset + 1] === 0x50 &&
+        bytes[offset + 2] === 0x44 &&
+        bytes[offset + 3] === 0x46 &&
+        bytes[offset + 4] === 0x2d
+      ) {
+        return 'pdf';
+      }
+    }
   }
 
   return null;
@@ -82,7 +87,7 @@ export async function validateFileMagicBytes(
   allowed: AllowedBinaryKind[]
 ): Promise<{ valid: boolean; detectedKind?: AllowedBinaryKind; error?: string }> {
   try {
-    const slice = file.slice(0, 16);
+    const slice = file.slice(0, 64);
     const buffer =
       typeof slice.arrayBuffer === 'function'
         ? await slice.arrayBuffer()

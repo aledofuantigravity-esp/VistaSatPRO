@@ -311,21 +311,53 @@ export async function uploadTaskAttachment(
     .from('task-attachments')
     .createSignedUrl(path, 3600);
 
-  const { data: attData, error: dbError } = await supabase
+  const baseInsertPayload = {
+    task_id: taskId,
+    uploaded_by: actor.id,
+    storage_path: path,
+    public_url: path,
+    file_name: processedFile.name,
+    file_size: processedFile.size,
+    mime_type: effectiveMime,
+    caption: caption || null,
+    attachment_kind: kind,
+  };
+
+  let { data: attData, error: dbError } = await supabase
     .from('attachments')
-    .insert({
-      task_id: taskId,
-      uploaded_by: actor.id,
-      storage_path: path,
-      public_url: path,
-      file_name: processedFile.name,
-      file_size: processedFile.size,
-      mime_type: effectiveMime,
-      caption: caption || null,
-      attachment_kind: kind,
-    })
+    .insert(baseInsertPayload)
     .select()
     .single();
+
+  // Compatibilidad si la migración 0015 (attachment_kind = 'interest_document') aún no se ejecutó en Supabase
+  const isKindConstraintError =
+    Boolean(dbError) &&
+    kind === 'interest_document' &&
+    (dbError?.code === '23514' ||
+      dbError?.message?.includes('attachments_kind_check') ||
+      dbError?.message?.toLowerCase().includes('attachment_kind'));
+
+  if (isKindConstraintError) {
+    const cleanCaption = caption?.trim();
+    const fallbackCaption = cleanCaption
+      ? cleanCaption.startsWith('[DOC_INTERES]')
+        ? cleanCaption
+        : `[DOC_INTERES] ${cleanCaption}`
+      : `[DOC_INTERES] ${processedFile.name}`;
+
+    const retryResult = await supabase
+      .from('attachments')
+      .insert({
+        ...baseInsertPayload,
+        caption: fallbackCaption,
+        attachment_kind: 'installation_order',
+      })
+      .select()
+      .single();
+
+    attData = retryResult.data;
+    dbError = retryResult.error;
+  }
 
   if (dbError) {
     // Limpiar el binario subido si falló el registro en BD

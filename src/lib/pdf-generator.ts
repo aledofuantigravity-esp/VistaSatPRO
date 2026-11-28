@@ -1571,17 +1571,18 @@ function isImageAttachment(att: Attachment): boolean {
   return /\.(jpe?g|png|webp|gif|bmp)$/i.test(att.file_name);
 }
 
-function isOrderAttachment(att: Attachment): boolean {
-  return (
-    att.attachment_kind === 'installation_order' ||
-    Boolean(att.caption?.startsWith('[PEDIDO_INSTALACION]'))
-  );
-}
-
 function isInterestDocAttachment(att: Attachment): boolean {
   return (
     att.attachment_kind === 'interest_document' ||
     Boolean(att.caption?.startsWith('[DOC_INTERES]'))
+  );
+}
+
+function isOrderAttachment(att: Attachment): boolean {
+  if (isInterestDocAttachment(att)) return false;
+  return (
+    att.attachment_kind === 'installation_order' ||
+    Boolean(att.caption?.startsWith('[PEDIDO_INSTALACION]'))
   );
 }
 

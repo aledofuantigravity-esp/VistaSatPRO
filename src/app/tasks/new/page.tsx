@@ -178,18 +178,31 @@ function NewTaskContent() {
     setCxcPieces((prev) => (prev.length <= 1 ? prev : prev.filter((r) => r.id !== id)));
   };
 
+  const isAllowedInstallationDoc = (file: File): boolean => {
+    const allowedMime = [
+      'application/pdf',
+      'application/x-pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+    ];
+    if (file.type && allowedMime.includes(file.type.toLowerCase())) {
+      return true;
+    }
+    return /\.(pdf|jpe?g|png|webp)$/i.test(file.name);
+  };
+
   const handleOrderFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
+    e.target.value = '';
     if (!file) return;
-    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-    if (!allowed.includes(file.type)) {
+    if (!isAllowedInstallationDoc(file)) {
       setError('El pedido de instalación debe ser PDF o imagen (JPG, PNG, WEBP).');
-      e.target.value = '';
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
       setError('El pedido de instalación supera el máximo permitido de 10 MB.');
-      e.target.value = '';
       return;
     }
     setError(null);
@@ -201,10 +214,9 @@ function NewTaskContent() {
     e.target.value = '';
     if (picked.length === 0) return;
 
-    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
     const valid: File[] = [];
     for (const file of picked) {
-      if (!allowed.includes(file.type)) {
+      if (!isAllowedInstallationDoc(file)) {
         setError('Los documentos de interés deben ser PDF o imagen (JPG, PNG, WEBP).');
         return;
       }
@@ -616,19 +628,19 @@ function NewTaskContent() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
+                    <label className="text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
                       <FileUp size={13} className="text-magenta" /> Adjuntar Pedido de Instalación
                     </label>
-                    <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy cursor-pointer hover:bg-navy/5 min-h-[46px]">
+                    <label className="relative flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy cursor-pointer hover:bg-navy/5 min-h-[46px]">
                       <FileUp size={15} />
                       <span className="truncate">
                         {orderFile ? orderFile.name : 'Subir PDF o imagen (máx. 10 MB)'}
                       </span>
                       <input
                         type="file"
-                        accept="application/pdf,image/jpeg,image/png,image/webp"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                         onChange={handleOrderFileChange}
-                        className="hidden"
+                        className="sr-only"
                       />
                     </label>
                     {orderFile && (
@@ -643,10 +655,10 @@ function NewTaskContent() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
+                    <label className="text-xs font-bold uppercase text-mid-grey mb-1 flex items-center gap-1">
                       <FileUp size={13} className="text-magenta" /> Documentos de Interés
                     </label>
-                    <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy cursor-pointer hover:bg-navy/5 min-h-[46px]">
+                    <label className="relative flex items-center justify-center gap-2 px-3 py-2.5 bg-bg-input border border-dashed border-navy/50 text-xs font-bold text-navy cursor-pointer hover:bg-navy/5 min-h-[46px]">
                       <FileUp size={15} />
                       <span className="truncate">
                         {interestFiles.length > 0
@@ -655,11 +667,11 @@ function NewTaskContent() {
                       </span>
                       <input
                         type="file"
-                        accept="application/pdf,image/jpeg,image/png,image/webp"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                         multiple
                         aria-label="Documentos de Interés"
                         onChange={handleInterestFilesChange}
-                        className="hidden"
+                        className="sr-only"
                       />
                     </label>
                     {interestFiles.length > 0 && (
@@ -929,12 +941,6 @@ function NewTaskContent() {
               </div>
             </div>
 
-            {error && (
-              <p className="text-xs font-semibold text-danger bg-danger/10 p-3 border-l-4 border-danger">
-                {error}
-              </p>
-            )}
-
             <div className="pt-2 flex justify-between">
               <Button type="button" variant="secondary" onClick={() => setStep(1)}>
                 <ArrowLeft size={16} /> Atrás
@@ -1072,12 +1078,6 @@ function NewTaskContent() {
               </p>
             </div>
 
-            {error && (
-              <p className="text-xs font-semibold text-danger bg-danger/10 p-3 border-l-4 border-danger">
-                {error}
-              </p>
-            )}
-
             <div className="pt-2 flex justify-between gap-3">
               <Button type="button" variant="secondary" onClick={() => setStep(2)}>
                 <ArrowLeft size={16} /> Atrás
@@ -1092,6 +1092,15 @@ function NewTaskContent() {
               </Button>
             </div>
           </>
+        )}
+
+        {error && (
+          <p
+            role="alert"
+            className="text-xs font-semibold text-danger bg-danger/10 p-3 border-l-4 border-danger"
+          >
+            {error}
+          </p>
         )}
       </div>
     </div>
