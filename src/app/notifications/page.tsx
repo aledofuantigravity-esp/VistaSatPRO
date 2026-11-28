@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   Bell,
+  Check,
   CheckCheck,
   ChevronRight,
   MessageSquare,
@@ -14,6 +15,7 @@ import {
   Repeat,
   Settings,
   ShieldAlert,
+  Trash2,
   UserCheck,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
@@ -59,16 +61,50 @@ export default function NotificationsPage() {
 function NotificationsContent() {
   const { profile } = useAuth();
   const router = useRouter();
-  const { notifications, unreadCount, isLoading, markRead, markAllRead } =
-    useNotifications();
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    markRead,
+    markAllRead,
+    deleteReadNotification,
+  } = useNotifications();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (!profile) return null;
 
   const handleOpenNotification = async (id: string, taskId: string | null) => {
+    setActionError(null);
     await markRead(id);
     if (taskId) {
       router.push(`/tasks/${taskId}`);
+    }
+  };
+
+  const handleMarkOneRead = async (id: string) => {
+    setActionError(null);
+    try {
+      await markRead(id);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : 'No se pudo marcar como leída.'
+      );
+    }
+  };
+
+  const handleDeleteNotification = async (id: string) => {
+    setActionError(null);
+    setDeletingId(id);
+    try {
+      await deleteReadNotification(id);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : 'No se pudo borrar la notificación.'
+      );
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -123,11 +159,7 @@ function NotificationsContent() {
 
         <div className="flex flex-wrap gap-2 flex-shrink-0">
           {unreadCount > 0 && (
-            <Button
-              variant="accent"
-              size="sm"
-              onClick={markAllRead}
-            >
+            <Button variant="accent" size="sm" onClick={markAllRead}>
               <CheckCheck size={15} /> Marcar todas leídas
             </Button>
           )}
@@ -143,7 +175,7 @@ function NotificationsContent() {
         </div>
       </div>
 
-      {/* Filtros locales visuales y nota informativa */}
+      {/* Filtros locales visuales */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="inline-flex bg-white border border-border rounded-sm p-1 gap-1 shadow-xs">
           <button
@@ -182,11 +214,21 @@ function NotificationsContent() {
         </div>
       </div>
 
-      {/* Nota informativa sobre el filtro anti-ruido */}
+      {/* Nota informativa */}
       <div className="p-3 bg-navy/5 border-l-4 border-navy text-xs text-dark-grey">
         Solo recibes avisos de nuevas asignaciones o cambios realizados por{' '}
-        <strong>otros usuarios</strong> (las acciones propias nunca generan autonotificación).
+        <strong>otros usuarios</strong>. Las notificaciones que ya hayas leído pueden
+        borrarse de forma individual.
       </div>
+
+      {actionError && (
+        <p
+          role="alert"
+          className="text-xs font-semibold text-danger bg-danger/10 p-3 border-l-4 border-danger"
+        >
+          {actionError}
+        </p>
+      )}
 
       {isLoading ? (
         <div className="space-y-3">
@@ -223,57 +265,85 @@ function NotificationsContent() {
             const relative = formatRelativeNotificationTime(n.created_at);
 
             return (
-              <button
+              <div
                 key={n.id}
-                type="button"
-                onClick={() => handleOpenNotification(n.id, n.task_id)}
-                className={`w-full text-left rounded-md shadow-card p-4 border-l-4 transition-all flex items-start justify-between gap-3 cursor-pointer ${
+                className={`w-full rounded-md shadow-card p-3.5 sm:p-4 border-l-4 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                   n.is_read
-                    ? 'bg-white border-border opacity-85 hover:opacity-100 hover:bg-off-white/60'
-                    : 'bg-magenta/[0.03] border-magenta ring-1 ring-magenta/20 hover:bg-magenta/[0.06]'
+                    ? 'bg-white border-border'
+                    : 'bg-magenta/[0.03] border-magenta ring-1 ring-magenta/20'
                 }`}
               >
-                <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${meta.iconBgClass} ${meta.iconTextClass}`}
+                <button
+                  type="button"
+                  onClick={() => handleOpenNotification(n.id, n.task_id)}
+                  className="min-w-0 flex-1 flex items-start gap-3 text-left cursor-pointer group"
                 >
-                  {renderTypeIcon(n.type)}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span
-                      className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-xs ${meta.badgeClass}`}
-                    >
-                      {meta.label}
-                    </span>
-                    {!n.is_read && (
-                      <span className="inline-flex items-center gap-1 bg-magenta text-white text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded-xs">
-                        Nueva
-                      </span>
-                    )}
-                    {relative && (
-                      <span className="text-[11px] font-semibold text-navy ml-auto">
-                        {relative}
-                      </span>
-                    )}
+                  <div
+                    className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${meta.iconBgClass} ${meta.iconTextClass}`}
+                  >
+                    {renderTypeIcon(n.type)}
                   </div>
-                  <h3 className="text-sm font-bold text-charcoal truncate mt-1">
-                    {n.title}
-                  </h3>
-                  <p className="text-xs text-dark-grey mt-1 leading-relaxed">{n.body}</p>
-                  <p className="text-[11px] text-mid-grey mt-2">
-                    {new Date(n.created_at).toLocaleString('es-ES')}
-                    {n.actor ? ` · Por ${n.actor.full_name}` : ''}
-                  </p>
-                </div>
 
-                {n.task_id && (
-                  <ChevronRight
-                    size={18}
-                    className="text-navy flex-shrink-0 self-center"
-                  />
-                )}
-              </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-xs ${meta.badgeClass}`}
+                      >
+                        {meta.label}
+                      </span>
+                      {!n.is_read && (
+                        <span className="inline-flex items-center gap-1 bg-magenta text-white text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded-xs">
+                          Nueva
+                        </span>
+                      )}
+                      {relative && (
+                        <span className="text-[11px] font-semibold text-navy ml-auto">
+                          {relative}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-sm font-bold text-charcoal truncate mt-1 group-hover:text-navy transition-colors">
+                      {n.title}
+                    </h3>
+                    <p className="text-xs text-dark-grey mt-1 leading-relaxed">{n.body}</p>
+                    <p className="text-[11px] text-mid-grey mt-2">
+                      {new Date(n.created_at).toLocaleString('es-ES')}
+                      {n.actor ? ` · Por ${n.actor.full_name}` : ''}
+                    </p>
+                  </div>
+
+                  {n.task_id && (
+                    <ChevronRight
+                      size={18}
+                      className="text-navy flex-shrink-0 self-center hidden sm:block"
+                    />
+                  )}
+                </button>
+
+                <div className="flex items-center justify-end gap-2 flex-shrink-0 sm:border-l sm:border-border/60 sm:pl-3">
+                  {!n.is_read ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleMarkOneRead(n.id)}
+                      aria-label="Marcar como leída"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-navy/30 bg-navy/5 text-navy hover:bg-navy hover:text-white text-xs font-bold rounded-xs transition-colors cursor-pointer"
+                    >
+                      <Check size={14} /> Marcar leída
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteNotification(n.id)}
+                      disabled={deletingId === n.id}
+                      aria-label="Borrar notificación"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-danger/30 bg-danger/5 text-danger hover:bg-danger hover:text-white text-xs font-bold rounded-xs transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <Trash2 size={14} />{' '}
+                      {deletingId === n.id ? 'Borrando...' : 'Borrar'}
+                    </button>
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>

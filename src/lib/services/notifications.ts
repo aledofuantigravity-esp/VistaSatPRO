@@ -47,6 +47,26 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
     .eq('is_read', false);
 }
 
+export async function deleteNotification(id: string): Promise<void> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    await demoPost({ action: 'delete_notification', id });
+    return;
+  }
+  const { data, error } = await supabase
+    .from('notifications')
+    .delete()
+    .eq('id', id)
+    .eq('is_read', true)
+    .select('id');
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) {
+    throw new Error(
+      'No se pudo borrar la notificación. Comprueba si falta ejecutar la migración SQL 0017 en Supabase.'
+    );
+  }
+}
+
 export async function listPushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {

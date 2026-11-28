@@ -677,13 +677,18 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Hola, Javier Ruiz' })).toBeVisible();
 
-    // Cabecera superior Técnico con Notificaciones y bloque destacado en el Panel General
+    // Cabecera superior Técnico con Notificaciones y bloque destacado solo con sin leer + Ver más
     const techHero = page.locator('main .bg-gradient-to-r').first();
     await expect(techHero.getByRole('link', { name: /Instalaciones/i })).toHaveCount(0);
     await expect(techHero.getByRole('link', { name: /Notificaciones/i })).toBeVisible();
-    await expect(
-      page.getByRole('region', { name: 'Centro de Notificaciones' })
-    ).toBeVisible();
+    const notifRegion = page.getByRole('region', { name: 'Centro de Notificaciones' });
+    await expect(notifRegion).toBeVisible();
+    await expect(notifRegion.getByRole('link', { name: /Ver más/i })).toBeVisible();
+    const regionCards = notifRegion.locator('div.grid > button');
+    const regionCardCount = await regionCards.count();
+    if (regionCardCount > 0) {
+      expect(await regionCards.filter({ hasText: 'Nueva' }).count()).toBe(regionCardCount);
+    }
 
     // El técnico no ve las gráficas ejecutivas, ve directamente sus bloques prioritarios
     await expect(page.getByText(/Tiempo Medio de Cierre por Tipo de Parte/i)).toHaveCount(0);
@@ -704,15 +709,35 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     );
     expect(techNoOverflow).toBe(true);
 
-    // Abrir Centro de Notificaciones desde el botón superior y validar filtros locales
+    // Abrir Centro de Notificaciones desde "Ver más" y probar lectura + borrado unitario de leída
     await page.setViewportSize({ width: 1280, height: 800 });
-    await techHero.getByRole('link', { name: /Notificaciones/i }).click();
+    await notifRegion.getByRole('link', { name: /Ver más/i }).click();
     await expect(page).toHaveURL(/\/notifications/);
     await expect(
       page.getByRole('heading', { name: 'Centro de Notificaciones' })
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Todas \(/i })).toBeVisible();
+    const todasBtn = page.getByRole('button', { name: /^Todas \(/i });
+    await expect(todasBtn).toBeVisible();
     await expect(page.getByRole('button', { name: /Sin leer/i })).toBeVisible();
+
+    const todasLabel = (await todasBtn.textContent()) || '';
+    const totalMatch = todasLabel.match(/\((\d+)\)/);
+    const initialTotal = totalMatch ? parseInt(totalMatch[1], 10) : 0;
+    expect(initialTotal).toBeGreaterThan(0);
+
+    // Las sin leer no muestran botón Borrar hasta ser marcadas como leídas
+    const markReadBtns = page.getByRole('button', { name: 'Marcar como leída' });
+    if ((await markReadBtns.count()) > 0) {
+      await markReadBtns.first().click();
+    }
+    const deleteBtns = page.getByRole('button', { name: 'Borrar notificación' });
+    await expect(deleteBtns.first()).toBeVisible();
+    await deleteBtns.first().click();
+    await expect(todasBtn).toHaveText(`Todas (${initialTotal - 1})`);
+    await page.reload();
+    await expect(page.getByRole('button', { name: /^Todas \(/i })).toHaveText(
+      `Todas (${initialTotal - 1})`
+    );
   });
 
   test('11. Autoasignación automática al crear parte cuando solo hay un técnico activo', async ({

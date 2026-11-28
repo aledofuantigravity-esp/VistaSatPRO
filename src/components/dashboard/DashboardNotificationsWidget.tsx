@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -7,7 +8,9 @@ import {
   ArrowRight,
   Bell,
   CheckCheck,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   MessageSquare,
   PlusCircle,
   RefreshCw,
@@ -49,6 +52,7 @@ export function DashboardNotificationsWidget({ isCoord }: { isCoord: boolean }) 
   const router = useRouter();
   const { notifications, unreadCount, isLoading, markRead, markAllRead } =
     useNotifications();
+  const [showAllUnread, setShowAllUnread] = useState(false);
 
   if (isLoading && notifications.length === 0) {
     return (
@@ -56,12 +60,17 @@ export function DashboardNotificationsWidget({ isCoord }: { isCoord: boolean }) 
     );
   }
 
-  const prioritizedNotifications = [...notifications]
-    .sort((a, b) => {
-      if (a.is_read !== b.is_read) return a.is_read ? 1 : -1;
-      return b.created_at.localeCompare(a.created_at);
-    })
-    .slice(0, 4);
+  // Mostrar EXCLUSIVAMENTE notificaciones sin leer en la vista activa del panel
+  const unreadNotifications = [...notifications]
+    .filter((n) => !n.is_read)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const visibleUnread = showAllUnread
+    ? unreadNotifications
+    : unreadNotifications.slice(0, 4);
+  const hiddenUnreadCount = Math.max(
+    0,
+    unreadNotifications.length - visibleUnread.length
+  );
 
   const handleOpenItem = async (id: string, taskId: string | null) => {
     await markRead(id);
@@ -70,7 +79,7 @@ export function DashboardNotificationsWidget({ isCoord }: { isCoord: boolean }) 
     }
   };
 
-  if (unreadCount === 0) {
+  if (unreadCount === 0 || unreadNotifications.length === 0) {
     const latest = notifications[0];
     return (
       <section
@@ -106,7 +115,7 @@ export function DashboardNotificationsWidget({ isCoord }: { isCoord: boolean }) 
           href="/notifications"
           className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-navy hover:text-magenta transition-colors flex-shrink-0"
         >
-          Ver centro <ArrowRight size={14} />
+          Ver más <ArrowRight size={14} />
         </Link>
       </section>
     );
@@ -139,8 +148,8 @@ export function DashboardNotificationsWidget({ isCoord }: { isCoord: boolean }) 
             </div>
             <p className="text-xs text-dark-grey mt-0.5">
               {isCoord
-                ? 'Avisos destacados de actividad del equipo y alertas operativas.'
-                : 'Avisos prioritarios sobre tus partes asignados y cambios recientes.'}
+                ? 'Solo se muestran notificaciones sin leer del equipo.'
+                : 'Solo se muestran tus notificaciones sin leer.'}
             </p>
           </div>
         </div>
@@ -158,13 +167,13 @@ export function DashboardNotificationsWidget({ isCoord }: { isCoord: boolean }) 
             href="/notifications"
             className="inline-flex items-center gap-1 px-3 py-1.5 bg-navy text-white text-xs font-bold uppercase tracking-wider hover:bg-navy-dark rounded-xs transition-colors"
           >
-            Ver todas <ArrowRight size={13} />
+            Ver más <ArrowRight size={13} />
           </Link>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 p-3.5 sm:p-4">
-        {prioritizedNotifications.map((n) => {
+        {visibleUnread.map((n) => {
           const meta =
             NOTIFICATION_TYPE_META[n.type] || NOTIFICATION_TYPE_META.task_updated;
           const relativeTime = formatRelativeNotificationTime(n.created_at);
@@ -174,11 +183,7 @@ export function DashboardNotificationsWidget({ isCoord }: { isCoord: boolean }) 
               key={n.id}
               type="button"
               onClick={() => void handleOpenItem(n.id, n.task_id)}
-              className={`text-left rounded-sm border p-3 transition-all flex items-start gap-2.5 min-w-0 cursor-pointer ${
-                n.is_read
-                  ? 'bg-off-white/60 border-border hover:border-navy/40 opacity-85'
-                  : 'bg-magenta/[0.03] border-magenta/35 hover:border-magenta shadow-xs'
-              }`}
+              className="text-left rounded-sm border p-3 transition-all flex items-start gap-2.5 min-w-0 cursor-pointer bg-magenta/[0.03] border-magenta/35 hover:border-magenta shadow-xs"
             >
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${meta.iconBgClass} ${meta.iconTextClass}`}
@@ -193,11 +198,9 @@ export function DashboardNotificationsWidget({ isCoord }: { isCoord: boolean }) 
                   >
                     {meta.label}
                   </span>
-                  {!n.is_read && (
-                    <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded-xs bg-magenta text-white">
-                      Nueva
-                    </span>
-                  )}
+                  <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded-xs bg-magenta text-white">
+                    Nueva
+                  </span>
                   {relativeTime && (
                     <span className="text-[11px] text-mid-grey ml-auto">
                       {relativeTime}
@@ -227,6 +230,26 @@ export function DashboardNotificationsWidget({ isCoord }: { isCoord: boolean }) 
           );
         })}
       </div>
+
+      {unreadNotifications.length > 4 && (
+        <div className="px-4 pb-3.5 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setShowAllUnread((prev) => !prev)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-off-white border border-border text-xs font-bold uppercase tracking-wider text-navy hover:border-navy rounded-xs transition-colors"
+          >
+            {showAllUnread ? (
+              <>
+                Mostrar menos <ChevronUp size={14} />
+              </>
+            ) : (
+              <>
+                Ver más ({hiddenUnreadCount} más sin leer) <ChevronDown size={14} />
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </section>
   );
 }

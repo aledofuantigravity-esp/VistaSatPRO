@@ -1417,6 +1417,23 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
       }
 
+      case 'delete_notification': {
+        const { id } = body as { id: string };
+        const idx = state.notifications.findIndex((n) => n.id === id);
+        if (idx === -1) {
+          return NextResponse.json({ ok: true });
+        }
+        if (!state.notifications[idx].is_read) {
+          return NextResponse.json(
+            { error: 'Solo se pueden borrar notificaciones que ya hayan sido leídas.' },
+            { status: 400 }
+          );
+        }
+        state.notifications.splice(idx, 1);
+        saveServerDemoDb(state);
+        return NextResponse.json({ ok: true });
+      }
+
       case 'save_push_subscription': {
         const { userId, sub, deviceLabel, userAgent } = body as {
           userId: string;

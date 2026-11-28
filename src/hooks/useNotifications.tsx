@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react';
 import {
+  deleteNotification,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -26,6 +27,7 @@ interface NotificationsContextValue {
   dismissToast: () => void;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
+  deleteReadNotification: (id: string) => Promise<void>;
   reload: () => Promise<void>;
 }
 
@@ -204,6 +206,15 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true, read_at: nowIso })));
   };
 
+  const deleteReadNotification = async (id: string) => {
+    const target = notifications.find((n) => n.id === id);
+    if (!target || !target.is_read) {
+      throw new Error('Solo se pueden borrar notificaciones ya leídas.');
+    }
+    await deleteNotification(id);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
   return (
     <NotificationsContext.Provider
       value={{
@@ -214,6 +225,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         dismissToast: () => setLatestToast(null),
         markRead,
         markAllRead,
+        deleteReadNotification,
         reload: load,
       }}
     >
