@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useMemo, useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { BarChart3, Download, FileDown, Package, RotateCcw, Shield, Timer } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { downloadCsv } from '@/lib/csv';
 import { computeResolutionStatsByType } from '@/lib/dashboard-helpers';
-import { listCustomers, listProfiles, listTasks } from '@/lib/data-service';
+import { listCustomers, listPartsCatalog, listProfiles, listTasks } from '@/lib/data-service';
+import type { ReportPdfVariant } from '@/lib/report-analytics';
 import { useAppCache } from '@/store/app-cache';
 import {
   getTaskStatusLabel,
@@ -16,11 +18,17 @@ import {
   TASK_STATUS_META,
   TASK_TYPE_META,
   type Customer,
+  type PartCatalogItem,
   type Profile,
   type Task,
   type TaskStatus,
   type TaskType,
 } from '@/types/database';
+
+const ReportPdfModal = dynamic(
+  () => import('@/components/reports/ReportPdfModal').then((m) => m.ReportPdfModal),
+  { ssr: false }
+);
 
 export default function ReportsPage() {
   return <ReportsContent />;
@@ -32,12 +40,16 @@ function ReportsContent() {
   const tasksLoadedAt = useAppCache((s) => s.tasksLoadedAt);
   const cachedProfiles = useAppCache((s) => s.profiles);
   const cachedCustomers = useAppCache((s) => s.customers);
+  const cachedParts = useAppCache((s) => s.partsCatalog);
 
   const [tasks, setTasks] = useState<Task[]>(cachedTasks);
   const [profiles, setProfiles] = useState<Profile[]>(cachedProfiles);
   const [customers, setCustomers] = useState<Customer[]>(cachedCustomers);
+  const [partsCatalog, setPartsCatalog] = useState<PartCatalogItem[]>(cachedParts);
   const [loading, setLoading] = useState(!tasksLoadedAt);
-  const [exportingPdf, setExportingPdf] = useState(false);
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [generatingPdfVariant, setGeneratingPdfVariant] =
+    useState<ReportPdfVariant | null>(null);
 
   // Filtros avanzados (incluye filtro por Tipo de parte)
   const [dateFrom, setDateFrom] = useState('');
@@ -58,14 +70,16 @@ function ReportsContent() {
       if (!silent && !hasCached) setLoading(true);
       try {
         const viewer = { id: profileId, role: profileRole } as Profile;
-        const [t, p, c] = await Promise.all([
+        const [t, p, c, partsRes] = await Promise.all([
           listTasks(viewer, { force: silent }),
           listProfiles({ force: silent }),
           listCustomers({ force: silent }),
+          listPartsCatalog({ force: silent }),
         ]);
         setTasks(t);
         setProfiles(p);
         setCustomers(c);
+        setPartsCatalog(partsRes.parts);
       } finally {
         setLoading(false);
       }
@@ -295,8 +309,8 @@ function ReportsContent() {
     );
   };
 
-  const handleExportPDF = async () => {
-    setExportingPdf(true);
+  const handleExportPDF = async (variant: ReportPdfVariant) => {
+    setGeneratingPdfVariant(variant);
     try {
       const techLabel =
         techFilter === 'all'
@@ -313,8 +327,10 @@ function ReportsContent() {
       const typeLabel =
         typeFilter === 'all' ? 'Todos' : TASK_TYPE_META[typeFilter].label;
 
-      const { downloadReportPDF } = await import('@/lib/pdf-generator');
-      downloadReportPDF({
+      const { downloadReportPDF } = await import('@/lib/report-pdf-generator');
+      await downloadReportPDF({
+        variant,
+        generatedBy: profile.full_name,
         filters: {
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
@@ -322,6 +338,7 @@ function ReportsContent() {
           technicianName: techLabel,
           customerName: custLabel,
           statusLabel,
+          isSingleCustomer: customerFilter !== 'all',
         },
         kpis,
         resolutionByType: resolutionByType.byType.map((b) => ({
@@ -330,6 +347,7 @@ function ReportsContent() {
           formatted: b.formatted,
         })),
         topParts: topConsumedParts,
+        partsCatalog,
         techStats: techStats.map((r) => ({
           name: r.tech.full_name,
           total: r.total,
@@ -344,8 +362,9 @@ function ReportsContent() {
         })),
         tasks: filteredTasks,
       });
+      setShowPdfModal(false);
     } finally {
-      setExportingPdf(false);
+      setGeneratingPdfVariant(null);
     }
   };
 
@@ -367,13 +386,30 @@ function ReportsContent() {
           <Button
             variant="accent"
             size="sm"
-            isLoading={exportingPdf}
-            onClick={handleExportPDF}
+            isLoading={Boolean(generatingPdfVariant)}
+            onClick={() => setShowPdfModal(true)}
           >
             <FileDown size={15} /> Exportar PDF
           </Button>
         </div>
       </div>
+
+      {showPdfModal && (
+        <ReportPdfModal
+          taskCount={filteredTasks.length}
+          customerFilterLabel={
+            customerFilter !== 'all'
+              ? customers.find((c) => c.id === customerFilter)?.name
+              : undefined
+          }
+          isSingleCustomer={customerFilter !== 'all'}
+          generatingVariant={generatingPdfVariant}
+          onClose={() => {
+            if (!generatingPdfVariant) setShowPdfModal(false);
+          }}
+          onSelectVariant={handleExportPDF}
+        />
+      )}
 
       {/* Filtros avanzados */}
       <div className="bg-white rounded-md shadow-card p-4 border border-border/60 space-y-3">

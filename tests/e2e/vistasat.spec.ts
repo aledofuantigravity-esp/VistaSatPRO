@@ -120,13 +120,21 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.getByText(/Historial de Partes/i)).toBeVisible();
     await page.keyboard.press('Escape');
 
-    // Informes: descarga PDF
+    // Informes: descarga PDF con selector Ejecutivo Interno y Cliente
     await page.goto('/reports');
     await expect(page.getByRole('heading', { name: /Informes Operativos SAT/i })).toBeVisible();
-    const pdfPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: /Exportar PDF/i }).click();
-    const reportPdf = await pdfPromise;
-    expect(reportPdf.suggestedFilename()).toContain('VistaSatPRO_informe_SAT_');
+    await expect(page.getByRole('dialog')).toBeVisible();
+    const internalReportPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: /Informe Ejecutivo Interno/i }).click();
+    const internalReportPdf = await internalReportPromise;
+    expect(internalReportPdf.suggestedFilename()).toContain('VistaSatPRO_informe_SAT_interno_');
+
+    await page.getByRole('button', { name: /Exportar PDF/i }).click();
+    const clientReportPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: /Informe de Servicio para Cliente/i }).click();
+    const clientReportPdf = await clientReportPromise;
+    expect(clientReportPdf.suggestedFilename()).toContain('VistaSatPRO_informe_SAT_cliente_');
 
     // Filtros guardados en /tasks (M8)
     await page.goto('/tasks');
@@ -360,7 +368,7 @@ test.describe('VistaSatPRO — Flujos críticos E2E', () => {
     await expect(page.locator('input[type="datetime-local"]')).toHaveCount(0);
     await page.getByLabel('Fecha acordada').fill('2027-01-15');
     await page.getByRole('button', { name: /Guardar fecha/i }).click();
-    await expect(page.getByText(/Fecha acordada asignada/i)).toBeVisible();
+    await expect(page.getByText(/Fecha acordada asignada a VS-/i)).toBeVisible();
 
     // Verificar en vista móvil que está el botón Más y muestra las tarjetas ocultas
     await page.setViewportSize({ width: 390, height: 844 });
